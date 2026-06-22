@@ -1,0 +1,164 @@
+"""项目初始化的纯逻辑函数 — 从 CLI init.py 提取，无 typer 依赖。"""
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from string import Template
+
+from src.engine.frontmatter import FrontmatterParser
+from src.engine.index import IndexManager, IndexEntry
+from src.engine.registry import Registry
+
+# 内置模板目录
+BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "templates"
+
+
+def get_project_name(project_root: Path) -> str:
+    """从 config.yaml 或目录名获取项目名称。"""
+    config_path = project_root / ".doc-kit" / "config.yaml"
+    if config_path.exists():
+        import yaml
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if data and "project_name" in data:
+                return data["project_name"]
+        except Exception:
+            pass
+    return project_root.name
+
+
+def generate_charter(project_name: str, now: str) -> str:
+    """生成 charter.md 内容。"""
+    template_path = BUILTIN_TEMPLATES_DIR / "charter.md"
+    tpl = Template(template_path.read_text(encoding="utf-8"))
+    return tpl.safe_substitute(project_name=project_name, now=now)
+
+
+def generate_full_file(template_name: str, now: str) -> str:
+    """生成完整模式下的单个文档。"""
+    template_path = BUILTIN_TEMPLATES_DIR / template_name
+    tpl = Template(template_path.read_text(encoding="utf-8"))
+    return tpl.safe_substitute(now=now)
+
+
+def create_minimal_structure(project_docs: Path, project_name: str, now: str) -> list[Path]:
+    """创建精简模式骨架：单个 charter.md。"""
+    project_docs.mkdir(parents=True, exist_ok=True)
+    charter_path = project_docs / "charter.md"
+    content = generate_charter(project_name, now)
+    charter_path.write_text(content, encoding="utf-8")
+    return [charter_path]
+
+
+def create_full_structure(project_docs: Path, project_name: str, now: str) -> list[Path]:
+    """创建完整模式骨架：6 个顶层文件直接放在 ProjectSpec/ 根。"""
+    project_docs.mkdir(parents=True, exist_ok=True)
+    files = [
+        "business-context.md", "technical-framework.md",
+        "technical-constraints.md", "global-policies.md",
+        "inter-module-contracts.md", "stakeholders.md",
+    ]
+    created = []
+    for fname in files:
+        fpath = project_docs / fname
+        content = generate_full_file(fname, now)
+        fpath.write_text(content, encoding="utf-8")
+        created.append(fpath)
+    return created
+
+
+def build_index(project_docs: Path, project_root: Path, created_files: list[Path]) -> IndexManager:
+    """从创建的文件构建初始索引。"""
+    kit_dir = project_root / ".doc-kit"
+    kit_dir.mkdir(parents=True, exist_ok=True)
+    index_path = kit_dir / "index.json"
+    mgr = IndexManager(index_path)
+
+    for fpath in created_files:
+        try:
+            meta, _ = FrontmatterParser.read_file(fpath)
+            rel_path = str(fpath.relative_to(project_root)).replace("\\", "/")
+            entry = IndexEntry(
+                path=rel_path,
+                doc_type=meta.get("doc_type", "unknown"),
+                module=meta.get("module", ""),
+                level=meta.get("level", ""),
+                version=str(meta.get("version", "0.0.0")),
+                status=meta.get("status", "active"),
+                depends_on=meta.get("depends_on", []),
+                mtime=FrontmatterParser.now_iso(),
+            )
+            mgr.add_entry(entry)
+        except Exception:
+            pass
+
+    mgr.save()
+    return mgr
+
+
+def create_config(project_root: Path, project_name: str, profile: str):
+    """创建 .doc-kit/config.yaml。"""
+    import yaml
+    kit_dir = project_root / ".doc-kit"
+    kit_dir.mkdir(parents=True, exist_ok=True)
+    config_path = kit_dir / "config.yaml"
+    data = {
+        "project_name": project_name,
+        "profile": profile,
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+    }
+    config_path.write_text(
+        yaml.dump(data, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+
+def create_registry(project_root: Path):
+    """创建默认 .doc-kit/registry.yaml。"""
+    kit_dir = project_root / ".doc-kit"
+    kit_dir.mkdir(parents=True, exist_ok=True)
+    reg_path = kit_dir / "registry.yaml"
+    reg_path.write_text(
+        Registry.get_default_registry_yaml(),
+        encoding="utf-8",
+    )
+
+
+def copy_templates(project_root: Path):
+    """复制内置模板到 .doc-kit/templates/。"""
+    kit_dir = project_root / ".doc-kit"
+    tmpl_dir = kit_dir / "templates"
+    tmpl_dir.mkdir(parents=True, exist_ok=True)
+    for src_path in BUILTIN_TEMPLATES_DIR.glob("*.md"):
+        dst_path = tmpl_dir / src_path.name
+        shutil.copy2(src_path, dst_path)
+
+
+def init_project(
+    project_root: Path,
+    project_name: str | None = None,
+    profile: str = "minimal",
+) -> str:
+    """完整的项目初始化流程。
+
+    返回项目名称。
+
+    若 project-docs/ 已存在则跳过创建步骤，但补全 .doc-kit/ 配置。
+    """
+    project_docs = project_root / "ProjectSpec"
+    now = FrontmatterParser.now_iso()
+    name = project_name or get_project_name(project_root)
+    created: list[Path] = []
+
+    if not project_docs.exists():
+        if profile == "minimal":
+            created = create_minimal_structure(project_docs, name, now)
+        else:
+            created = create_full_structure(project_docs, name, now)
+
+    # 补全 .doc-kit/ 配置（幂等）
+    create_config(project_root, name, profile)
+    create_registry(project_root)
+    copy_templates(project_root)
+    build_index(project_docs, project_root, created)
+
+    return name
