@@ -1,13 +1,13 @@
 """主窗口 — 协调侧边栏文档树、工具栏和主内容区切换。"""
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot, QSettings
+from PySide6.QtCore import Qt, Slot, QSettings, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QStatusBar,
     QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton,
-    QFileDialog, QMessageBox, QTabWidget, QComboBox,
-    QToolButton, QMenu,
+    QFileDialog, QMessageBox, QTabWidget,
+    QToolButton, QMenu, QWidgetAction,
 )
 
 from resources.icons import get_icon, set_button_icon
@@ -53,6 +53,8 @@ class MainWindow(QMainWindow):
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
         self._sidebar_visible = True
+        self._sidebar_width = 280  # 侧栏展开时宽度 (px)，拖拽分栏时动态更新
+        self._current_project_path: str | None = None  # 当前项目路径，用于菜单✓标记
 
         # 最近项目列表持久化
         self._settings = QSettings("doc-kit", "doc-kit-ui")
@@ -104,48 +106,50 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._splitter, 1)
 
     def _toggle_sidebar(self):
-        """切换侧栏显示/隐藏。"""
+        """切换侧栏显示/隐藏 — 带动态缩放动画。"""
         self._sidebar_visible = not self._sidebar_visible
-        self.doc_tree.setVisible(self._sidebar_visible)
         self._sidebar_btn.setIcon(get_icon("sidebar-hidden" if not self._sidebar_visible else "sidebar-visible"))
         self._sidebar_btn.setToolTip("显示侧栏" if not self._sidebar_visible else "隐藏侧栏")
+
+        # 同时对 minimumWidth 和 maximumWidth 做动画，
+        # QSplitter 会自动跟随约束变化分配空间，不受 setMinimumWidth 限制。
+        if self._sidebar_visible:
+            # 展开：从 0 → 目标宽度
+            start_w, end_w = 0, self._sidebar_width
+        else:
+            # 收起：从当前实际宽度 → 0，并保存供下次展开使用
+            self._sidebar_width = self.doc_tree.width()
+            start_w, end_w = self._sidebar_width, 0
+
+        anim_min = QPropertyAnimation(self.doc_tree, b"minimumWidth", self)
+        anim_min.setDuration(250)
+        anim_min.setStartValue(start_w)
+        anim_min.setEndValue(end_w)
+        anim_min.setEasingCurve(QEasingCurve.OutCubic)
+
+        anim_max = QPropertyAnimation(self.doc_tree, b"maximumWidth", self)
+        anim_max.setDuration(250)
+        anim_max.setStartValue(start_w)
+        anim_max.setEndValue(end_w)
+        anim_max.setEasingCurve(QEasingCurve.OutCubic)
+
+        group = QParallelAnimationGroup(self)
+        group.addAnimation(anim_min)
+        group.addAnimation(anim_max)
+
+        def _on_finish():
+            """展开完毕恢复可拖拽约束；收起时保持约束 0，已无需 setVisible。"""
+            if self._sidebar_visible:
+                self.doc_tree.setMinimumWidth(180)
+                self.doc_tree.setMaximumWidth(500)
+
+        group.finished.connect(_on_finish)
+        group.start()
 
     def _setup_toolbar(self):
         """搭建全局工具栏 — 侧栏切换 + 最近项目 + 快捷操作。"""
         toolbar = self.addToolBar("全局工具栏")
         toolbar.setMovable(False)
-        toolbar.setStyleSheet("""
-            QToolBar {
-                background: #f5f5f5;
-                border-bottom: 1px solid #d0d0d0;
-                padding: 2px 4px;
-                spacing: 6px;
-            }
-            QToolButton {
-                border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QToolButton:hover {
-                background: #e0e0e0;
-                border-color: #c0c0c0;
-            }
-            QToolButton:checked {
-                background: #d0d0d0;
-                border-color: #a0a0a0;
-            }
-            QComboBox {
-                border: 1px solid #c0c0c0;
-                border-radius: 4px;
-                padding: 3px 6px;
-                background: white;
-                min-width: 200px;
-            }
-            QLabel {
-                color: #555;
-                font-size: 12px;
-            }
-        """)
 
         # 侧栏切换按钮
         self._sidebar_btn = QToolButton()
@@ -158,19 +162,17 @@ class MainWindow(QMainWindow):
 
         # 分隔线
         sep = QLabel("|")
-        sep.setStyleSheet("color: #ccc; padding: 0 2px;")
         toolbar.addWidget(sep)
 
-        # 最近项目
-        label = QLabel("  最近项目 ")
-        toolbar.addWidget(label)
-
-        self._recent_combo = QComboBox()
-        self._recent_combo.setMinimumWidth(250)
-        self._recent_combo.setPlaceholderText("选择最近打开的项目...")
-        self._recent_combo.currentIndexChanged.connect(self._on_recent_selected)
-        self._refresh_recent_combo()
-        toolbar.addWidget(self._recent_combo)
+        # 项目选择按钮（弹出菜单 = 打开项目 + 最近项目列表）
+        self._recent_btn = QToolButton()
+        self._recent_btn.setText(" 选择最近打开的项目... ")
+        self._recent_btn.setIcon(get_icon("folder"))
+        self._recent_btn.setToolTip("打开项目或选择最近的项目")
+        self._recent_btn.setPopupMode(QToolButton.InstantPopup)
+        self._recent_btn.setMinimumWidth(250)
+        self._refresh_recent_menu()
+        toolbar.addWidget(self._recent_btn)
 
         toolbar.addSeparator()
 
@@ -209,14 +211,60 @@ class MainWindow(QMainWindow):
         self._check_btn.clicked.connect(self._on_check)
         toolbar.addWidget(self._check_btn)
 
-    def _refresh_recent_combo(self):
-        """刷新最近项目下拉列表。"""
-        self._recent_combo.blockSignals(True)
-        self._recent_combo.clear()
-        for path in self._recent_projects:
-            name = Path(path).name
-            self._recent_combo.addItem(get_icon("folder"), f"  {name}", path)
-        self._recent_combo.blockSignals(False)
+    def _refresh_recent_menu(self):
+        """重建最近项目弹出菜单 — QToolButton 弹出式。"""
+        menu = QMenu(self)
+
+        # 顶部固定项：打开项目
+        open_act = menu.addAction(get_icon("plus"), " 打开项目...")
+        open_act.triggered.connect(self._on_open_project)
+
+        menu.addSeparator()
+
+        # 清理不存在的项目路径，并持久化
+        alive = [p for p in self._recent_projects if Path(p).exists()]
+        changed = len(alive) < len(self._recent_projects)
+        self._recent_projects = alive
+        if changed:
+            self._save_recent_projects()
+
+        # 最近项目列表
+        for path_str in self._recent_projects:
+            project_path = Path(path_str)
+            name = project_path.name
+            is_current = (path_str == self._current_project_path)
+
+            action = QWidgetAction(self)
+            widget = QWidget()
+            h_layout = QHBoxLayout(widget)
+            h_layout.setContentsMargins(8, 4, 8, 4)
+            h_layout.setSpacing(8)
+
+            v_layout = QVBoxLayout()
+            v_layout.setSpacing(1)
+            name_label = QLabel(name)
+            name_label.setStyleSheet("font-weight: bold;")
+            path_label = QLabel(path_str)
+            path_label.setStyleSheet("color: gray; font-size: 11px;")
+            v_layout.addWidget(name_label)
+            v_layout.addWidget(path_label)
+            h_layout.addLayout(v_layout, 1)
+
+            if is_current:
+                check_label = QLabel()
+                check_label.setPixmap(get_icon("check").pixmap(16, 16))
+                check_label.setFixedWidth(20)
+                h_layout.addWidget(check_label)
+
+            action.setDefaultWidget(widget)
+            action.triggered.connect(lambda checked, p=project_path: self.load_project(p))
+            menu.addAction(action)
+
+        if not self._recent_projects:
+            empty_act = menu.addAction("  (暂无最近项目)")
+            empty_act.setEnabled(False)
+
+        self._recent_btn.setMenu(menu)
 
     def _save_recent_projects(self):
         """持久化最近项目列表。"""
@@ -229,24 +277,6 @@ class MainWindow(QMainWindow):
         self._recent_projects.insert(0, path_str)
         self._recent_projects = self._recent_projects[:self.MAX_RECENT]
         self._save_recent_projects()
-        self._refresh_recent_combo()
-
-    @Slot(int)
-    def _on_recent_selected(self, index: int):
-        """从最近列表选择项目 → 加载。"""
-        if index < 0:
-            return
-        path_str = self._recent_combo.itemData(index)
-        if not path_str:
-            return
-        project_root = Path(path_str)
-        if not project_root.exists():
-            QMessageBox.warning(self, "项目不存在", f"目录已移动或删除:\n{project_root}")
-            self._recent_projects.pop(index)
-            self._save_recent_projects()
-            self._refresh_recent_combo()
-            return
-        self.load_project(project_root)
 
     def _setup_menu(self):
         """搭建菜单栏。"""
@@ -326,6 +356,9 @@ class MainWindow(QMainWindow):
         self._push_recent_project(project_root)
 
         self._project_root = project_root
+        self._current_project_path = str(project_root.resolve())
+        self._recent_btn.setText(f" {project_root.name} ")
+        self._refresh_recent_menu()
         index_path = kit_dir / "index.json"
         self._index = IndexManager(index_path)
 

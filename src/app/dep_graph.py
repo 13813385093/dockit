@@ -18,13 +18,17 @@ class DepGraphPanel(QWidget):
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
 
+        self._build_ui()
+        # 无信号绑定
+
+    # ── 布局搭建 ──────────────────────────────────────────
+    def _build_ui(self):
+        """搭建静态布局。"""
         layout = QVBoxLayout(self)
         title = QLabel("依赖关系")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
 
         hint = QLabel("从文档树选择文档后切换到此面板查看详情。当前为列表模式。")
-        hint.setStyleSheet("color: gray; margin-bottom: 8px;")
         layout.addWidget(hint)
 
         fwd_group = QGroupBox("依赖 (depends_on)")

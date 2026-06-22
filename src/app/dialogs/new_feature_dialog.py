@@ -19,26 +19,27 @@ class NewFeatureDialog(QDialog):
         self.setWindowTitle("新建功能")
         self.setMinimumWidth(420)
 
+        self._build_ui()
+        self._connect_signals()
+
+    # ── 布局搭建 ──────────────────────────────────────────
+    def _build_ui(self):
+        """搭建静态布局，不含信号绑定。"""
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel("在指定模块下创建一个新的功能，包含功能级文档。"))
 
         form = QFormLayout()
-
-        # 模块选择
         self._module_combo = QComboBox()
         self._module_combo.setPlaceholderText("选择所属模块...")
         self._populate_modules()
         form.addRow("所属模块:", self._module_combo)
 
-        # 功能名称
         self._feature_edit = QLineEdit()
         self._feature_edit.setPlaceholderText("如: voltage-protection、user-login")
         form.addRow("功能名称:", self._feature_edit)
-
         layout.addLayout(form)
 
-        # 文档选项
         options_group = QGroupBox("创建以下文档：")
         options_layout = QVBoxLayout(options_group)
         self._ck_feature_design = QCheckBox("feature-design.md (功能设计 — 推荐)")
@@ -53,10 +54,14 @@ class NewFeatureDialog(QDialog):
         options_layout.addWidget(self._ck_acceptance_test)
         layout.addWidget(options_group)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._validate)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addWidget(self._buttons)
+
+    # ── 信号绑定 ──────────────────────────────────────────
+    def _connect_signals(self):
+        """绑定信号槽，不含布局代码。"""
+        self._buttons.accepted.connect(self._validate)
+        self._buttons.rejected.connect(self.reject)
 
     def _populate_modules(self):
         """从 index 加载模块列表。"""

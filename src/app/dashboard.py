@@ -18,15 +18,10 @@ class StatCard(QFrame):
     def __init__(self, title: str, value: str, color: str = "#333", parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet(f"""
-            StatCard {{ background: {color}; border-radius: 8px; padding: 12px; }}
-        """)
         layout = QVBoxLayout(self)
         self._value = QLabel(value)
-        self._value.setStyleSheet("font-size: 28px; font-weight: bold; color: white;")
         self._value.setAlignment(Qt.AlignCenter)
         title_label = QLabel(title)
-        title_label.setStyleSheet("font-size: 12px; color: rgba(255,255,255,0.8);")
         title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._value)
         layout.addWidget(title_label)
@@ -40,10 +35,15 @@ class DashboardPanel(QWidget):
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
 
+        self._build_ui()
+        self._connect_signals()
+
+    # ── 布局搭建 ──────────────────────────────────────────
+    def _build_ui(self):
+        """搭建静态布局，不含信号绑定。"""
         layout = QVBoxLayout(self)
 
         title = QLabel("项目仪表盘")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 8px;")
         layout.addWidget(title)
 
         self._stats_layout = QHBoxLayout()
@@ -73,10 +73,14 @@ class DashboardPanel(QWidget):
 
         self._refresh_btn = QPushButton(" 重新检查")
         set_button_icon(self._refresh_btn, "refresh")
-        self._refresh_btn.clicked.connect(self._refresh)
         layout.addWidget(self._refresh_btn)
 
         layout.addStretch()
+
+    # ── 信号绑定 ──────────────────────────────────────────
+    def _connect_signals(self):
+        """绑定信号槽，不含布局代码。"""
+        self._refresh_btn.clicked.connect(self._refresh)
 
     def load_project(self, project_root: Path, index: IndexManager):
         self._project_root = project_root

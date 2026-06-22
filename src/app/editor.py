@@ -82,7 +82,6 @@ class DocEditor(QWidget):
         # 标题 + frontmatter 开关
         header_layout = QHBoxLayout()
         self._title = QLabel("请从左侧文档树选择一份文档")
-        self._title.setStyleSheet("font-size: 16px; font-weight: bold; margin: 4px;")
         header_layout.addWidget(self._title)
         header_layout.addStretch()
 
@@ -91,11 +90,6 @@ class DocEditor(QWidget):
         self._fm_toggle.setChecked(False)
         self._fm_toggle.setIcon(get_icon("panel-hidden"))
         self._fm_toggle.setToolTip("展开 Frontmatter")
-        self._fm_toggle.setStyleSheet(
-            "QToolButton { border: 1px solid #ccc; border-radius: 4px; padding: 4px 6px; }"
-            "QToolButton:hover { background: #e0e0e0; }"
-            "QToolButton:checked { background: #e8e8e8; border-color: #999; }"
-        )
         self._fm_toggle.toggled.connect(self._toggle_frontmatter)
         header_layout.addWidget(self._fm_toggle)
         layout.addLayout(header_layout)

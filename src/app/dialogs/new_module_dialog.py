@@ -20,19 +20,22 @@ class NewModuleDialog(QDialog):
         self.setWindowTitle("新建模块")
         self.setMinimumWidth(420)
 
+        self._build_ui()
+        self._connect_signals()
+
+    # ── 布局搭建 ──────────────────────────────────────────
+    def _build_ui(self):
+        """搭建静态布局，不含信号绑定。"""
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel("创建一个新的业务模块，包含默认文档骨架。"))
 
         form = QFormLayout()
-
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("如: data-storage、iec61850")
         form.addRow("模块名称:", self._name_edit)
 
-        # 子模块选项
         self._sub_check = QCheckBox("创建为子模块")
-        self._sub_check.toggled.connect(self._on_sub_toggled)
         form.addRow(self._sub_check)
 
         self._parent_combo = QComboBox()
@@ -40,10 +43,8 @@ class NewModuleDialog(QDialog):
         self._parent_combo.setPlaceholderText("选择父模块...")
         self._populate_parent_modules()
         form.addRow("父模块:", self._parent_combo)
-
         layout.addLayout(form)
 
-        # 文档选项
         options_group = QGroupBox("创建以下文档：")
         options_layout = QVBoxLayout(options_group)
         self._ck_module_design = QCheckBox("module-design.md (复合类型 — 推荐)")
@@ -60,11 +61,15 @@ class NewModuleDialog(QDialog):
         options_layout.addWidget(self._ck_integration)
         layout.addWidget(options_group)
 
-        # 按钮
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._validate)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addWidget(self._buttons)
+
+    # ── 信号绑定 ──────────────────────────────────────────
+    def _connect_signals(self):
+        """绑定信号槽，不含布局代码。"""
+        self._sub_check.toggled.connect(self._on_sub_toggled)
+        self._buttons.accepted.connect(self._validate)
+        self._buttons.rejected.connect(self.reject)
 
     def _populate_parent_modules(self):
         """从 index 加载已有模块列表。"""

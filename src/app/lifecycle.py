@@ -21,24 +21,27 @@ class LifecyclePanel(QWidget):
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
 
+        self._build_ui()
+        self._connect_signals()
+
+    # ── 布局搭建 ──────────────────────────────────────────
+    def _build_ui(self):
+        """搭建静态布局，不含信号绑定。"""
         layout = QVBoxLayout(self)
 
         title = QLabel("生命周期管理")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
 
         hint = QLabel("管理文档的 active -> deprecated -> archived 生命周期转换。")
-        hint.setStyleSheet("color: gray; margin-bottom: 8px;")
         layout.addWidget(hint)
 
         dep_group = QGroupBox("已废弃文档 (可归档)")
         dep_layout = QVBoxLayout(dep_group)
         self._dep_list = QListWidget()
         dep_layout.addWidget(self._dep_list)
-        archive_btn = QPushButton(" 归档选中项")
-        set_button_icon(archive_btn, "archive")
-        archive_btn.clicked.connect(self._on_archive_selected)
-        dep_layout.addWidget(archive_btn)
+        self._archive_btn = QPushButton(" 归档选中项")
+        set_button_icon(self._archive_btn, "archive")
+        dep_layout.addWidget(self._archive_btn)
         layout.addWidget(dep_group)
 
         arch_group = QGroupBox("已归档")
@@ -46,6 +49,11 @@ class LifecyclePanel(QWidget):
         self._arch_list = QListWidget()
         arch_layout.addWidget(self._arch_list)
         layout.addWidget(arch_group)
+
+    # ── 信号绑定 ──────────────────────────────────────────
+    def _connect_signals(self):
+        """绑定信号槽，不含布局代码。"""
+        self._archive_btn.clicked.connect(self._on_archive_selected)
 
     def load_project(self, project_root: Path, index: IndexManager):
         self._project_root = project_root

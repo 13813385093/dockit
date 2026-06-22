@@ -21,10 +21,15 @@ class SettingsPanel(QWidget):
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
 
+        self._build_ui()
+        # 无信号绑定
+
+    # ── 布局搭建 ──────────────────────────────────────────
+    def _build_ui(self):
+        """搭建静态布局。"""
         layout = QVBoxLayout(self)
 
         title = QLabel("项目设置")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
 
         info_group = QGroupBox("项目信息")

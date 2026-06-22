@@ -31,7 +31,6 @@ class DocTreePanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
 
         label = QLabel(" 文档导航")
-        label.setStyleSheet("font-weight: bold; padding: 4px;")
         layout.addWidget(label)
 
         self.tree = QTreeWidget()
