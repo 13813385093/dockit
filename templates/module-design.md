@@ -10,8 +10,7 @@ contains:
   - domain_model
   - module_manifest
   - integration
-depends_on:
-$depends_on_yaml
+depends_on: []
 ---
 
 # 模块设计

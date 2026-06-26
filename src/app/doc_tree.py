@@ -9,8 +9,8 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QWidget,
-    QVBoxLayout, QLabel, QMenu, QMessageBox,
-    QInputDialog,
+    QVBoxLayout, QHBoxLayout, QLabel, QMenu, QMessageBox,
+    QInputDialog, QToolButton,
 )
 
 from resources.icons import get_icon
@@ -18,6 +18,14 @@ from src.engine.index import IndexManager, IndexEntry
 from src.engine.registry import Registry
 from src.engine.frontmatter import FrontmatterParser
 from src.engine.commands.new_utils import render_template, resolve_path
+from src.engine.validation import parse_module_path
+
+# 树节点角色常量（存储在 Qt.UserRole + 1）
+_NODE_FILE = "file"
+_NODE_MODULE = "module"
+_NODE_TOP_FOLDER = "top_folder"
+_NODE_FEATURES_FOLDER = "features_folder"
+_NODE_FEATURE = "feature"
 
 
 class DocTreePanel(QWidget):
@@ -37,8 +45,25 @@ class DocTreePanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
         label = QLabel(" 文档导航")
-        layout.addWidget(label)
+        title_layout.addWidget(label)
+        title_layout.addStretch()
+
+        refresh_btn = QToolButton()
+        refresh_btn.setIcon(get_icon("refresh-cw"))
+        refresh_btn.setToolTip("刷新文档树")
+        refresh_btn.clicked.connect(self._refresh_tree)
+        title_layout.addWidget(refresh_btn)
+
+        collapse_btn = QToolButton()
+        collapse_btn.setIcon(get_icon("folder-minus"))
+        collapse_btn.setToolTip("折叠所有节点")
+        collapse_btn.clicked.connect(self._collapse_all)
+        title_layout.addWidget(collapse_btn)
+
+        layout.addLayout(title_layout)
 
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
@@ -46,6 +71,15 @@ class DocTreePanel(QWidget):
         self.tree.customContextMenuRequested.connect(self._on_context_menu)
         self.tree.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.tree)
+
+    def _refresh_tree(self):
+        """刷新文档树 — 重新加载。"""
+        if self._project_root and self._index:
+            self.load_project(self._project_root, self._index)
+
+    def _collapse_all(self):
+        """折叠所有树节点。"""
+        self.tree.collapseAll()
 
     def load_project(self, project_root: Path, index: IndexManager):
         """从 index 重建文档树。"""
@@ -69,6 +103,7 @@ class DocTreePanel(QWidget):
             charter_item = QTreeWidgetItem(self.tree, ["顶层文档"])
             charter_item.setIcon(0, get_icon("folder"))
             charter_item.setFlags(charter_item.flags() & ~Qt.ItemIsSelectable)
+            charter_item.setData(0, Qt.UserRole + 1, _NODE_TOP_FOLDER)
             for e in modules["project-charter"]:
                 self._add_file_item(charter_item, e)
 
@@ -77,9 +112,29 @@ class DocTreePanel(QWidget):
             if mod_name == "project-charter":
                 continue
             item_text = mod_name
-            mod_item = QTreeWidgetItem(self.tree, [item_text])
-            mod_item.setIcon(0, get_icon("module"))
+            # 子模块（带点号）→ 创建嵌套节点
+            if "." in mod_name:
+                main_module, sub_path = parse_module_path(mod_name)
+                sub_name = sub_path.split("/")[-1] if sub_path else mod_name
+                # 查找或创建父模块节点
+                parent_item = None
+                for i in range(self.tree.topLevelItemCount()):
+                    if self.tree.topLevelItem(i).text(0) == main_module:
+                        parent_item = self.tree.topLevelItem(i)
+                        break
+                if parent_item is None:
+                    parent_item = QTreeWidgetItem(self.tree, [main_module])
+                    parent_item.setIcon(0, get_icon("grid"))
+                    parent_item.setFlags(parent_item.flags() & ~Qt.ItemIsSelectable)
+                    parent_item.setData(0, Qt.UserRole + 1, _NODE_MODULE)
+                    parent_item.setData(0, Qt.UserRole + 2, main_module)
+                mod_item = QTreeWidgetItem(parent_item, [sub_name])
+            else:
+                mod_item = QTreeWidgetItem(self.tree, [item_text])
+            mod_item.setIcon(0, get_icon("grid"))
             mod_item.setFlags(mod_item.flags() & ~Qt.ItemIsSelectable)
+            mod_item.setData(0, Qt.UserRole + 1, _NODE_MODULE)
+            mod_item.setData(0, Qt.UserRole + 2, mod_name)
 
             # 将条目分为模块级文件和功能级文件
             module_files = []
@@ -107,11 +162,13 @@ class DocTreePanel(QWidget):
                 feat_folder = QTreeWidgetItem(mod_item, ["features"])
                 feat_folder.setIcon(0, get_icon("folder"))
                 feat_folder.setFlags(feat_folder.flags() & ~Qt.ItemIsSelectable)
+                feat_folder.setData(0, Qt.UserRole + 1, _NODE_FEATURES_FOLDER)
 
                 for feat_name in sorted(features.keys()):
                     feat_item = QTreeWidgetItem(feat_folder, [feat_name])
                     feat_item.setIcon(0, get_icon("module"))
                     feat_item.setFlags(feat_item.flags() & ~Qt.ItemIsSelectable)
+                    feat_item.setData(0, Qt.UserRole + 1, _NODE_FEATURE)
                     for e in features[feat_name]:
                         self._add_file_item(feat_item, e)
                     feat_item.setExpanded(True)
@@ -128,15 +185,21 @@ class DocTreePanel(QWidget):
         else:
             label = Path(entry.path).name
         item = QTreeWidgetItem(parent, [label])
-        item.setIcon(0, get_icon("file"))
         item.setData(0, Qt.UserRole, entry.path)
+        item.setData(0, Qt.UserRole + 1, _NODE_FILE)
 
-        if entry.status == "deprecated":
+        if entry.status == "active":
+            item.setIcon(0, get_icon("file-text"))
+        elif entry.status == "invalid":
+            item.setIcon(0, get_icon("file"))
+        elif entry.status == "deprecated":
             item.setForeground(0, Qt.gray)
             item.setIcon(0, get_icon("warning"))
         elif entry.status == "archived":
             item.setForeground(0, Qt.lightGray)
             item.setIcon(0, get_icon("archive"))
+        else:
+            item.setIcon(0, get_icon("file"))
 
     def _on_item_clicked(self, item, column):
         """单击展开/收起文件夹，单击文件打开文档。"""
@@ -156,25 +219,17 @@ class DocTreePanel(QWidget):
         context_path = item.data(0, Qt.UserRole)
         path = item.data(0, Qt.UserRole)  # None for folder/module nodes
 
-        # 判断节点类型
-        parent = item.parent()
-        text = item.text(0)
-        is_top_folder = (path is None and parent is None and text == "顶层文档")
-        is_features_folder = (path is None and parent is not None and text == "features")
-        is_feature_node = (path is None and parent is not None and parent.text(0) == "features" and text != "features")
-        is_module_node = (path is None and parent is None and text not in ("顶层文档", "features"))
-        is_file_node = path is not None
+        # 通过节点角色判断类型（建树时已通过 setData 标记）
+        node_type = item.data(0, Qt.UserRole + 1)
+        is_file_node = (node_type == _NODE_FILE)
+        is_module_node = (node_type == _NODE_MODULE)
+        is_feature_node = (node_type == _NODE_FEATURE)
+        is_top_folder = (node_type == _NODE_TOP_FOLDER)
+        is_features_folder = (node_type == _NODE_FEATURES_FOLDER)
 
-        # 提取模块/功能名
-        module_name = None
-        feature_name = None
-        if is_module_node:
-            module_name = text
-        elif is_feature_node:
-            module_name = parent.parent().text(0)
-            feature_name = text
-        elif is_features_folder:
-            module_name = parent.text(0)
+        # 提取模块/功能名（从存储的数据取，避免 text 推断）
+        module_name = item.data(0, Qt.UserRole + 2) if is_module_node else None
+        feature_name = text if is_feature_node else None
 
         menu = QMenu(self)
 
@@ -272,6 +327,25 @@ class DocTreePanel(QWidget):
 
             menu.addSeparator()
 
+            # 启用/不启用切换（仅 active/invalid 状态可用）
+            entry = self._index.get_entry(path) if self._index else None
+            current_status = entry.status if entry else ""
+            if current_status == "active":
+                toggle_label = " 不启用此文档"
+                toggle_icon = get_icon("zap-off")
+                toggle_enabled = True
+            elif current_status == "invalid":
+                toggle_label = " 启用此文档"
+                toggle_icon = get_icon("zap")
+                toggle_enabled = True
+            else:
+                toggle_label = " 启用/不启用此文档"
+                toggle_icon = get_icon("zap")
+                toggle_enabled = False
+            toggle_act = menu.addAction(toggle_icon, toggle_label)
+            toggle_act.setEnabled(toggle_enabled)
+            toggle_act.triggered.connect(lambda: self._toggle_enable_doc(item))
+
             deprecate = menu.addAction(" 废弃此文档")
             deprecate.setIcon(get_icon("warning"))
             deprecate.triggered.connect(lambda: self._deprecate_doc(item))
@@ -282,8 +356,12 @@ class DocTreePanel(QWidget):
         menu.exec(self.tree.mapToGlobal(pos))
 
     def _get_module_path(self, module_name: str) -> Path:
-        """获取模块文件夹路径。"""
-        return (self._project_root / "ProjectSpec" / module_name).resolve()
+        """获取模块文件夹路径（支持子模块名如 Evaluate.Sybase）。"""
+        main_module, sub_path = parse_module_path(module_name)
+        path = self._project_root / "ProjectSpec" / f"module-{main_module}"
+        if sub_path:
+            path = path / sub_path
+        return path.resolve()
 
     def _get_feature_path(self, module_name: str, feature_name: str) -> Path:
         """获取功能文件夹路径。"""
@@ -293,7 +371,7 @@ class DocTreePanel(QWidget):
         """重命名模块：重命名文件夹 + 更新 index。"""
         if not self._project_root or not self._index:
             return
-        old_name = item.text(0)
+        old_name = item.data(0, Qt.UserRole + 2) or item.text(0)
         new_name, ok = QInputDialog.getText(self, "重命名模块", "新名称:", text=old_name)
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
@@ -312,11 +390,11 @@ class DocTreePanel(QWidget):
             return
 
         # 更新 index 中所有相关条目的 path 和 module
-        old_prefix = f"ProjectSpec/{old_name}"
-        new_prefix = f"ProjectSpec/{new_name}"
+        old_rel = str(old_path.relative_to(self._project_root)).replace("\\", "/")
+        new_rel = str(new_path.relative_to(self._project_root)).replace("\\", "/")
         for entry in self._index.list_entries():
-            if entry.path.startswith(old_prefix + "/") or entry.path == old_prefix or f"/{old_name}/" in entry.path:
-                entry.path = entry.path.replace(old_prefix, new_prefix, 1)
+            if entry.path.startswith(old_rel + "/") or entry.path == old_rel:
+                entry.path = entry.path.replace(old_rel, new_rel, 1)
             if entry.module == old_name:
                 entry.module = new_name
         self._index.save()
@@ -364,7 +442,7 @@ class DocTreePanel(QWidget):
         """删除模块：删除文件夹 + 清除 index。"""
         if not self._project_root or not self._index:
             return
-        module_name = item.text(0)
+        module_name = item.data(0, Qt.UserRole + 2) or item.text(0)
         reply = QMessageBox.question(
             self, "确认删除",
             f"确定要删除模块「{module_name}」及其所有文档吗？\n此操作不可撤销。",
@@ -473,7 +551,6 @@ class DocTreePanel(QWidget):
         if not self._project_root or not self._index:
             return
         from src.app.dialogs.new_feature_dialog import NewFeatureDialog
-        from src.engine.deps import derive_initial_depends_on
         from src.engine.commands.new_utils import render_template, resolve_path
         from src.engine.registry import Registry
         from src.engine.index import IndexEntry
@@ -498,9 +575,7 @@ class DocTreePanel(QWidget):
             target_path = resolve_path(project_docs, doc_type_def, module_name, feature_name)
             if target_path.exists():
                 continue
-            depends_on = derive_initial_depends_on(
-                doc_type_def, module_name, self._index, project_docs
-            )
+            depends_on: list[dict] = []
             try:
                 content = render_template(
                     doc_type_def.template, module_name, feature_name,
@@ -545,7 +620,6 @@ class DocTreePanel(QWidget):
             return
 
         from src.app.dialogs.new_module_dialog import NewModuleDialog
-        from src.engine.deps import derive_initial_depends_on
         from src.engine.commands.new_utils import render_template, resolve_path
         from src.engine.registry import Registry
         from src.engine.index import IndexEntry
@@ -572,9 +646,7 @@ class DocTreePanel(QWidget):
             target_path = resolve_path(project_docs, doc_type_def, module_path, None)
             if target_path.exists():
                 continue
-            depends_on = derive_initial_depends_on(
-                doc_type_def, module_path, self._index, project_docs
-            )
+            depends_on: list[dict] = []
             try:
                 content = render_template(
                     doc_type_def.template, module_path, None,
@@ -624,3 +696,38 @@ class DocTreePanel(QWidget):
         if not path or not self._project_root:
             return
         QMessageBox.information(self, "归档文档", f"归档: {path}\n此功能待实现")
+
+    def _toggle_enable_doc(self, item):
+        """切换文档的启用/不启用状态（active ↔ invalid）。"""
+        path = item.data(0, Qt.UserRole)
+        if not path or not self._project_root or not self._index:
+            return
+        full_path = self._project_root / path
+        entry = self._index.get_entry(path)
+        if not entry:
+            return
+
+        # 切换状态
+        new_status = "invalid" if entry.status == "active" else "active"
+
+        # 修改 frontmatter 文件
+        try:
+            meta, body = FrontmatterParser.read_file(full_path)
+            meta["status"] = new_status
+            FrontmatterParser.write_file(full_path, meta, body)
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"无法更新文件: {e}")
+            return
+
+        # 更新索引
+        entry.status = new_status
+        self._index.add_entry(entry)
+        self._index.save()
+
+        # 原地更新树节点图标（不重建整棵树，避免折叠）
+        if new_status == "active":
+            item.setIcon(0, get_icon("file-text"))
+        elif new_status == "invalid":
+            item.setIcon(0, get_icon("file"))
+        # 清除 status 相关的前景色（deprecated/archived 才设前景色）
+        item.setForeground(0, self.tree.palette().color(self.tree.foregroundRole()))

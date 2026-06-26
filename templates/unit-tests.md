@@ -6,8 +6,7 @@ level: feature
 version: 0.1.0
 last_updated: $now
 status: active
-depends_on:
-$depends_on_yaml
+depends_on: []
 ---
 
 # 单元测试

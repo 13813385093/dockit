@@ -320,7 +320,6 @@ class NewDocDialog(QDialog):
 
         # 计算目标路径并创建
         from src.engine.commands.new_utils import resolve_path, render_template
-        from src.engine.deps import derive_initial_depends_on
 
         actual_module = module or "project-charter"
         target_path = resolve_path(
@@ -331,11 +330,9 @@ class NewDocDialog(QDialog):
             QMessageBox.warning(self, "文件已存在", f"{target_path} 已存在")
             return
 
-        # 渲染
+        # 渲染 (depends_on 留空，由用户手动编辑)
         now = FrontmatterParser.now_iso()
-        depends_on = derive_initial_depends_on(
-            doc_type_def, actual_module, self._index, self._project_docs
-        )
+        depends_on: list[dict] = []
 
         try:
             content = render_template(

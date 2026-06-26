@@ -21,6 +21,7 @@ from src.app.settings import SettingsPanel
 from src.app.dialogs.init_dialog import InitDialog
 from src.engine.index import IndexManager, IndexEntry
 from src.engine.frontmatter import FrontmatterParser
+from src.engine.registry import Registry
 from src.engine.commands.init_utils import init_project
 
 
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
         # 当前项目状态
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
+        self._registry: Registry | None = None
         self._sidebar_visible = True
         self._sidebar_width = 280  # 侧栏展开时宽度 (px)，拖拽分栏时动态更新
         self._current_project_path: str | None = None  # 当前项目路径，用于菜单✓标记
@@ -110,6 +112,7 @@ class MainWindow(QMainWindow):
 
         # 编辑器保存后 → 自动 check + 刷新仪表盘
         self.editor.document_saved.connect(self._on_doc_saved)
+        self.editor.navigate_to_doc.connect(self._on_navigate_to_doc)
 
         self._splitter.setSizes([280, 1000])
         layout.addWidget(self._splitter, 1)
@@ -180,6 +183,13 @@ class MainWindow(QMainWindow):
         self._recent_btn.setFixedWidth(100)
         self._refresh_recent_menu()
         toolbar.addWidget(self._recent_btn)
+
+        # 保存按钮（放在项目选择右侧）
+        self._toolbar_save_btn = QToolButton()
+        self._toolbar_save_btn.setIcon(get_icon("save"))
+        self._toolbar_save_btn.setToolTip("保存 (Ctrl+S)")
+        self._toolbar_save_btn.clicked.connect(self._on_global_save)
+        toolbar.addWidget(self._toolbar_save_btn)
 
 
     def _refresh_recent_menu(self):
@@ -335,6 +345,10 @@ class MainWindow(QMainWindow):
         index_path = kit_dir / "index.json"
         self._index = IndexManager(index_path)
 
+        # 创建文档类型注册表
+        reg_path = kit_dir / "registry.yaml"
+        self._registry = Registry(reg_path) if reg_path.exists() else Registry()
+
         self.doc_tree.load_project(project_root, self._index)
         self.dashboard.load_project(project_root, self._index)
         self.dep_graph.load_project(project_root, self._index)
@@ -351,7 +365,27 @@ class MainWindow(QMainWindow):
             return
         full_path = self._project_root / rel_path
         if full_path.exists():
-            self.editor.open_document(full_path, rel_path, self._index)
+            self.editor.open_document(full_path, rel_path, self._index, self._registry)
+            self.tabs.setCurrentWidget(self.editor)
+
+    @Slot()
+    def _on_global_save(self):
+        """根据当前激活标签页调用对应的 save() 方法。"""
+        current = self.tabs.currentWidget()
+        save_fn = getattr(current, "save", None)
+        if save_fn:
+            save_fn()
+        else:
+            self.status.showMessage("当前标签页不支持保存", 3000)
+
+    @Slot()
+    def _on_navigate_to_doc(self, rel_path: str):
+        """跳转到依赖表中引用的目标文档。"""
+        if not self._project_root:
+            return
+        full_path = self._project_root / rel_path
+        if full_path.exists():
+            self.editor.open_document(full_path, rel_path, self._index, self._registry)
             self.tabs.setCurrentWidget(self.editor)
 
     @Slot()
@@ -381,7 +415,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先打开一个项目")
             return
         from src.app.dialogs.new_module_dialog import NewModuleDialog
-        from src.engine.deps import derive_initial_depends_on
         from src.engine.commands.new_utils import render_template, resolve_path
         from src.engine.registry import Registry
         from src.engine.index import IndexEntry
@@ -405,9 +438,7 @@ class MainWindow(QMainWindow):
             target_path = resolve_path(project_docs, doc_type_def, module_path, None)
             if target_path.exists():
                 continue
-            depends_on = derive_initial_depends_on(
-                doc_type_def, module_path, self._index, project_docs
-            )
+            depends_on: list[dict] = []
             try:
                 content = render_template(
                     doc_type_def.template, module_path, None,
@@ -452,7 +483,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先打开一个项目")
             return
         from src.app.dialogs.new_feature_dialog import NewFeatureDialog
-        from src.engine.deps import derive_initial_depends_on
         from src.engine.commands.new_utils import render_template, resolve_path
         from src.engine.registry import Registry
         from src.engine.index import IndexEntry
@@ -477,9 +507,7 @@ class MainWindow(QMainWindow):
             target_path = resolve_path(project_docs, doc_type_def, module_name, feature_name)
             if target_path.exists():
                 continue
-            depends_on = derive_initial_depends_on(
-                doc_type_def, module_name, self._index, project_docs
-            )
+            depends_on: list[dict] = []
             try:
                 content = render_template(
                     doc_type_def.template, module_name, feature_name,

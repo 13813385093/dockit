@@ -78,7 +78,7 @@ def check_version_drift(
     """
     drifts: list[dict] = []
     for entry in index.list_entries():
-        for dep in entry.depends_on:
+        for dep in (entry.depends_on or []):
             dep_doc = dep.get("doc", "")
             dep_module = dep.get("module", "")
             dep_version = dep.get("version", "")
@@ -106,7 +106,7 @@ def find_reverse_dependencies(target_path: str, index: IndexManager) -> list[Ind
     target_name = Path(target_path).name
     results: list[IndexEntry] = []
     for entry in index.list_entries():
-        for dep in entry.depends_on:
+        for dep in (entry.depends_on or []):
             dep_doc = dep.get("doc", "")
             if dep_doc == target_name:
                 results.append(entry)
@@ -121,7 +121,7 @@ def check_deprecated_deps(index: IndexManager) -> list[dict]:
     """
     results: list[dict] = []
     for entry in index.list_entries():
-        for dep in entry.depends_on:
+        for dep in (entry.depends_on or []):
             dep_doc = dep.get("doc", "")
             dep_module = dep.get("module", "")
 

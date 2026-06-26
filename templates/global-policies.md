@@ -5,13 +5,7 @@ level: top
 version: 0.1.0
 last_updated: $now
 status: active
-depends_on:
-  - doc: technical-framework.md
-    module: project-charter
-    version: "0.1.0"
-  - doc: technical-constraints.md
-    module: project-charter
-    version: "0.1.0"
+depends_on: []
 ---
 
 # 全局策略

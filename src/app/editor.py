@@ -2,13 +2,14 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence, QAction
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QMessageBox, QComboBox,
+    QTableWidgetItem, QMessageBox, QComboBox, QHeaderView,
     QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser,
-    QGroupBox, QToolButton, QSizePolicy,
+    QGroupBox, QToolButton, QSizePolicy, QMenu, QAbstractItemView,
+    QDialog, QDialogButtonBox,
 )
 
 import markdown
@@ -16,6 +17,7 @@ import markdown
 from resources.icons import get_icon, set_button_icon
 from src.engine.index import IndexManager
 from src.engine.frontmatter import FrontmatterParser
+from src.engine.registry import Registry
 from src.engine.validation import parse_version
 
 
@@ -41,21 +43,236 @@ class FrontmatterTable(QWidget):
 
         # status 下拉
         self._status = QComboBox()
-        self._status.addItems(["active", "deprecated", "archived"])
+        self._status.addItems(["active", "deprecated", "archived", "invalid"])
         layout.addRow("status:", self._status)
+
+
+class AddDependencyDialog(QDialog):
+    """模态对话框：选择文档来添加依赖，自动计算当前文档可依赖的候选文件。"""
+
+    def __init__(self, index: IndexManager, registry: Registry | None,
+                 current_rel_path: str = "", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("插入依赖项")
+        self._index = index
+        self._registry = registry
+        self._current_rel_path = current_rel_path
+        self._dep: dict | None = None
+
+        layout = QVBoxLayout(self)
+
+        # 版本标签预先创建，供 _populate_candidates 中的 _update_version 使用
+        self._version_label = QLabel("")
+
+        # 文档选择（显示中文描述）
+        layout.addWidget(QLabel("选择依赖文档:"))
+        self._doc_combo = QComboBox()
+        self._populate_candidates()
+        self._doc_combo.currentIndexChanged.connect(self._update_version)
+        layout.addWidget(self._doc_combo)
+
+        # 版本（自动填充）
+        layout.addWidget(QLabel("版本:"))
+        layout.addWidget(self._version_label)
+
+        # 按钮
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._validate)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _get_candidate_dirs(self) -> set[Path]:
+        """计算当前文档可依赖的候选目录：当前目录 + 第一个有文件的上级目录。"""
+        current_dir = Path(self._current_rel_path).parent
+        dirs = {current_dir}
+
+        parent = current_dir.parent
+        # 检查父目录下是否有直接文件
+        has_file = any(
+            Path(e.path).parent == parent
+            for e in self._index.list_entries()
+        )
+        if has_file:
+            dirs.add(parent)
+        else:
+            dirs.add(parent.parent)  # 跳过 features/sub-modules 等纯组织目录
+        return dirs
+
+    def _populate_candidates(self):
+        self._doc_combo.clear()
+        if not self._index:
+            return
+        candidate_dirs = self._get_candidate_dirs()
+        for e in self._index.list_entries():
+            if Path(e.path).parent in candidate_dirs and e.path != self._current_rel_path:
+                desc = Path(e.path).name
+                if self._registry:
+                    type_def = self._registry.get(e.doc_type)
+                    if type_def and type_def.description:
+                        desc = type_def.description
+                self._doc_combo.addItem(f"{desc}  ({Path(e.path).name})", e.path)
+        self._update_version()
+
+    def _update_version(self):
+        doc_path = self._doc_combo.currentData()
+        if doc_path:
+            entry = self._index.get_entry(doc_path)
+            self._version_label.setText(entry.version if entry else "")
+
+    def _validate(self):
+        if self._doc_combo.currentData() is None:
+            QMessageBox.warning(self, "错误", "请选择一个文档")
+            return
+        doc_path = self._doc_combo.currentData()
+        entry = self._index.get_entry(doc_path)
+        self._dep = {
+            "doc": doc_path,
+            "module": entry.module if entry else "",
+            "version": entry.version if entry else "0.1.0",
+        }
+        self.accept()
+
+    def get_dep(self) -> dict:
+        return self._dep or {}
 
 
 class DependsOnEditor(QWidget):
     """depends_on 列表编辑。"""
 
+    deps_changed = Signal(list)  # 依赖变更时发射，参数为新 deps 列表
+    jump_to_doc = Signal(str)     # 跳转到目标文档，参数为文档相对路径
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._deps: list[dict] = []
+        self._index: IndexManager | None = None
+        self._registry: Registry | None = None
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["doc", "module", "version"])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setHorizontalHeaderLabels(["文档", "所属模块", "版本"])
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        # Stretch 模式下各列平分剩余空间，但我们需要 3:3:1
+        # 因此前两列用 Stretch 等分，版本列用 ResizeToContents 自适应其内容宽度
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # 单元格只读
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows) # 整行选择
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 多选
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)         # 右键菜单
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.table)
+
+    def _find_entry(self, doc_path: str, dep_module: str = ""):
+        """通过文件名+模块名联合查找 index 中的文档，避免同名文件匹配错误。"""
+        entry = self._index.get_entry(doc_path) if self._index else None
+        if entry:
+            return entry
+        target_name = Path(doc_path).name
+        fallback = None
+        for e in (self._index.list_entries() if self._index else []):
+            if Path(e.path).name == target_name:
+                if dep_module and e.module == dep_module:
+                    return e  # 文件名+模块精确匹配 → 优先
+                if fallback is None:
+                    fallback = e  # 仅文件名匹配 → 回退
+        return fallback
+
+    def populate(self, deps, index, registry, current_rel_path=None):
+        """用依赖列表填充表格，doc 列显示 Registry 中的中文描述而非文件名。"""
+        self._deps = deps
+        self._index = index
+        self._registry = registry
+        if current_rel_path is not None:
+            self._current_rel_path = current_rel_path
+        self.table.setRowCount(len(deps))
+        for i, dep in enumerate(deps):
+            doc_path = str(dep.get("doc", ""))
+            module = str(dep.get("module", ""))
+            version = str(dep.get("version", ""))
+
+            # 从 Index 中查找该文档的 doc_type，再从 Registry 获取中文描述
+            desc = doc_path  # 默认回退为文件路径
+            if doc_path and index:
+                entry = index.get_entry(doc_path)
+                # depends_on 中的 doc 是裸文件名，而 index 的 key 是完整相对路径
+                if not entry:
+                    entry = self._find_entry(doc_path, module)
+                if entry and entry.doc_type and registry:
+                    type_def = registry.get(entry.doc_type)
+                    if type_def and type_def.description:
+                        desc = type_def.description
+
+            self.table.setItem(i, 0, QTableWidgetItem(desc))
+            self.table.setItem(i, 1, QTableWidgetItem(module))
+            self.table.setItem(i, 2, QTableWidgetItem(version))
+
+    def _on_context_menu(self, pos):
+        menu = QMenu(self)
+        jump_act = QAction(" 文档跳转", self)
+        jump_act.setIcon(get_icon("edit"))
+        menu.addAction(jump_act)
+        menu.addSeparator()
+        delete_act = QAction("删除依赖项", self)
+        insert_act = QAction("插入依赖项", self)
+        # 多行选中时插入置灰
+        selected_rows = len(set(idx.row() for idx in self.table.selectedIndexes()))
+        has_selection = selected_rows > 0
+        jump_act.setEnabled(has_selection)
+        delete_act.setEnabled(has_selection)
+        insert_act.setEnabled(selected_rows <= 1)
+        menu.addAction(delete_act)
+        menu.addAction(insert_act)
+        action = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if action == jump_act:
+            self._jump_to_doc()
+        elif action == delete_act:
+            self._delete_dependency()
+        elif action == insert_act:
+            self._insert_dependency()
+
+    def _delete_dependency(self):
+        rows = sorted(set(idx.row() for idx in self.table.selectedIndexes()), reverse=True)
+        if not rows:
+            return
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除选中的 {len(rows)} 行依赖吗？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        for row in rows:
+            self._deps.pop(row)
+        self.populate(self._deps, self._index, self._registry)
+        self.deps_changed.emit(self._deps)
+
+    def _insert_dependency(self):
+        row = self.table.currentRow()
+        dialog = AddDependencyDialog(self._index, self._registry, self._current_rel_path, self)
+        if dialog.exec():
+            new_dep = dialog.get_dep()
+            insert_pos = row + 1 if row >= 0 else len(self._deps)
+            self._deps.insert(insert_pos, new_dep)
+            self.populate(self._deps, self._index, self._registry)
+            self.deps_changed.emit(self._deps)
+
+
+    def _jump_to_doc(self):
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self._deps):
+            return
+        doc_path = self._deps[row].get("doc", "")
+        if not doc_path:
+            return
+        entry = self._index.get_entry(doc_path) if self._index else None
+        if not entry:
+            entry = self._find_entry(doc_path, self._deps[row].get("module", ""))
+        if entry:
+            self.jump_to_doc.emit(entry.path)
 
 
 class DocEditor(QWidget):
@@ -63,14 +280,17 @@ class DocEditor(QWidget):
 
     信号:
         document_saved(str): 保存后发射，参数为保存的文档相对路径。
+        navigate_to_doc(str): 跳转到目标文档，参数为文档相对路径。
     """
     document_saved = Signal(str)
+    navigate_to_doc = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_path: Path | None = None
         self._current_rel: str = ""
         self._index: IndexManager | None = None
+        self._registry: Registry | None = None
         self._meta: dict = {}
         self._body: str = ""
         self._fm_visible = False  # frontmatter 默认收起
@@ -102,9 +322,11 @@ class DocEditor(QWidget):
         fm_splitter = QSplitter(Qt.Horizontal)
         self._fm_table = FrontmatterTable()
         self._deps_editor = DependsOnEditor()
+        self._deps_editor.deps_changed.connect(self._on_deps_save)
+        self._deps_editor.jump_to_doc.connect(self.navigate_to_doc.emit)
         fm_splitter.addWidget(self._fm_table)
         fm_splitter.addWidget(self._deps_editor)
-        fm_splitter.setSizes([300, 300])
+        fm_splitter.setSizes([240, 360])  # 左侧:右侧 = 2:3
         fm_group_layout = QVBoxLayout(fm_group)
         fm_group_layout.addWidget(fm_splitter)
         fm_layout_inner.addWidget(fm_group)
@@ -123,24 +345,15 @@ class DocEditor(QWidget):
         self._setup_scroll_sync()
         layout.addWidget(body_splitter, 1)
 
-        # 工具栏
-        toolbar = QHBoxLayout()
-        self._save_btn = QPushButton(" 保存")
-        set_button_icon(self._save_btn, "save")
-        self._save_btn.clicked.connect(self._on_save)
-        self._validate_btn = QPushButton(" 校验")
-        set_button_icon(self._validate_btn, "check")
-        self._validate_btn.clicked.connect(self._on_validate)
-        toolbar.addWidget(self._save_btn)
-        toolbar.addWidget(self._validate_btn)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
-
         # Ctrl+S 快捷键
         self._shortcut_save = QShortcut(QKeySequence("Ctrl+S"), self)
         self._shortcut_save.activated.connect(self._on_save)
 
         self._set_editable(False)
+
+    def save(self):
+        """公开保存方法 — 供全局工具栏调用。"""
+        self._on_save()
 
     def _body_ratio_2_1(self, splitter: QSplitter):
         """设置编辑/预览比例为 2:1。"""
@@ -185,8 +398,6 @@ class DocEditor(QWidget):
     def _set_editable(self, enabled: bool):
         """切换编辑状态。"""
         self._body_edit.setReadOnly(not enabled)
-        self._save_btn.setEnabled(enabled)
-        self._validate_btn.setEnabled(enabled)
 
     def _update_preview(self):
         """将 Markdown 正文渲染为 HTML 更新预览面板。"""
@@ -220,11 +431,13 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         self._preview.setHtml(styled)
         preview_scroll.blockSignals(False)
 
-    def open_document(self, full_path: Path, rel_path: str, index: IndexManager):
+    def open_document(self, full_path: Path, rel_path: str, index: IndexManager, registry: Registry | None = None):
         """打开并加载文档。"""
         self._current_path = full_path
         self._current_rel = rel_path
         self._index = index
+        if registry is not None:
+            self._registry = registry
 
         try:
             self._meta, self._body = FrontmatterParser.read_file(full_path)
@@ -244,18 +457,27 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         if idx >= 0:
             self._fm_table._status.setCurrentIndex(idx)
 
-        # 填充 depends_on 表格
-        deps = self._meta.get("depends_on", [])
-        self._deps_editor.table.setRowCount(len(deps))
-        for i, dep in enumerate(deps):
-            self._deps_editor.table.setItem(i, 0, QTableWidgetItem(str(dep.get("doc", ""))))
-            self._deps_editor.table.setItem(i, 1, QTableWidgetItem(str(dep.get("module", ""))))
-            self._deps_editor.table.setItem(i, 2, QTableWidgetItem(str(dep.get("version", ""))))
+        # 填充 depends_on 表格（doc 列显示 Registry 中的中文描述）
+        deps = self._meta.get("depends_on") or []
+        self._deps_editor.populate(deps, self._index, self._registry, self._current_rel)
 
         # 填充正文
         self._body_edit.setPlainText(self._body)
         self._update_preview()
         self._set_editable(True)
+
+    @Slot()
+    def _on_deps_save(self, deps: list[dict]):
+        """依赖变更后：更新 meta → 写文件 → 更新索引。"""
+        if not self._current_path or not self._index:
+            return
+        self._meta["depends_on"] = deps
+        FrontmatterParser.write_file(self._current_path, self._meta, self._body)
+        # 重建索引并保存
+        project_root = self._current_path.parent.parent
+        self._index.rebuild(project_root / "ProjectSpec")
+        self._index.save()
+        self.document_saved.emit(self._current_rel)
 
     @Slot()
     def _on_save(self):
@@ -297,11 +519,3 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         QMessageBox.information(self, "保存", f"已保存: {self._current_rel}")
         self.document_saved.emit(self._current_rel)
 
-    @Slot()
-    def _on_validate(self):
-        """校验当前 frontmatter。"""
-        errors = FrontmatterParser.validate(self._meta)
-        if errors:
-            QMessageBox.warning(self, "校验失败", "\n".join(errors))
-        else:
-            QMessageBox.information(self, "校验通过", "frontmatter 格式正确")

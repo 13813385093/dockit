@@ -5,10 +5,7 @@ level: top
 version: 0.1.0
 last_updated: $now
 status: active
-depends_on:
-  - doc: business-context.md
-    module: project-charter
-    version: "0.1.0"
+depends_on: []
 ---
 
 # 干系人分析

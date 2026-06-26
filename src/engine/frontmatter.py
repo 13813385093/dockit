@@ -86,7 +86,7 @@ class FrontmatterParser:
 
         # Validate status if present
         status = meta.get("status")
-        valid_statuses = {"active", "deprecated", "archived"}
+        valid_statuses = {"active", "deprecated", "archived", "invalid"}
         if status and status not in valid_statuses:
             errors.append(f"Invalid status: '{status}' (must be one of: {', '.join(sorted(valid_statuses))})")
 

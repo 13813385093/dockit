@@ -11,8 +11,8 @@ contains:
   - decision_log
   - unit_test
   - acceptance_test
-depends_on:
-$depends_on_yaml
+depends_on: []
+---
 ---
 
 ## 功能设计
