@@ -14,14 +14,33 @@ from src.engine.index import IndexManager
 class NewModuleDialog(QDialog):
     """新建模块对话框。"""
 
-    def __init__(self, index: IndexManager | None = None, parent=None):
+    def __init__(self, index: IndexManager | None = None,
+                 parent=None, preset_parent: str | None = None,
+                 disable_sub_check: bool = False,
+                 preset_name: str | None = None):
         super().__init__(parent)
         self._index = index
+        self._preset_parent = preset_parent
+        self._disable_sub_check = disable_sub_check
+        self._preset_name = preset_name
         self.setWindowTitle("新建模块")
         self.setMinimumWidth(420)
 
         self._build_ui()
         self._connect_signals()
+
+        if self._preset_name:
+            self._name_edit.setText(self._preset_name)
+
+        if self._preset_parent:
+            self._sub_check.setChecked(True)
+            self._sub_check.setEnabled(False)
+            idx = self._parent_combo.findData(self._preset_parent)
+            if idx >= 0:
+                self._parent_combo.setCurrentIndex(idx)
+                self._parent_combo.setVisible(True)
+        elif self._disable_sub_check:
+            self._sub_check.setEnabled(False)
 
     # ── 布局搭建 ──────────────────────────────────────────
     def _build_ui(self):

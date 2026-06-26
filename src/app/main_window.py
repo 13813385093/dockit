@@ -7,10 +7,11 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QStatusBar,
     QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton,
     QFileDialog, QMessageBox, QTabWidget,
-    QToolButton, QMenu, QWidgetAction,
+    QFrame, QToolButton, QMenu, QWidgetAction,
 )
 
 from resources.icons import get_icon, set_button_icon
+from resources.styles import load_stylesheet
 from src.app.doc_tree import DocTreePanel
 from src.app.dashboard import DashboardPanel
 from src.app.editor import DocEditor
@@ -64,6 +65,14 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self._setup_toolbar()
         self._setup_status_bar()
+        load_stylesheet()
+
+        # 自动打开上次的项目
+        last_project = self._settings.value("last_project", None)
+        if last_project:
+            last_path = Path(last_project)
+            if last_path.exists():
+                self.load_project(last_path)
 
     # ── UI 搭建 ──────────────────────────────────────────────
 
@@ -161,62 +170,24 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self._sidebar_btn)
 
         # 分隔线
-        sep = QLabel("|")
-        toolbar.addWidget(sep)
+        toolbar.addSeparator()
 
         # 项目选择按钮（弹出菜单 = 打开项目 + 最近项目列表）
         self._recent_btn = QToolButton()
-        self._recent_btn.setText(" 选择最近打开的项目... ")
-        self._recent_btn.setIcon(get_icon("folder"))
+        self._recent_btn.setText(" 打开项目 ")
         self._recent_btn.setToolTip("打开项目或选择最近的项目")
         self._recent_btn.setPopupMode(QToolButton.InstantPopup)
-        self._recent_btn.setMinimumWidth(250)
+        self._recent_btn.setFixedWidth(100)
         self._refresh_recent_menu()
         toolbar.addWidget(self._recent_btn)
 
-        toolbar.addSeparator()
-
-        # 新建下拉菜单
-        self._new_btn = QToolButton()
-        self._new_btn.setText(" 新建 ")
-        self._new_btn.setIcon(get_icon("plus"))
-        self._new_btn.setToolTip("新建文档、模块或功能")
-        self._new_btn.setPopupMode(QToolButton.InstantPopup)
-        new_menu = QMenu(self)
-        act_module = new_menu.addAction(" 新建模块...")
-        act_module.setIcon(get_icon("module"))
-        act_module.triggered.connect(self._on_new_module)
-        act_feature = new_menu.addAction(" 新建功能...")
-        act_feature.setIcon(get_icon("plus"))
-        act_feature.triggered.connect(self._on_new_feature)
-        new_menu.addSeparator()
-        act_doc = new_menu.addAction(" 新建文档...")
-        act_doc.setIcon(get_icon("file"))
-        act_doc.triggered.connect(self._on_new_doc)
-        self._new_btn.setMenu(new_menu)
-        toolbar.addWidget(self._new_btn)
-
-        toolbar.addSeparator()
-
-        # 快捷操作
-        self._sync_btn = QToolButton()
-        self._sync_btn.setIcon(get_icon("refresh"))
-        self._sync_btn.setToolTip("同步索引")
-        self._sync_btn.clicked.connect(self._on_sync)
-        toolbar.addWidget(self._sync_btn)
-
-        self._check_btn = QToolButton()
-        self._check_btn.setIcon(get_icon("check"))
-        self._check_btn.setToolTip("运行检查")
-        self._check_btn.clicked.connect(self._on_check)
-        toolbar.addWidget(self._check_btn)
 
     def _refresh_recent_menu(self):
         """重建最近项目弹出菜单 — QToolButton 弹出式。"""
         menu = QMenu(self)
 
         # 顶部固定项：打开项目
-        open_act = menu.addAction(get_icon("plus"), " 打开项目...")
+        open_act = menu.addAction(get_icon("folder"), " 打开项目...")
         open_act.triggered.connect(self._on_open_project)
 
         menu.addSeparator()
@@ -236,6 +207,7 @@ class MainWindow(QMainWindow):
 
             action = QWidgetAction(self)
             widget = QWidget()
+            widget.setObjectName("RecentMenuItem")
             h_layout = QHBoxLayout(widget)
             h_layout.setContentsMargins(8, 4, 8, 4)
             h_layout.setSpacing(8)
@@ -243,18 +215,18 @@ class MainWindow(QMainWindow):
             v_layout = QVBoxLayout()
             v_layout.setSpacing(1)
             name_label = QLabel(name)
-            name_label.setStyleSheet("font-weight: bold;")
+            name_label.setObjectName("RecentMenuItemName")
             path_label = QLabel(path_str)
-            path_label.setStyleSheet("color: gray; font-size: 11px;")
+            path_label.setObjectName("RecentMenuItemPath")
             v_layout.addWidget(name_label)
             v_layout.addWidget(path_label)
             h_layout.addLayout(v_layout, 1)
 
+            check_label = QLabel()
+            check_label.setFixedWidth(20)
             if is_current:
-                check_label = QLabel()
                 check_label.setPixmap(get_icon("check").pixmap(16, 16))
-                check_label.setFixedWidth(20)
-                h_layout.addWidget(check_label)
+            h_layout.addWidget(check_label)
 
             action.setDefaultWidget(widget)
             action.triggered.connect(lambda checked, p=project_path: self.load_project(p))
@@ -354,6 +326,7 @@ class MainWindow(QMainWindow):
             return
 
         self._push_recent_project(project_root)
+        self._settings.setValue("last_project", str(project_root.resolve()))
 
         self._project_root = project_root
         self._current_project_path = str(project_root.resolve())

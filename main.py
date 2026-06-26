@@ -14,7 +14,6 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("DocKit Studio")
     app.setOrganizationName("DocKit Studio")
-    apply_stylesheet(app, theme='light_blue.xml')  # 应用一个内置主题
     window = MainWindow()
     window.show()
 

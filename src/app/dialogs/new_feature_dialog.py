@@ -13,14 +13,21 @@ from src.engine.index import IndexManager
 class NewFeatureDialog(QDialog):
     """新建功能对话框。"""
 
-    def __init__(self, index: IndexManager | None = None, parent=None):
+    def __init__(self, index: IndexManager | None = None,
+                 parent=None, preset_module: str | None = None):
         super().__init__(parent)
         self._index = index
+        self._preset_module = preset_module
         self.setWindowTitle("新建功能")
         self.setMinimumWidth(420)
 
         self._build_ui()
         self._connect_signals()
+
+        if self._preset_module:
+            idx = self._module_combo.findData(self._preset_module)
+            if idx >= 0:
+                self._module_combo.setCurrentIndex(idx)
 
     # ── 布局搭建 ──────────────────────────────────────────
     def _build_ui(self):

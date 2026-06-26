@@ -1,10 +1,16 @@
 """文档树面板 — 左侧导航，展示 ProjectSpec/ 的层级结构。"""
 from pathlib import Path
+import os
+import shutil
+import subprocess
+import sys
 
 from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QWidget,
     QVBoxLayout, QLabel, QMenu, QMessageBox,
+    QInputDialog,
 )
 
 from resources.icons import get_icon
@@ -26,6 +32,7 @@ class DocTreePanel(QWidget):
         super().__init__(parent)
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
+        self._registry: Registry | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -44,6 +51,9 @@ class DocTreePanel(QWidget):
         """从 index 重建文档树。"""
         self._project_root = project_root
         self._index = index
+        kit_dir = project_root / ".doc-kit"
+        reg_path = kit_dir / "registry.yaml"
+        self._registry = Registry(reg_path) if reg_path.exists() else Registry()
         self.tree.clear()
 
         entries = index.list_entries()
@@ -112,7 +122,11 @@ class DocTreePanel(QWidget):
 
     def _add_file_item(self, parent: QTreeWidgetItem, entry):
         """在树节点下添加一个文档文件项。"""
-        label = Path(entry.path).name
+        if self._registry:
+            doc_def = self._registry.get(entry.doc_type)
+            label = doc_def.description if doc_def else Path(entry.path).name
+        else:
+            label = Path(entry.path).name
         item = QTreeWidgetItem(parent, [label])
         item.setIcon(0, get_icon("file"))
         item.setData(0, Qt.UserRole, entry.path)
@@ -134,22 +148,130 @@ class DocTreePanel(QWidget):
             item.setExpanded(not item.isExpanded())
 
     def _on_context_menu(self, pos):
-        """右键菜单：新建文档 / 新建功能 / 新建模块 / 废弃 …"""
+        """右键菜单 — 根据节点类型动态显示。"""
         item = self.tree.itemAt(pos)
-        # 获取右键位置的上下文路径（用于新建文档时预选）
-        context_path = item.data(0, Qt.UserRole) if item else None
+        if not item:
+            return
+
+        context_path = item.data(0, Qt.UserRole)
+        path = item.data(0, Qt.UserRole)  # None for folder/module nodes
+
+        # 判断节点类型
+        parent = item.parent()
+        text = item.text(0)
+        is_top_folder = (path is None and parent is None and text == "顶层文档")
+        is_features_folder = (path is None and parent is not None and text == "features")
+        is_feature_node = (path is None and parent is not None and parent.text(0) == "features" and text != "features")
+        is_module_node = (path is None and parent is None and text not in ("顶层文档", "features"))
+        is_file_node = path is not None
+
+        # 提取模块/功能名
+        module_name = None
+        feature_name = None
+        if is_module_node:
+            module_name = text
+        elif is_feature_node:
+            module_name = parent.parent().text(0)
+            feature_name = text
+        elif is_features_folder:
+            module_name = parent.text(0)
 
         menu = QMenu(self)
 
-        new_doc = menu.addAction(" 新建文档...")
-        new_doc.setIcon(get_icon("file"))
-        new_feat = menu.addAction(" 新建功能...")
-        new_feat.setIcon(get_icon("plus"))
-        new_mod = menu.addAction(" 新建模块...")
-        new_mod.setIcon(get_icon("module"))
-        menu.addSeparator()
+        # ── 新建文档 ──
+        if is_top_folder:
+            new_doc = menu.addAction(" 新建文档...")
+            new_doc.setIcon(get_icon("file"))
+            new_doc.triggered.connect(
+                lambda: self._on_new_doc(preset_level="top"))
 
-        if context_path:
+            new_feat = menu.addAction(" 新建功能")
+            new_feat.setIcon(get_icon("plus"))
+            new_feat.setEnabled(False)
+            new_mod = menu.addAction(" 新建模块...")
+            new_mod.setIcon(get_icon("module"))
+            new_mod.triggered.connect(lambda: self._on_new_module(disable_sub_check=True))
+            menu.addSeparator()
+
+        elif is_module_node:
+            new_doc = menu.addAction(" 新建文档...")
+            new_doc.setIcon(get_icon("file"))
+            new_doc.triggered.connect(
+                lambda checked, m=module_name: self._on_new_doc(preset_level="module", preset_module=m))
+
+            new_feat = menu.addAction(" 新建功能...")
+            new_feat.setIcon(get_icon("plus"))
+            new_feat.triggered.connect(
+                lambda checked, m=module_name: self._on_new_feature(preset_module=m))
+
+            new_mod = menu.addAction(" 新建模块...")
+            new_mod.setIcon(get_icon("module"))
+            new_mod.triggered.connect(
+                lambda checked, m=module_name: self._on_new_module(preset_parent=m))
+            menu.addSeparator()
+
+        elif is_features_folder:
+            new_doc = menu.addAction(" 新建文档")
+            new_doc.setIcon(get_icon("file"))
+            new_doc.setEnabled(False)
+            new_feat = menu.addAction(" 新建功能...")
+            new_feat.setIcon(get_icon("plus"))
+            new_feat.triggered.connect(
+                lambda checked, m=module_name: self._on_new_feature(preset_module=m))
+            new_mod = menu.addAction(" 新建模块")
+            new_mod.setIcon(get_icon("module"))
+            new_mod.setEnabled(False)
+            menu.addSeparator()
+
+        elif is_feature_node:
+            new_doc = menu.addAction(" 新建文档...")
+            new_doc.setIcon(get_icon("file"))
+            new_doc.triggered.connect(
+                lambda checked, m=module_name, f=feature_name: self._on_new_doc(
+                    preset_level="feature", preset_module=m, preset_feature=f))
+
+            new_feat = menu.addAction(" 新建功能")
+            new_feat.setIcon(get_icon("plus"))
+            new_feat.setEnabled(False)
+            new_mod = menu.addAction(" 新建模块")
+            new_mod.setIcon(get_icon("module"))
+            new_mod.setEnabled(False)
+            menu.addSeparator()
+
+        # ── 重命名 / 删除（模块和功能节点） ──
+        if is_module_node or is_feature_node:
+            rename = menu.addAction(" 重命名")
+            rename.setIcon(get_icon("edit"))
+            delete = menu.addAction(" 删除")
+            delete.setIcon(get_icon("trash"))
+
+            if is_module_node:
+                rename.triggered.connect(lambda: self._rename_module(item))
+                delete.triggered.connect(lambda: self._delete_module(item))
+            else:
+                rename.triggered.connect(lambda: self._rename_feature(item))
+                delete.triggered.connect(lambda: self._delete_feature(item))
+
+            menu.addSeparator()
+
+        # ── 文件操作 ──
+        if is_file_node:
+            full_path = self._project_root / path
+
+            open_act = menu.addAction(" 打开文件")
+            open_act.setIcon(get_icon("edit"))
+            open_act.triggered.connect(lambda: self.document_selected.emit(path))
+
+            explorer_act = menu.addAction(" 在资源管理中显示")
+            explorer_act.setIcon(get_icon("folder"))
+            explorer_act.triggered.connect(lambda: self._show_in_explorer(full_path))
+
+            copy_act = menu.addAction(" 复制绝对路径")
+            copy_act.setIcon(get_icon("copy"))
+            copy_act.triggered.connect(lambda: self._copy_path(full_path))
+
+            menu.addSeparator()
+
             deprecate = menu.addAction(" 废弃此文档")
             deprecate.setIcon(get_icon("warning"))
             deprecate.triggered.connect(lambda: self._deprecate_doc(item))
@@ -157,12 +279,176 @@ class DocTreePanel(QWidget):
             archive.setIcon(get_icon("archive"))
             archive.triggered.connect(lambda: self._archive_doc(item))
 
-        new_doc.triggered.connect(lambda: self._on_new_doc(context_path))
-        new_feat.triggered.connect(self._on_new_feature)
-        new_mod.triggered.connect(self._on_new_module)
         menu.exec(self.tree.mapToGlobal(pos))
 
-    def _on_new_doc(self, context_path: str | None = None):
+    def _get_module_path(self, module_name: str) -> Path:
+        """获取模块文件夹路径。"""
+        return (self._project_root / "ProjectSpec" / module_name).resolve()
+
+    def _get_feature_path(self, module_name: str, feature_name: str) -> Path:
+        """获取功能文件夹路径。"""
+        return (self._project_root / "ProjectSpec" / module_name / "features" / feature_name).resolve()
+
+    def _rename_module(self, item):
+        """重命名模块：重命名文件夹 + 更新 index。"""
+        if not self._project_root or not self._index:
+            return
+        old_name = item.text(0)
+        new_name, ok = QInputDialog.getText(self, "重命名模块", "新名称:", text=old_name)
+        if not ok or not new_name.strip() or new_name.strip() == old_name:
+            return
+        new_name = new_name.strip()
+
+        old_path = self._get_module_path(old_name)
+        new_path = self._get_module_path(new_name)
+        if new_path.exists():
+            QMessageBox.warning(self, "错误", f"模块「{new_name}」已存在")
+            return
+
+        try:
+            old_path.rename(new_path)
+        except OSError as e:
+            QMessageBox.critical(self, "重命名失败", str(e))
+            return
+
+        # 更新 index 中所有相关条目的 path 和 module
+        old_prefix = f"ProjectSpec/{old_name}"
+        new_prefix = f"ProjectSpec/{new_name}"
+        for entry in self._index.list_entries():
+            if entry.path.startswith(old_prefix + "/") or entry.path == old_prefix or f"/{old_name}/" in entry.path:
+                entry.path = entry.path.replace(old_prefix, new_prefix, 1)
+            if entry.module == old_name:
+                entry.module = new_name
+        self._index.save()
+        self.load_project(self._project_root, self._index)
+        QMessageBox.information(self, "重命名完成", f"模块「{old_name}」已重命名为「{new_name}」")
+
+    def _rename_feature(self, item):
+        """重命名功能：重命名文件夹 + 更新 index。"""
+        if not self._project_root or not self._index:
+            return
+        old_name = item.text(0)
+        new_name, ok = QInputDialog.getText(self, "重命名功能", "新名称:", text=old_name)
+        if not ok or not new_name.strip() or new_name.strip() == old_name:
+            return
+        new_name = new_name.strip()
+
+        # 从树结构中获取模块名
+        feat_folder = item.parent()  # "features" 节点
+        module_item = feat_folder.parent()  # 模块节点
+        module_name = module_item.text(0)
+
+        old_path = self._get_feature_path(module_name, old_name)
+        new_path = self._get_feature_path(module_name, new_name)
+        if new_path.exists():
+            QMessageBox.warning(self, "错误", f"功能「{new_name}」已存在")
+            return
+
+        try:
+            old_path.rename(new_path)
+        except OSError as e:
+            QMessageBox.critical(self, "重命名失败", str(e))
+            return
+
+        # 更新 index
+        old_prefix = f"ProjectSpec/{module_name}/features/{old_name}"
+        new_prefix = f"ProjectSpec/{module_name}/features/{new_name}"
+        for entry in self._index.list_entries():
+            if old_prefix in entry.path:
+                entry.path = entry.path.replace(old_prefix, new_prefix, 1)
+        self._index.save()
+        self.load_project(self._project_root, self._index)
+        QMessageBox.information(self, "重命名完成", f"功能「{old_name}」已重命名为「{new_name}」")
+
+    def _delete_module(self, item):
+        """删除模块：删除文件夹 + 清除 index。"""
+        if not self._project_root or not self._index:
+            return
+        module_name = item.text(0)
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除模块「{module_name}」及其所有文档吗？\n此操作不可撤销。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        module_path = self._get_module_path(module_name)
+        try:
+            shutil.rmtree(module_path)
+        except OSError as e:
+            QMessageBox.critical(self, "删除失败", str(e))
+            return
+
+        # 清除 index 中该模块的所有条目
+        to_remove = [e.path for e in self._index.list_entries() if e.module == module_name]
+        for p in to_remove:
+            self._index.remove_entry(p)
+        self._index.save()
+        self.load_project(self._project_root, self._index)
+        QMessageBox.information(self, "删除完成", f"模块「{module_name}」及其文档已删除")
+
+    def _delete_feature(self, item):
+        """删除功能：删除文件夹 + 清除 index。"""
+        if not self._project_root or not self._index:
+            return
+        feature_name = item.text(0)
+        feat_folder = item.parent()
+        module_item = feat_folder.parent()
+        module_name = module_item.text(0)
+
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除功能「{feature_name}」及其所有文档吗？\n此操作不可撤销。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        feature_path = self._get_feature_path(module_name, feature_name)
+        try:
+            shutil.rmtree(feature_path)
+        except OSError as e:
+            QMessageBox.critical(self, "删除失败", str(e))
+            return
+
+        # 清除 index 中该功能的所有条目
+        prefix = f"ProjectSpec/{module_name}/features/{feature_name}"
+        to_remove = [e.path for e in self._index.list_entries() if e.path.startswith(prefix)]
+        for p in to_remove:
+            self._index.remove_entry(p)
+        self._index.save()
+        self.load_project(self._project_root, self._index)
+        QMessageBox.information(self, "删除完成", f"功能「{feature_name}」及其文档已删除")
+
+    def _open_file(self, path: Path):
+        """用系统默认程序打开文件。"""
+        resolved = str(path.resolve())
+        if sys.platform == "win32":
+            os.startfile(resolved)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", resolved])
+        else:
+            subprocess.run(["xdg-open", resolved])
+
+    def _show_in_explorer(self, path: Path):
+        """在文件管理器中定位文件。"""
+        resolved = path.resolve()
+        if sys.platform == "win32":
+            subprocess.run(["explorer", "/select,", str(resolved)])
+        elif sys.platform == "darwin":
+            subprocess.run(["open", "-R", str(resolved)])
+        else:
+            subprocess.run(["xdg-open", str(resolved.parent)])
+
+    def _copy_path(self, path: Path):
+        """复制文件绝对路径到剪贴板。"""
+        QGuiApplication.clipboard().setText(str(path.resolve()))
+
+    def _on_new_doc(self, context_path: str | None = None,
+                    preset_level: str | None = None,
+                    preset_module: str | None = None,
+                    preset_feature: str | None = None):
         """打开新建文档对话框（智能模式），传递右键上下文路径。"""
         if not self._project_root or not self._index:
             return
@@ -174,11 +460,15 @@ class DocTreePanel(QWidget):
         reg = Registry(reg_path) if reg_path.exists() else Registry()
 
         dlg = NewDocDialog(reg, self._project_root, self._index,
-                           context_path=context_path, parent=self)
+                           context_path=context_path,
+                           preset_level=preset_level,
+                           preset_module=preset_module,
+                           preset_feature=preset_feature,
+                           parent=self)
         if dlg.exec():
             self.load_project(self._project_root, self._index)
 
-    def _on_new_feature(self):
+    def _on_new_feature(self, preset_module: str | None = None):
         """打开新建功能对话框。"""
         if not self._project_root or not self._index:
             return
@@ -188,7 +478,7 @@ class DocTreePanel(QWidget):
         from src.engine.registry import Registry
         from src.engine.index import IndexEntry
 
-        dlg = NewFeatureDialog(self._index, self)
+        dlg = NewFeatureDialog(self._index, self, preset_module=preset_module)
         if not dlg.exec():
             return
 
@@ -247,7 +537,9 @@ class DocTreePanel(QWidget):
             f"功能「{feature_name}」已创建于模块 {module_name}",
         )
 
-    def _on_new_module(self):
+    def _on_new_module(self, preset_parent: str | None = None,
+                       disable_sub_check: bool = False,
+                       preset_name: str | None = None):
         """新建模块：弹出对话框 → 创建文档骨架 → 刷新树。"""
         if not self._project_root or not self._index:
             return
@@ -258,7 +550,10 @@ class DocTreePanel(QWidget):
         from src.engine.registry import Registry
         from src.engine.index import IndexEntry
 
-        dlg = NewModuleDialog(self._index, self)
+        dlg = NewModuleDialog(self._index, self,
+                              preset_parent=preset_parent,
+                              disable_sub_check=disable_sub_check,
+                              preset_name=preset_name)
         if not dlg.exec():
             return
 

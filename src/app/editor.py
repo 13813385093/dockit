@@ -52,7 +52,6 @@ class DependsOnEditor(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("depends_on:"))
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["doc", "module", "version"])
         self.table.horizontalHeader().setStretchLastSection(True)

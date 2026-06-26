@@ -23,7 +23,11 @@ class NewDocDialog(QDialog):
     LEVELS = {"top": "顶层", "module": "模块级", "feature": "功能级"}
 
     def __init__(self, registry: Registry, project_root: Path,
-                 index: IndexManager, context_path: str | None = None, parent=None):
+                 index: IndexManager, context_path: str | None = None,
+                 preset_level: str | None = None,
+                 preset_module: str | None = None,
+                 preset_feature: str | None = None,
+                 parent=None):
         super().__init__(parent)
         self._registry = registry
         self._project_root = project_root
@@ -32,6 +36,10 @@ class NewDocDialog(QDialog):
         self._kit_dir = project_root / ".doc-kit"
         # context_path: 右键所在的文档路径，用于预选层级/模块
         self._context_path = context_path
+        # preset: 右键节点决定的强制预设值
+        self._preset_level = preset_level
+        self._preset_module = preset_module
+        self._preset_feature = preset_feature
 
         self.setWindowTitle("新建文档")
         self.setMinimumWidth(500)
@@ -99,6 +107,28 @@ class NewDocDialog(QDialog):
 
         # ── 根据 context_path 预选 ──
         self._preselect_from_context()
+
+        # ── 应用右键节点预设（覆盖 context 预选） ──
+        if self._preset_level == "top":
+            self._radio_top.setChecked(True)
+            self._radio_module.setEnabled(False)
+            self._radio_feature.setEnabled(False)
+        elif self._preset_level == "module":
+            self._radio_module.setChecked(True)
+            self._radio_top.setEnabled(False)
+            self._radio_feature.setEnabled(False)
+        elif self._preset_level == "feature":
+            self._radio_feature.setChecked(True)
+            self._radio_top.setEnabled(False)
+            self._radio_module.setEnabled(False)
+
+        if self._preset_module:
+            idx = self._module_combo.findData(self._preset_module)
+            if idx >= 0:
+                self._module_combo.setCurrentIndex(idx)
+
+        if self._preset_feature:
+            self._feature_combo.setCurrentText(self._preset_feature)
 
     def _populate_modules(self):
         """加载所有非顶层模块。"""

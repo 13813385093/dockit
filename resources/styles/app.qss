@@ -1,0 +1,17 @@
+/* ── 最近项目菜单项 ──────────────────────────────────── */
+
+#RecentMenuItem {
+    background-color: transparent;
+}
+#RecentMenuItem:hover {
+    background-color: palette(Highlight);
+}
+
+#RecentMenuItemName {
+    font-weight: bold;
+}
+
+#RecentMenuItemPath {
+    color: gray;
+    font-size: 11px;
+}
