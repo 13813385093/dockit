@@ -2,14 +2,14 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QShortcut, QKeySequence, QAction
+from PySide6.QtGui import QShortcut, QKeySequence, QAction, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QMessageBox, QComboBox, QHeaderView,
     QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser,
     QGroupBox, QToolButton, QSizePolicy, QMenu, QAbstractItemView,
-    QDialog, QDialogButtonBox,
+    QDialog, QDialogButtonBox, QListWidget, QListWidgetItem,
 )
 
 import markdown
@@ -28,52 +28,48 @@ class FrontmatterTable(QWidget):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QFormLayout(self)
+        layout.setContentsMargins(10, 0, 5, 0)
 
         # 不可变字段（只读）
         self._doc_type = QLineEdit(); self._doc_type.setReadOnly(True)
         self._module = QLineEdit(); self._module.setReadOnly(True)
         self._level = QLineEdit(); self._level.setReadOnly(True)
-        layout.addRow("doc_type:", self._doc_type)
-        layout.addRow("module:", self._module)
-        layout.addRow("level:", self._level)
+        layout.addRow("文档类型:", self._doc_type)
+        layout.addRow("所属模块:", self._module)
+        layout.addRow("功能属性:", self._level)
 
         # version 可编辑
         self._version = QLineEdit()
-        layout.addRow("version:", self._version)
+        layout.addRow("版本:", self._version)
 
         # status 下拉
         self._status = QComboBox()
         self._status.addItems(["active", "deprecated", "archived", "invalid"])
-        layout.addRow("status:", self._status)
+        layout.addRow("状态:", self._status)
 
 
 class AddDependencyDialog(QDialog):
-    """模态对话框：选择文档来添加依赖，自动计算当前文档可依赖的候选文件。"""
+    """模态对话框：选择文档来添加依赖（多选），自动计算当前文档可依赖的候选文件。"""
 
     def __init__(self, index: IndexManager, registry: Registry | None,
-                 current_rel_path: str = "", parent=None):
+                 current_rel_path: str = "", existing_deps: list[dict] | None = None,
+                 parent=None):
         super().__init__(parent)
         self.setWindowTitle("插入依赖项")
         self._index = index
         self._registry = registry
         self._current_rel_path = current_rel_path
-        self._dep: dict | None = None
+        self._existing_paths = {d.get("doc", "") for d in (existing_deps or [])}
+        self._deps: list[dict] = []
 
         layout = QVBoxLayout(self)
 
-        # 版本标签预先创建，供 _populate_candidates 中的 _update_version 使用
-        self._version_label = QLabel("")
-
-        # 文档选择（显示中文描述）
-        layout.addWidget(QLabel("选择依赖文档:"))
-        self._doc_combo = QComboBox()
+        # 文档选择（多选列表）
+        layout.addWidget(QLabel("选择依赖文档（可多选）:"))
+        self._doc_list = QListWidget()
+        self._doc_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._populate_candidates()
-        self._doc_combo.currentIndexChanged.connect(self._update_version)
-        layout.addWidget(self._doc_combo)
-
-        # 版本（自动填充）
-        layout.addWidget(QLabel("版本:"))
-        layout.addWidget(self._version_label)
+        layout.addWidget(self._doc_list)
 
         # 按钮
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -99,7 +95,7 @@ class AddDependencyDialog(QDialog):
         return dirs
 
     def _populate_candidates(self):
-        self._doc_combo.clear()
+        self._doc_list.clear()
         if not self._index:
             return
         candidate_dirs = self._get_candidate_dirs()
@@ -110,30 +106,34 @@ class AddDependencyDialog(QDialog):
                     type_def = self._registry.get(e.doc_type)
                     if type_def and type_def.description:
                         desc = type_def.description
-                self._doc_combo.addItem(f"{desc}  ({Path(e.path).name})", e.path)
-        self._update_version()
-
-    def _update_version(self):
-        doc_path = self._doc_combo.currentData()
-        if doc_path:
-            entry = self._index.get_entry(doc_path)
-            self._version_label.setText(entry.version if entry else "")
+                version = e.version if e else "0.1.0"
+                item_text = f"{desc}  ({Path(e.path).name})  v{version}"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, e.path)
+                # 已在依赖列表中的项置灰、不可选
+                if e.path in self._existing_paths:
+                    item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
+                    item.setForeground(QColor("gray"))
+                self._doc_list.addItem(item)
 
     def _validate(self):
-        if self._doc_combo.currentData() is None:
-            QMessageBox.warning(self, "错误", "请选择一个文档")
+        selected_items = self._doc_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "错误", "请至少选择一个文档")
             return
-        doc_path = self._doc_combo.currentData()
-        entry = self._index.get_entry(doc_path)
-        self._dep = {
-            "doc": doc_path,
-            "module": entry.module if entry else "",
-            "version": entry.version if entry else "0.1.0",
-        }
+        self._deps = []
+        for item in selected_items:
+            doc_path = item.data(Qt.UserRole)
+            entry = self._index.get_entry(doc_path)
+            self._deps.append({
+                "doc": doc_path,
+                "module": entry.module if entry else "",
+                "version": entry.version if entry else "0.1.0",
+            })
         self.accept()
 
-    def get_dep(self) -> dict:
-        return self._dep or {}
+    def get_deps(self) -> list[dict]:
+        return self._deps
 
 
 class DependsOnEditor(QWidget):
@@ -149,7 +149,7 @@ class DependsOnEditor(QWidget):
         self._registry: Registry | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(5, 0, 0, 0)
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["文档", "所属模块", "版本"])
         header = self.table.horizontalHeader()
@@ -213,17 +213,16 @@ class DependsOnEditor(QWidget):
     def _on_context_menu(self, pos):
         menu = QMenu(self)
         jump_act = QAction(" 文档跳转", self)
-        jump_act.setIcon(get_icon("edit"))
+        jump_act.setIcon(get_icon("external-link"))
         menu.addAction(jump_act)
         menu.addSeparator()
         delete_act = QAction("删除依赖项", self)
         insert_act = QAction("插入依赖项", self)
-        # 多行选中时插入置灰
         selected_rows = len(set(idx.row() for idx in self.table.selectedIndexes()))
         has_selection = selected_rows > 0
         jump_act.setEnabled(has_selection)
         delete_act.setEnabled(has_selection)
-        insert_act.setEnabled(selected_rows <= 1)
+        insert_act.setEnabled(True)
         menu.addAction(delete_act)
         menu.addAction(insert_act)
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
@@ -252,11 +251,20 @@ class DependsOnEditor(QWidget):
 
     def _insert_dependency(self):
         row = self.table.currentRow()
-        dialog = AddDependencyDialog(self._index, self._registry, self._current_rel_path, self)
+        dialog = AddDependencyDialog(
+            self._index, self._registry, self._current_rel_path,
+            existing_deps=self._deps, parent=self,
+        )
         if dialog.exec():
-            new_dep = dialog.get_dep()
+            new_deps = dialog.get_deps()
+            # 去重防御：过滤掉已在当前依赖列表中的项
+            existing_docs = {d.get("doc", "") for d in self._deps}
+            new_deps = [d for d in new_deps if d.get("doc", "") not in existing_docs]
+            if not new_deps:
+                return
             insert_pos = row + 1 if row >= 0 else len(self._deps)
-            self._deps.insert(insert_pos, new_dep)
+            for i, dep in enumerate(new_deps):
+                self._deps.insert(insert_pos + i, dep)
             self.populate(self._deps, self._index, self._registry)
             self.deps_changed.emit(self._deps)
 
@@ -320,13 +328,14 @@ class DocEditor(QWidget):
         fm_layout_inner.setContentsMargins(0, 0, 0, 0)
         fm_group = QGroupBox("Frontmatter")
         fm_splitter = QSplitter(Qt.Horizontal)
+        fm_splitter.setObjectName("fm_splitter")
         self._fm_table = FrontmatterTable()
         self._deps_editor = DependsOnEditor()
         self._deps_editor.deps_changed.connect(self._on_deps_save)
         self._deps_editor.jump_to_doc.connect(self.navigate_to_doc.emit)
         fm_splitter.addWidget(self._fm_table)
         fm_splitter.addWidget(self._deps_editor)
-        fm_splitter.setSizes([240, 360])  # 左侧:右侧 = 2:3
+        fm_splitter.setSizes([180, 360])  # 左侧:右侧 = 2:3
         fm_group_layout = QVBoxLayout(fm_group)
         fm_group_layout.addWidget(fm_splitter)
         fm_layout_inner.addWidget(fm_group)

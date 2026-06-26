@@ -43,11 +43,11 @@ class DashboardPanel(QWidget):
         """搭建静态布局，不含信号绑定。"""
         layout = QVBoxLayout(self)
 
-        title = QLabel("项目仪表盘")
-        layout.addWidget(title)
-
-        self._stats_layout = QHBoxLayout()
-        layout.addLayout(self._stats_layout)
+        # title = QLabel("项目仪表盘")
+        # layout.addWidget(title)
+        dashboard_group = QGroupBox("项目仪表盘")
+        self._stats_layout = QHBoxLayout(dashboard_group)
+        layout.addWidget(dashboard_group)
 
         self._card_total = StatCard("文档总数", "—", "#4A90D9")
         self._card_active = StatCard("活跃", "—", "#27AE60")

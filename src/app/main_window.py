@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         self.lifecycle = LifecyclePanel(self)
         self.settings = SettingsPanel(self)
 
-        self.tabs.addTab(self.dashboard, get_icon("grid"), "仪表盘")
+        self.tabs.addTab(self.dashboard, get_icon("trello"), "仪表盘")
         self.tabs.addTab(self.editor, get_icon("edit"), "编辑器")
         self.tabs.addTab(self.dep_graph, get_icon("graph"), "依赖图")
         self.tabs.addTab(self.lifecycle, get_icon("refresh"), "生命周期")
