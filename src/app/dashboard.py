@@ -43,8 +43,6 @@ class DashboardPanel(QWidget):
         """搭建静态布局，不含信号绑定。"""
         layout = QVBoxLayout(self)
 
-        # title = QLabel("项目仪表盘")
-        # layout.addWidget(title)
         dashboard_group = QGroupBox("项目仪表盘")
         self._stats_layout = QHBoxLayout(dashboard_group)
         layout.addWidget(dashboard_group)
