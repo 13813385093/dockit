@@ -1,6 +1,6 @@
 """Parameter validation for doc-kit commands."""
 from __future__ import annotations
-from src.engine.registry import DocTypeDef
+from src.app.engine.registry import DocTypeDef
 
 
 def validate_new_params(

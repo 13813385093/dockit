@@ -14,11 +14,11 @@ from PySide6.QtWidgets import (
 
 import markdown
 
-from resources.icons import get_icon, set_button_icon
-from src.engine.index import IndexManager
-from src.engine.frontmatter import FrontmatterParser
-from src.engine.registry import Registry
-from src.engine.validation import parse_version
+from src.app.icon_utils import get_icon, set_button_icon
+from src.app.engine.index import IndexManager
+from src.app.engine.frontmatter import FrontmatterParser
+from src.app.engine.registry import Registry
+from src.app.engine.validation import parse_version
 
 
 class FrontmatterTable(QWidget):
@@ -343,6 +343,7 @@ class DocEditor(QWidget):
 
         # 正文：Markdown 分屏编辑 + 预览（2:1）
         body_splitter = QSplitter(Qt.Horizontal)
+        body_splitter.setObjectName("body_splitter")
         self._body_edit = QPlainTextEdit()
         self._body_edit.setPlaceholderText("在此编辑文档正文...")
         self._body_edit.textChanged.connect(self._update_preview)

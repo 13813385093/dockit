@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtGui import QIcon, QColor
 from PySide6.QtCore import Qt
 
-_ICONS_DIR = Path(__file__).resolve().parent / "icons"
+_ICONS_DIR = Path(__file__).resolve().parent / "resources" / "icons"
 
 _ICON_CACHE: dict[str, QIcon] = {}
 

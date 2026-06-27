@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (
     QInputDialog, QToolButton,
 )
 
-from resources.icons import get_icon
-from src.engine.index import IndexManager, IndexEntry
-from src.engine.registry import Registry
-from src.engine.frontmatter import FrontmatterParser
-from src.engine.commands.new_utils import render_template, resolve_path
-from src.engine.validation import parse_module_path
+from src.app.icon_utils import get_icon
+from src.app.engine.index import IndexManager, IndexEntry
+from src.app.engine.registry import Registry
+from src.app.engine.frontmatter import FrontmatterParser
+from src.app.engine.commands.new_utils import render_template, resolve_path
+from src.app.engine.validation import parse_module_path
 
 # 树节点角色常量（存储在 Qt.UserRole + 1）
 _NODE_FILE = "file"
@@ -531,7 +531,7 @@ class DocTreePanel(QWidget):
         if not self._project_root or not self._index:
             return
         from src.app.dialogs.new_doc import NewDocDialog
-        from src.engine.registry import Registry
+        from src.app.engine.registry import Registry
 
         kit_dir = self._project_root / ".doc-kit"
         reg_path = kit_dir / "registry.yaml"
@@ -551,9 +551,9 @@ class DocTreePanel(QWidget):
         if not self._project_root or not self._index:
             return
         from src.app.dialogs.new_feature_dialog import NewFeatureDialog
-        from src.engine.commands.new_utils import render_template, resolve_path
-        from src.engine.registry import Registry
-        from src.engine.index import IndexEntry
+        from src.app.engine.commands.new_utils import render_template, resolve_path
+        from src.app.engine.registry import Registry
+        from src.app.engine.index import IndexEntry
 
         dlg = NewFeatureDialog(self._index, self, preset_module=preset_module)
         if not dlg.exec():
@@ -620,9 +620,9 @@ class DocTreePanel(QWidget):
             return
 
         from src.app.dialogs.new_module_dialog import NewModuleDialog
-        from src.engine.commands.new_utils import render_template, resolve_path
-        from src.engine.registry import Registry
-        from src.engine.index import IndexEntry
+        from src.app.engine.commands.new_utils import render_template, resolve_path
+        from src.app.engine.registry import Registry
+        from src.app.engine.index import IndexEntry
 
         dlg = NewModuleDialog(self._index, self,
                               preset_parent=preset_parent,

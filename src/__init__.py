@@ -1,1 +1,1 @@
-"""doc-kit UI: PySide6 图形界面版文档管理工具。"""
+"""doc-kit Studio — 应用 UI (app/) + MCP 服务器 (skill/)。"""

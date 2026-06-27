@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
 
-from src.engine.frontmatter import FrontmatterParser
-from src.engine.index import IndexManager, IndexEntry
-from src.engine.registry import Registry
+from src.app.engine.frontmatter import FrontmatterParser
+from src.app.engine.index import IndexManager, IndexEntry
+from src.app.engine.registry import Registry
 
 # 内置模板目录
-BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "templates"
+BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 
 
 def get_project_name(project_root: Path) -> str:

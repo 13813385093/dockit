@@ -35,9 +35,9 @@ def _ensure_src_on_path():
 
 _ensure_src_on_path()
 
-from src.engine.index import IndexManager, IndexEntry
-from src.engine.deps import find_reverse_dependencies, check_version_drift
-from src.engine.frontmatter import FrontmatterParser
+from src.app.engine.index import IndexManager, IndexEntry
+from src.app.engine.deps import find_reverse_dependencies, check_version_drift
+from src.app.engine.frontmatter import FrontmatterParser
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -2,8 +2,8 @@
 from __future__ import annotations
 from pathlib import Path
 
-from src.engine.index import IndexManager, IndexEntry
-from src.engine.registry import DocTypeDef
+from src.app.engine.index import IndexManager, IndexEntry
+from src.app.engine.registry import DocTypeDef
 
 
 LEVEL_ORDER = {"top": 0, "module": 1, "feature": 2}

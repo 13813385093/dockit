@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 
-from src.engine.index import IndexManager
-from src.engine.registry import Registry
+from src.app.engine.index import IndexManager
+from src.app.engine.registry import Registry
 
 
 class SettingsPanel(QWidget):

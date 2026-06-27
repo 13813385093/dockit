@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
     QFrame, QToolButton, QMenu, QWidgetAction,
 )
 
-from resources.icons import get_icon, set_button_icon
-from resources.styles import load_stylesheet
+from src.app.icon_utils import get_icon, set_button_icon
+from src.app.style_utils import load_stylesheet
 from src.app.doc_tree import DocTreePanel
 from src.app.dashboard import DashboardPanel
 from src.app.editor import DocEditor
@@ -19,10 +19,10 @@ from src.app.dep_graph import DepGraphPanel
 from src.app.lifecycle import LifecyclePanel
 from src.app.settings import SettingsPanel
 from src.app.dialogs.init_dialog import InitDialog
-from src.engine.index import IndexManager, IndexEntry
-from src.engine.frontmatter import FrontmatterParser
-from src.engine.registry import Registry
-from src.engine.commands.init_utils import init_project
+from src.app.engine.index import IndexManager, IndexEntry
+from src.app.engine.frontmatter import FrontmatterParser
+from src.app.engine.registry import Registry
+from src.app.engine.commands.init_utils import init_project
 
 
 class MainWindow(QMainWindow):
@@ -184,6 +184,9 @@ class MainWindow(QMainWindow):
         self._refresh_recent_menu()
         toolbar.addWidget(self._recent_btn)
 
+        # 分隔线
+        toolbar.addSeparator()
+        
         # 保存按钮（放在项目选择右侧）
         self._toolbar_save_btn = QToolButton()
         self._toolbar_save_btn.setIcon(get_icon("save"))
@@ -393,7 +396,7 @@ class MainWindow(QMainWindow):
         """文档保存后：同步索引 → 运行 check → 留在编辑器，状态栏显示结果。"""
         if not self._project_root or not self._index:
             return
-        from src.engine.deps import check_version_drift, check_deprecated_deps
+        from src.app.engine.deps import check_version_drift, check_deprecated_deps
 
         self._index.rebuild(self._project_root / "ProjectSpec")
         self._index.save()
@@ -415,9 +418,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先打开一个项目")
             return
         from src.app.dialogs.new_module_dialog import NewModuleDialog
-        from src.engine.commands.new_utils import render_template, resolve_path
-        from src.engine.registry import Registry
-        from src.engine.index import IndexEntry
+        from src.app.engine.commands.new_utils import render_template, resolve_path
+        from src.app.engine.registry import Registry
+        from src.app.engine.index import IndexEntry
 
         dlg = NewModuleDialog(self._index, self)
         if not dlg.exec():
@@ -483,9 +486,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先打开一个项目")
             return
         from src.app.dialogs.new_feature_dialog import NewFeatureDialog
-        from src.engine.commands.new_utils import render_template, resolve_path
-        from src.engine.registry import Registry
-        from src.engine.index import IndexEntry
+        from src.app.engine.commands.new_utils import render_template, resolve_path
+        from src.app.engine.registry import Registry
+        from src.app.engine.index import IndexEntry
 
         dlg = NewFeatureDialog(self._index, self)
         if not dlg.exec():
@@ -550,7 +553,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先打开一个项目")
             return
         from src.app.dialogs.new_doc import NewDocDialog
-        from src.engine.registry import Registry
+        from src.app.engine.registry import Registry
 
         kit_dir = self._project_root / ".doc-kit"
         reg_path = kit_dir / "registry.yaml"
@@ -573,7 +576,7 @@ class MainWindow(QMainWindow):
         """执行索引同步 → 刷新所有面板。"""
         if not self._project_root or not self._index:
             return
-        from src.engine.frontmatter import FrontmatterParser
+        from src.app.engine.frontmatter import FrontmatterParser
         self._index.rebuild(self._project_root / "ProjectSpec")
         self._index.save()
         self.doc_tree.load_project(self._project_root, self._index)
@@ -585,7 +588,7 @@ class MainWindow(QMainWindow):
         """执行版本一致性检查 → 在状态栏显示结果。"""
         if not self._index:
             return
-        from src.engine.deps import check_version_drift, check_deprecated_deps
+        from src.app.engine.deps import check_version_drift, check_deprecated_deps
         drifts = check_version_drift(self._index)
         deprecated = check_deprecated_deps(self._index)
         self.dashboard.show_check_results(drifts, deprecated)

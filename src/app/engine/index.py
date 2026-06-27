@@ -81,7 +81,7 @@ class IndexManager:
         if not docs_root.exists():
             return 0
 
-        from src.engine.frontmatter import FrontmatterParser
+        from src.app.engine.frontmatter import FrontmatterParser
 
         count = 0
         for md_file in sorted(docs_root.rglob("*.md")):

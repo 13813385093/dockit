@@ -2,11 +2,11 @@
 from pathlib import Path
 from string import Template
 
-from src.engine.frontmatter import FrontmatterParser
-from src.engine.validation import parse_module_path
+from src.app.engine.frontmatter import FrontmatterParser
+from src.app.engine.validation import parse_module_path
 
 # 内置模板目录
-BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "templates"
+BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 
 
 def resolve_template_path(template_name: str, kit_dir: Path | None) -> Path:

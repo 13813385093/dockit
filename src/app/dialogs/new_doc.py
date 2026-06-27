@@ -10,11 +10,11 @@ from PySide6.QtWidgets import (
     QGroupBox, QMessageBox, QAbstractItemView, QWidget,
 )
 
-from src.engine.index import IndexManager, IndexEntry
-from src.engine.registry import Registry, DocTypeDef
-from src.engine.frontmatter import FrontmatterParser
-from src.engine.validation import parse_module_path
-from src.engine.commands.new_utils import render_template
+from src.app.engine.index import IndexManager, IndexEntry
+from src.app.engine.registry import Registry, DocTypeDef
+from src.app.engine.frontmatter import FrontmatterParser
+from src.app.engine.validation import parse_module_path
+from src.app.engine.commands.new_utils import render_template
 
 
 class NewDocDialog(QDialog):
@@ -319,7 +319,7 @@ class NewDocDialog(QDialog):
             return
 
         # 计算目标路径并创建
-        from src.engine.commands.new_utils import resolve_path, render_template
+        from src.app.engine.commands.new_utils import resolve_path, render_template
 
         actual_module = module or "project-charter"
         target_path = resolve_path(
@@ -347,7 +347,7 @@ class NewDocDialog(QDialog):
         target_path.write_text(content, encoding="utf-8")
 
         # 更新索引
-        from src.engine.index import IndexEntry
+        from src.app.engine.index import IndexEntry
         rel_path = str(target_path.relative_to(self._project_root)).replace("\\", "/")
         meta, _ = FrontmatterParser.read_file(target_path)
         entry = IndexEntry(

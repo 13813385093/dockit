@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 
-from src.engine.index import IndexManager
+from src.app.engine.index import IndexManager
 
 
 class DepGraphPanel(QWidget):
@@ -55,7 +55,7 @@ class DepGraphPanel(QWidget):
         if not entry:
             return
 
-        from src.engine.deps import find_reverse_dependencies
+        from src.app.engine.deps import find_reverse_dependencies
 
         self._fwd_list.clear()
         for dep in entry.depends_on:

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QComboBox, QMessageBox,
 )
 
-from src.engine.index import IndexManager
+from src.app.engine.index import IndexManager
 
 
 class NewFeatureDialog(QDialog):

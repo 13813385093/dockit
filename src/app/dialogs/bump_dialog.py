@@ -5,8 +5,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
 )
 
-from src.engine.index import IndexManager
-from src.engine.deps import find_reverse_dependencies
+from src.app.engine.index import IndexManager
+from src.app.engine.deps import find_reverse_dependencies
 
 
 class BumpDialog(QDialog):

@@ -8,9 +8,9 @@ from PySide6.QtWidgets import (
     QGroupBox, QMessageBox,
 )
 
-from resources.icons import set_button_icon
-from src.engine.index import IndexManager
-from src.engine.frontmatter import FrontmatterParser
+from src.app.icon_utils import set_button_icon
+from src.app.engine.index import IndexManager
+from src.app.engine.frontmatter import FrontmatterParser
 
 
 class LifecyclePanel(QWidget):

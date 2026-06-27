@@ -8,9 +8,9 @@ from PySide6.QtWidgets import (
     QFrame, QPushButton,
 )
 
-from resources.icons import set_button_icon
-from src.engine.index import IndexManager
-from src.engine.deps import check_version_drift, check_deprecated_deps
+from src.app.icon_utils import set_button_icon
+from src.app.engine.index import IndexManager
+from src.app.engine.deps import check_version_drift, check_deprecated_deps
 
 
 class StatCard(QFrame):

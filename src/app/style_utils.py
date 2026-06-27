@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QWidget
 
 
-_STYLES_DIR = Path(__file__).resolve().parent / "styles"
+_STYLES_DIR = Path(__file__).resolve().parent / "resources" / "styles"
 
 
 def load_stylesheet(target: QWidget | None = None) -> None:

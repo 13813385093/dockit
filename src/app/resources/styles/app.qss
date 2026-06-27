@@ -24,6 +24,13 @@ QSplitter#fm_splitter::handle {
     background-color: #d0d0d0;
     width: 4px;
 }
-QSplitter#fm_splitter::handle:hover {
-    background-color: #a0a0a0;
+
+QSplitter#body_splitter {
+    background-color: transparent;
 }
+
+QSplitter#body_splitter::handle {
+    background-color: transparent;
+    border-left-width: 1px;
+}
+
