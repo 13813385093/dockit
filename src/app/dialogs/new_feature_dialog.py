@@ -55,10 +55,12 @@ class NewFeatureDialog(QDialog):
         self._ck_decision_log.setChecked(True)
         self._ck_unit_test = QCheckBox("unit-tests.md (单元测试)")
         self._ck_acceptance_test = QCheckBox("acceptance-tests.md (验收测试)")
+        self._ck_feature_package = QCheckBox("feature-package.md (功能包 — 复合类型)")
         options_layout.addWidget(self._ck_feature_design)
         options_layout.addWidget(self._ck_decision_log)
         options_layout.addWidget(self._ck_unit_test)
         options_layout.addWidget(self._ck_acceptance_test)
+        options_layout.addWidget(self._ck_feature_package)
         layout.addWidget(options_group)
 
         self._buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -113,4 +115,6 @@ class NewFeatureDialog(QDialog):
             types.append("unit_test")
         if self._ck_acceptance_test.isChecked():
             types.append("acceptance_test")
+        if self._ck_feature_package.isChecked():
+            types.append("feature_package")
         return types

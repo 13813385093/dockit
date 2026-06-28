@@ -228,8 +228,16 @@ class DocTreePanel(QWidget):
         is_features_folder = (node_type == _NODE_FEATURES_FOLDER)
 
         # 提取模块/功能名（从存储的数据取，避免 text 推断）
-        module_name = item.data(0, Qt.UserRole + 2) if is_module_node else None
-        feature_name = text if is_feature_node else None
+        module_name = (
+            item.data(0, Qt.UserRole + 2)  # 模块节点：直接存储了模块名
+            if is_module_node
+            else item.parent().data(0, Qt.UserRole + 2)  # features 文件夹：从模块父节点获取
+            if is_features_folder
+            else item.parent().parent().data(0, Qt.UserRole + 2)  # 功能节点：从模块祖父节点获取
+            if is_feature_node
+            else None
+        )
+        feature_name = item.text(0) if is_feature_node else None
 
         menu = QMenu(self)
 
