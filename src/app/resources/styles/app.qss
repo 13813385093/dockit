@@ -1,3 +1,7 @@
+QToolButton {
+    border: none;
+}
+
 /* ── 最近项目菜单项 ──────────────────────────────────── */
 
 #RecentMenuItem {
@@ -21,8 +25,8 @@ QSplitter#fm_splitter {
 }
 
 QSplitter#fm_splitter::handle {
-    background-color: #d0d0d0;
-    width: 4px;
+    background-color: #E0E0E0;
+    width: 0;
 }
 
 QSplitter#body_splitter {
@@ -32,5 +36,22 @@ QSplitter#body_splitter {
 QSplitter#body_splitter::handle {
     background-color: transparent;
     border-left-width: 1px;
+}
+
+/* ── 格式工具栏按钮 ────────────────────────────────── */
+
+QToolButton[class="toolbar-btn"] {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 8px;
+    background-color: transparent;
+}
+QToolButton[class="toolbar-btn"]:hover {
+    background-color: #E8E8E8;
+    border-color: #CCCCCC;
+}
+QToolButton[class="toolbar-btn"]:pressed {
+    background-color: #D0D0D0;
+    border-color: #AAAAAA;
 }
 
