@@ -650,7 +650,11 @@ class MainWindow(QMainWindow):
     def _on_about(self):
         QMessageBox.about(
             self, "关于 doc-kit UI",
-            "doc-kit UI v0.1.0\n\n"
-            "面向AI时代的新型项目文档体系配套管理工具。\n"
-            "基于 PySide6 构建。"
+            "doc-kit UI v1.1.0\n\n"
+            "面向AI时代的新型项目文档体系配套管理工具。\n\n"
+            "版权所有 (C) 2026\n\n"
+            "本软件采用 MIT 许可证授权。\n"
+            "您可以自由使用、复制、修改、合并、发布、分发、\n"
+            "授权和/或出售本软件的副本，前提是在所有副本中\n"
+            "保留上述版权声明和本许可声明。"
         )

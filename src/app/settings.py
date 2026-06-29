@@ -3,10 +3,9 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QWidget, QVBoxLayout, QLabel,
     QTableWidget, QTableWidgetItem, QGroupBox,
-    QPushButton, QFileDialog, QMessageBox,
-    QHeaderView,
+    QAbstractItemView,
 )
 
 from src.app.engine.index import IndexManager
@@ -43,12 +42,24 @@ class SettingsPanel(QWidget):
         reg_group = QGroupBox("文档类型注册表")
         reg_layout = QVBoxLayout(reg_group)
         self._registry_table = QTableWidget(0, 3)
-        self._registry_table.setHorizontalHeaderLabels(["doc_type", "level", "template"])
-        self._registry_table.horizontalHeader().setStretchLastSection(True)
+        self._registry_table.setHorizontalHeaderLabels(["文档类型", "层级", "模板"])
+        self._registry_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         reg_layout.addWidget(self._registry_table)
-        layout.addWidget(reg_group)
+        layout.addWidget(reg_group, stretch=1)
 
-        layout.addStretch()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._adjust_column_widths()
+
+    def _adjust_column_widths(self):
+        header = self._registry_table.horizontalHeader()
+        total_width = header.width()
+        if total_width <= 0:
+            return
+        ratios = [2, 2, 3]
+        total_ratio = sum(ratios)
+        for i, ratio in enumerate(ratios):
+            header.resizeSection(i, int(total_width * ratio / total_ratio))
 
     def load_project(self, project_root: Path, index: IndexManager):
         self._project_root = project_root
@@ -67,3 +78,5 @@ class SettingsPanel(QWidget):
             self._registry_table.setItem(i, 0, QTableWidgetItem(t.doc_type))
             self._registry_table.setItem(i, 1, QTableWidgetItem(t.level))
             self._registry_table.setItem(i, 2, QTableWidgetItem(t.template))
+
+        self._adjust_column_widths()
