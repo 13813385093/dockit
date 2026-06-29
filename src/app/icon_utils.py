@@ -20,6 +20,12 @@ def get_icon(name: str) -> QIcon:
         _ICON_CACHE[name] = icon
         return icon
 
+    png_path = _ICONS_DIR / f"{name}.png"
+    if png_path.exists():
+        icon = QIcon(str(png_path))
+        _ICON_CACHE[name] = icon
+        return icon
+
     # fallback: 返回空 QIcon
     return QIcon()
 
