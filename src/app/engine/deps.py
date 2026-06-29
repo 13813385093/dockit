@@ -118,7 +118,8 @@ def find_reverse_dependencies(target_path: str, index: IndexManager) -> list[Ind
     for entry in index.list_entries():
         for dep in (entry.depends_on or []):
             dep_doc = dep.get("doc", "")
-            if dep_doc == target_name:
+            # 同时支持完整路径匹配和文件名匹配
+            if dep_doc == target_path or Path(dep_doc).name == target_name:
                 results.append(entry)
                 break
     return results

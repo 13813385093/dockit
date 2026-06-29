@@ -60,3 +60,15 @@ QToolButton[class="toolbar-btn"]:pressed {
     border-color: #AAAAAA;
 }
 
+/* ── 依赖图面板 ─────────────────────────────────────── */
+
+#DepGraphTitle {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#DepGraphHint {
+    font-size: 12px;
+    color: #666666;
+}
+

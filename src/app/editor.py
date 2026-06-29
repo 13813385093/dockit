@@ -238,19 +238,28 @@ class DependsOnEditor(QWidget):
         layout.setContentsMargins(5, 0, 0, 0)
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["文档", "所属模块", "版本"])
-        header = self.table.horizontalHeader()
-        header.setStretchLastSection(False)
-        # Stretch 模式下各列平分剩余空间，但我们需要 3:3:1
-        # 因此前两列用 Stretch 等分，版本列用 ResizeToContents 自适应其内容宽度
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # 单元格只读
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows) # 整行选择
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 多选
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)         # 右键菜单
         self.table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.table)
+    
+    def resizeEvent(self, event):
+        """窗口大小变化时按3:3:1比例重新分配列宽。"""
+        super().resizeEvent(event)
+        self._adjust_column_widths()
+    
+    def _adjust_column_widths(self):
+        """按3:3:1比例调整列宽。"""
+        header = self.table.horizontalHeader()
+        total_width = header.width()
+        if total_width <= 0:
+            return
+        ratios = [3, 3, 1]
+        total_ratio = sum(ratios)
+        for i, ratio in enumerate(ratios):
+            header.resizeSection(i, int(total_width * ratio / total_ratio))
 
     def _find_entry(self, doc_path: str, dep_module: str = ""):
         """通过文件名+模块名联合查找 index 中的文档，避免同名文件匹配错误。"""
@@ -318,6 +327,8 @@ class DependsOnEditor(QWidget):
             self.table.setItem(i, 0, item_doc)
             self.table.setItem(i, 1, item_module)
             self.table.setItem(i, 2, item_version)
+        
+        self._adjust_column_widths()
 
     def _on_context_menu(self, pos):
         menu = QMenu(self)

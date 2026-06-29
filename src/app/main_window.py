@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
         self._sidebar_visible = True
         self._sidebar_width = 280  # 侧栏展开时宽度 (px)，拖拽分栏时动态更新
         self._current_project_path: str | None = None  # 当前项目路径，用于菜单✓标记
+        self._current_doc_rel: str | None = None  # 当前打开的文档相对路径
 
         # 最近项目列表持久化
         self._settings = QSettings("doc-kit", "doc-kit-ui")
@@ -390,7 +391,7 @@ class MainWindow(QMainWindow):
 
         self.doc_tree.load_project(project_root, self._index)
         self.dashboard.load_project(project_root, self._index)
-        self.dep_graph.load_project(project_root, self._index)
+        self.dep_graph.load_project(project_root, self._index, self._registry)
         self.lifecycle.load_project(project_root, self._index)
         self.settings.load_project(project_root, self._index)
 
@@ -402,6 +403,7 @@ class MainWindow(QMainWindow):
         """文档树中选择文档 → 在编辑器中打开。"""
         if not self._project_root or not self._index:
             return
+        self._current_doc_rel = rel_path
         full_path = self._project_root / rel_path
         if full_path.exists():
             self.editor.open_document(full_path, rel_path, self._index, self._registry)
@@ -448,13 +450,15 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def _on_tab_changed(self, index: int):
-        """标签页切换时，仪表盘被激活则执行检查。"""
+        """标签页切换时，仪表盘被激活则执行检查，依赖图被激活则显示当前文档依赖。"""
         current_widget = self.tabs.widget(index)
         if current_widget == self.dashboard and self._index:
             from src.app.engine.deps import check_version_drift, check_deprecated_deps
             drifts = check_version_drift(self._index)
             deprecated = check_deprecated_deps(self._index)
             self.dashboard.show_check_results(drifts, deprecated)
+        elif current_widget == self.dep_graph and self._current_doc_rel:
+            self.dep_graph.show_doc_deps(self._current_doc_rel)
 
     # ── 新建功能 ────────────────────────────────────────────
 
