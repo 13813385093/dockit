@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
         # 最近项目列表持久化
         self._settings = QSettings("doc-kit", "doc-kit-ui")
         self._recent_projects: list[str] = self._settings.value("recent_projects", [], type=list)
+        self._recent_project_actions: dict[str, QWidgetAction] = {}  # 用于动态更新菜单
 
         self._setup_ui()
         self._setup_menu()
@@ -113,6 +114,12 @@ class MainWindow(QMainWindow):
         # 编辑器保存后 → 自动 check + 刷新仪表盘
         self.editor.document_saved.connect(self._on_doc_saved)
         self.editor.navigate_to_doc.connect(self._on_navigate_to_doc)
+
+        # 仪表盘双击导航
+        self.dashboard.navigate_to_doc.connect(self._on_navigate_to_doc)
+
+        # 标签页切换时，仪表盘被激活则执行检查
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self._splitter.setSizes([280, 1000])
         layout.addWidget(self._splitter, 1)
@@ -212,6 +219,9 @@ class MainWindow(QMainWindow):
         if changed:
             self._save_recent_projects()
 
+        # 清空旧的 action 映射
+        self._recent_project_actions.clear()
+
         # 最近项目列表
         for path_str in self._recent_projects:
             project_path = Path(path_str)
@@ -235,15 +245,22 @@ class MainWindow(QMainWindow):
             v_layout.addWidget(path_label)
             h_layout.addLayout(v_layout, 1)
 
-            check_label = QLabel()
-            check_label.setFixedWidth(20)
+            item_btn = QPushButton(self)
+            item_btn.setObjectName("RecentMenuItemBtn")
+            h_layout.addWidget(item_btn)
+
             if is_current:
-                check_label.setPixmap(get_icon("check").pixmap(16, 16))
-            h_layout.addWidget(check_label)
+                item_btn.setIcon(get_icon("check").pixmap(16, 16))
+            else:
+                item_btn.setIcon(get_icon("trash").pixmap(16, 16))
+                item_btn.clicked.connect(lambda checked, p=path_str: self._remove_recent_project(p))
 
             action.setDefaultWidget(widget)
             action.triggered.connect(lambda checked, p=project_path: self.load_project(p))
             menu.addAction(action)
+            
+            # 保存 action 引用用于动态删除
+            self._recent_project_actions[path_str] = action
 
         if not self._recent_projects:
             empty_act = menu.addAction("  (暂无最近项目)")
@@ -262,6 +279,25 @@ class MainWindow(QMainWindow):
         self._recent_projects.insert(0, path_str)
         self._recent_projects = self._recent_projects[:self.MAX_RECENT]
         self._save_recent_projects()
+
+    def _remove_recent_project(self, path_str: str):
+        """从最近项目列表中移除指定项目。"""
+        if path_str in self._recent_projects:
+            self._recent_projects.remove(path_str)
+            self._save_recent_projects()
+            
+            if path_str in self._recent_project_actions:
+                action = self._recent_project_actions[path_str]
+                menu = self._recent_btn.menu()
+                if menu:
+                    menu.removeAction(action)
+                del self._recent_project_actions[path_str]
+            
+            if not self._recent_projects:
+                menu = self._recent_btn.menu()
+                if menu:
+                    empty_act = menu.addAction("  (暂无最近项目)")
+                    empty_act.setEnabled(False)
 
     def _setup_menu(self):
         """搭建菜单栏。"""
@@ -409,6 +445,16 @@ class MainWindow(QMainWindow):
             f"已保存 {rel_path} — 检查: {len(drifts)} 个漂移, {len(deprecated)} 个废弃依赖",
             5000,
         )
+
+    @Slot(int)
+    def _on_tab_changed(self, index: int):
+        """标签页切换时，仪表盘被激活则执行检查。"""
+        current_widget = self.tabs.widget(index)
+        if current_widget == self.dashboard and self._index:
+            from src.app.engine.deps import check_version_drift, check_deprecated_deps
+            drifts = check_version_drift(self._index)
+            deprecated = check_deprecated_deps(self._index)
+            self.dashboard.show_check_results(drifts, deprecated)
 
     # ── 新建功能 ────────────────────────────────────────────
 

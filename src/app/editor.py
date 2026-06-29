@@ -232,6 +232,7 @@ class DependsOnEditor(QWidget):
         self._deps: list[dict] = []
         self._index: IndexManager | None = None
         self._registry: Registry | None = None
+        self._drifted_deps: set[str] = set()  # 记录发生版本漂移的依赖
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 0, 0, 0)
@@ -273,46 +274,93 @@ class DependsOnEditor(QWidget):
         self._registry = registry
         if current_rel_path is not None:
             self._current_rel_path = current_rel_path
+        
+        self._drifted_deps.clear()
+        
         self.table.setRowCount(len(deps))
         for i, dep in enumerate(deps):
             doc_path = str(dep.get("doc", ""))
             module = str(dep.get("module", ""))
             version = str(dep.get("version", ""))
 
-            # 从 Index 中查找该文档的 doc_type，再从 Registry 获取中文描述
-            desc = doc_path  # 默认回退为文件路径
+            is_drifted = False
+            actual_version = None
+            entry = None
+            
             if doc_path and index:
                 entry = index.get_entry(doc_path)
-                # depends_on 中的 doc 是裸文件名，而 index 的 key 是完整相对路径
                 if not entry:
                     entry = self._find_entry(doc_path, module)
-                if entry and entry.doc_type and registry:
-                    type_def = registry.get(entry.doc_type)
-                    if type_def and type_def.description:
-                        desc = type_def.description
+                
+                if entry:
+                    actual_version = entry.version
+                    if actual_version != version:
+                        is_drifted = True
+                        self._drifted_deps.add(doc_path)
 
-            self.table.setItem(i, 0, QTableWidgetItem(desc))
-            self.table.setItem(i, 1, QTableWidgetItem(module))
-            self.table.setItem(i, 2, QTableWidgetItem(version))
+            desc = doc_path
+            if entry and entry.doc_type and registry:
+                type_def = registry.get(entry.doc_type)
+                if type_def and type_def.description:
+                    desc = type_def.description
+
+            item_doc = QTableWidgetItem(desc)
+            item_module = QTableWidgetItem(module)
+            item_version = QTableWidgetItem(version)
+            
+            if is_drifted and actual_version:
+                item_version.setText(f"{version} → {actual_version}")
+                red_color = QColor("#e74c3c")
+                item_doc.setForeground(red_color)
+                item_module.setForeground(red_color)
+                item_version.setForeground(red_color)
+
+            self.table.setItem(i, 0, item_doc)
+            self.table.setItem(i, 1, item_module)
+            self.table.setItem(i, 2, item_version)
 
     def _on_context_menu(self, pos):
         menu = QMenu(self)
         jump_act = QAction(" 文档跳转", self)
         jump_act.setIcon(get_icon("external-link"))
         menu.addAction(jump_act)
+        
+        sync_act = QAction(" 版本同步", self)
+        sync_act.setIcon(get_icon("arrow-down-circle"))
+        sync_act.setEnabled(False)
+        
         menu.addSeparator()
         delete_act = QAction("删除依赖项", self)
         insert_act = QAction("插入依赖项", self)
-        selected_rows = len(set(idx.row() for idx in self.table.selectedIndexes()))
-        has_selection = selected_rows > 0
+        
+        selected_rows = sorted(set(idx.row() for idx in self.table.selectedIndexes()))
+        has_selection = len(selected_rows) > 0
+        
+        can_sync = False
+        if has_selection and self._index:
+            for row in selected_rows:
+                if row < len(self._deps):
+                    dep = self._deps[row]
+                    doc_path = dep.get("doc", "")
+                    if doc_path in self._drifted_deps:
+                        can_sync = True
+                        break
+        
         jump_act.setEnabled(has_selection)
+        sync_act.setEnabled(can_sync)
         delete_act.setEnabled(has_selection)
         insert_act.setEnabled(True)
+        
+        menu.addAction(sync_act)
+        menu.addSeparator()
         menu.addAction(delete_act)
         menu.addAction(insert_act)
+        
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == jump_act:
             self._jump_to_doc()
+        elif action == sync_act:
+            self._sync_version()
         elif action == delete_act:
             self._delete_dependency()
         elif action == insert_act:
@@ -350,6 +398,32 @@ class DependsOnEditor(QWidget):
             insert_pos = row + 1 if row >= 0 else len(self._deps)
             for i, dep in enumerate(new_deps):
                 self._deps.insert(insert_pos + i, dep)
+            self.populate(self._deps, self._index, self._registry)
+            self.deps_changed.emit(self._deps)
+
+    def _sync_version(self):
+        """同步选中依赖项的版本号到实际版本。"""
+        rows = sorted(set(idx.row() for idx in self.table.selectedIndexes()), reverse=True)
+        sync_count = 0
+        
+        for row in rows:
+            if row < 0 or row >= len(self._deps):
+                continue
+            dep = self._deps[row]
+            doc_path = dep.get("doc", "")
+            
+            if doc_path not in self._drifted_deps:
+                continue
+            
+            entry = self._index.get_entry(doc_path) if self._index else None
+            if not entry:
+                entry = self._find_entry(doc_path, dep.get("module", ""))
+            
+            if entry:
+                dep["version"] = entry.version
+                sync_count += 1
+        
+        if sync_count > 0:
             self.populate(self._deps, self._index, self._registry)
             self.deps_changed.emit(self._deps)
 

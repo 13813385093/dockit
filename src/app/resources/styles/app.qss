@@ -20,6 +20,11 @@ QToolButton {
     font-size: 11px;
 }
 
+#RecentMenuItemBtn {
+    background-color: transparent;
+    border: none;
+}
+
 QSplitter#fm_splitter {
     background-color: transparent;
 }

@@ -75,26 +75,36 @@ def check_version_drift(
     """Check all depends_on declarations for version drift.
 
     Returns list of drift dicts: {doc, dep_name, declared, actual}.
+    actual is None if the dependency document is not found.
     """
     drifts: list[dict] = []
     for entry in index.list_entries():
         for dep in (entry.depends_on or []):
             dep_doc = dep.get("doc", "")
-            dep_module = dep.get("module", "")
             dep_version = dep.get("version", "")
 
-            # Find the actual document in index
+            # 仅使用完整路径精确匹配
+            found = None
             for other in index.list_entries():
-                other_name = Path(other.path).name
-                if other_name == dep_doc and other.module == dep_module:
-                    if other.version != dep_version:
-                        drifts.append({
-                            "doc": entry.path,
-                            "dep_name": dep_doc,
-                            "declared": dep_version,
-                            "actual": other.version,
-                        })
+                if other.path == dep_doc:
+                    found = other
                     break
+            
+            # 如果找不到依赖文档，也视为漂移问题
+            if not found:
+                drifts.append({
+                    "doc": entry.path,
+                    "dep_name": dep_doc,
+                    "declared": dep_version,
+                    "actual": None,
+                })
+            elif found.version != dep_version:
+                drifts.append({
+                    "doc": entry.path,
+                    "dep_name": dep_doc,
+                    "declared": dep_version,
+                    "actual": found.version,
+                })
     return drifts
 
 
@@ -123,16 +133,18 @@ def check_deprecated_deps(index: IndexManager) -> list[dict]:
     for entry in index.list_entries():
         for dep in (entry.depends_on or []):
             dep_doc = dep.get("doc", "")
-            dep_module = dep.get("module", "")
 
+            # 仅使用完整路径精确匹配
+            found = None
             for other in index.list_entries():
-                other_name = Path(other.path).name
-                if other_name == dep_doc and other.module == dep_module:
-                    if other.status == "deprecated":
-                        results.append({
-                            "doc": entry.path,
-                            "dep_name": dep_doc,
-                            "dep_status": other.status,
-                        })
+                if other.path == dep_doc:
+                    found = other
                     break
+            
+            if found and found.status == "deprecated":
+                results.append({
+                    "doc": entry.path,
+                    "dep_name": dep_doc,
+                    "dep_status": found.status,
+                })
     return results

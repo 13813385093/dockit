@@ -1,14 +1,14 @@
 """仪表盘面板 — 项目文档概览、版本漂移、健康状态。"""
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QGroupBox, QListWidget, QListWidgetItem,
-    QFrame, QPushButton,
+    QFrame,
 )
 
-from src.app.icon_utils import set_button_icon
+
 from src.app.engine.index import IndexManager
 from src.app.engine.deps import check_version_drift, check_deprecated_deps
 
@@ -29,6 +29,8 @@ class StatCard(QFrame):
 
 class DashboardPanel(QWidget):
     """项目仪表盘。"""
+
+    navigate_to_doc = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -69,16 +71,31 @@ class DashboardPanel(QWidget):
         check_layout.addWidget(self._deprecated_list)
         layout.addWidget(check_group)
 
-        self._refresh_btn = QPushButton(" 重新检查")
-        set_button_icon(self._refresh_btn, "refresh")
-        layout.addWidget(self._refresh_btn)
-
         layout.addStretch()
 
     # ── 信号绑定 ──────────────────────────────────────────
     def _connect_signals(self):
-        """绑定信号槽，不含布局代码。"""
-        self._refresh_btn.clicked.connect(self._refresh)
+        """绑定列表双击事件。"""
+        self._drift_list.itemDoubleClicked.connect(self._on_drift_item_double_clicked)
+        self._deprecated_list.itemDoubleClicked.connect(self._on_deprecated_item_double_clicked)
+
+    @Slot(QListWidgetItem)
+    def _on_drift_item_double_clicked(self, item: QListWidgetItem):
+        """双击版本漂移项时跳转到源文档。"""
+        drift_data = item.data(Qt.UserRole)
+        if drift_data:
+            doc_path = drift_data.get('doc')
+            if doc_path:
+                self.navigate_to_doc.emit(doc_path)
+
+    @Slot(QListWidgetItem)
+    def _on_deprecated_item_double_clicked(self, item: QListWidgetItem):
+        """双击废弃依赖项时跳转到源文档。"""
+        dep_data = item.data(Qt.UserRole)
+        if dep_data:
+            doc_path = dep_data.get('doc')
+            if doc_path:
+                self.navigate_to_doc.emit(doc_path)
 
     def load_project(self, project_root: Path, index: IndexManager):
         self._project_root = project_root
@@ -104,21 +121,25 @@ class DashboardPanel(QWidget):
         self._drift_list.clear()
         for d in drifts:
             item = QListWidgetItem(f"{d['doc']} -> {d['dep_name']} v{d['declared']} (实际 v{d['actual']})")
+            item.setData(Qt.UserRole, d)
             self._drift_list.addItem(item)
 
         deprecated_deps = check_deprecated_deps(self._index)
         self._deprecated_list.clear()
         for d in deprecated_deps:
             item = QListWidgetItem(f"{d['doc']} 依赖已废弃: {d['dep_name']}")
+            item.setData(Qt.UserRole, d)
             self._deprecated_list.addItem(item)
 
     def show_check_results(self, drifts: list, deprecated: list):
         self._drift_list.clear()
         for d in drifts:
             item = QListWidgetItem(f"{d['doc']} -> {d['dep_name']} v{d['declared']} (实际 v{d['actual']})")
+            item.setData(Qt.UserRole, d)
             self._drift_list.addItem(item)
         self._deprecated_list.clear()
         for d in deprecated:
             item = QListWidgetItem(f"{d['doc']} 依赖已废弃: {d['dep_name']}")
+            item.setData(Qt.UserRole, d)
             self._deprecated_list.addItem(item)
         self._card_drifts._value.setText(str(len(drifts)))
