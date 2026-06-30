@@ -1,0 +1,42 @@
+# Reasonix configuration.
+# Resolution order: flag > ./reasonix.toml > ~/AppData/Roaming/reasonix/config.toml > built-in defaults.
+# Secrets come from the environment via api_key_env; never put keys here.
+config_version = 3
+default_model = "deepseek-flash"
+
+[agent]
+temperature       = 0.0
+auto_plan   = "off"
+soft_compact_ratio  = 0.5
+compact_ratio       = 0.8
+compact_force_ratio = 0.9
+cold_resume_prune   = true
+
+[tools]
+enabled = []
+bash_timeout_seconds = 120
+
+[tools.background_jobs]
+stalled_warning_seconds = 900
+
+[lsp]
+enabled = true
+
+[skills]
+
+[permissions]
+mode  = "ask"
+
+allow = ["explore", "Edit"]
+
+[sandbox]
+bash    = "enforce"
+network = true
+
+[statusline]
+
+[[plugins]]
+name    = "doc-kit"
+command = "C:/Users/yet/miniconda3/envs/doc-kit/python.exe"
+args    = ["-u", "-m", "spec_mcp_tools.server"]
+

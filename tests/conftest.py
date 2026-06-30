@@ -1,11 +1,7 @@
-"""pytest conftest — 将 src/ 加入 sys.path 以便测试代码导入。"""
+"""pytest conftest — spec_mcp_tools 测试基础设施。"""
 import json
 import sys
 from pathlib import Path
-
-SRC = str(Path(__file__).resolve().parents[1] / "src")
-if SRC not in sys.path:
-    sys.path.insert(0, SRC)
 
 import pytest
 
@@ -70,7 +66,7 @@ def tmp_project(tmp_path) -> Path:
 @pytest.fixture
 def mcp_env(tmp_project):
     """初始化 MCP 全局状态指向临时项目，测试后恢复。"""
-    import src.skill.mcp.mcp_server as mcp
+    import spec_mcp_tools.server as mcp
     old_root = mcp._project_root
     old_session = mcp._current_session_id
     mcp._project_root = tmp_project

@@ -18,8 +18,8 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 REPO = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO / "src" / "skill" / "skills"
-MCP_SERVER = REPO / "src" / "skill" / "mcp" / "mcp_server.py"
-SPEC_SCHEMA = REPO / "src" / "skill" / "mcp" / "spec_schema.py"
+MCP_SERVER = REPO / "spec_mcp_tools" / "server.py"
+SPEC_SCHEMA = REPO / "spec_mcp_tools" / "spec_schema.py"
 
 # 已知的非工具函数名（内部函数，不暴露为 MCP 工具），检查时忽略
 NON_TOOL_NAMES = {"validate", "render_summary", "new_spec", "close_spec", "abort_spec"}

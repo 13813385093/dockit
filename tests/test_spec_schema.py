@@ -6,7 +6,7 @@
 """
 
 import pytest
-from skill.mcp.spec_schema import (
+from spec_mcp_tools.spec_schema import (
     validate,
     new_spec,
     apply_pause,
@@ -290,7 +290,7 @@ class TestGenerateTemplate:
     """generate_template() -> dict"""
 
     def test_returns_dict(self):
-        from skill.mcp.spec_schema import generate_template
+        from spec_mcp_tools.spec_schema import generate_template
         template = generate_template()
         assert isinstance(template, dict)
         assert "session_spec_id" in template
@@ -301,7 +301,7 @@ class TestGenerateTemplate:
         assert template["closed_at"] is None
 
     def test_resolution_has_detail_placeholder(self):
-        from skill.mcp.spec_schema import generate_template
+        from spec_mcp_tools.spec_schema import generate_template
         template = generate_template()
         assert len(template["resolutions"]) == 1
         r = template["resolutions"][0]
