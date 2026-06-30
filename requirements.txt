@@ -3,6 +3,5 @@ PySide6 >= 6.5.0
 qt-material >= 2.17
 PyYAML >= 6.0
 Markdown >= 3.5
-pyinstaller >= 6.0
 pytest >= 8.0
 mcp >= 1.5.0

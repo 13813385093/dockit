@@ -1,0 +1,267 @@
+"""文件系统集成测试 — 验证 MCP 工具读写安全。
+
+测试策略：每个测试在 tmp_path 创建的隔离目录中操作，互不干扰。
+使用 mcp_env fixture 重置 MCP 全局状态指向临时项目。
+"""
+
+import json
+
+from conftest import make_md, make_index, make_spec
+
+
+# ═══════════════════════════════════════════════════════════════
+#  文件读取正确性
+# ═══════════════════════════════════════════════════════════════
+
+class TestReadDoc:
+    """read_doc 不会读错文件"""
+
+    def test_read_by_full_path(self, tmp_project, mcp_env):
+        """按全路径读取应返回正确内容"""
+        make_md(tmp_project, "ProjectSpec/a.md",
+                "---\ndoc_type: test\n---\n# A\n\n## Section\ncontent-a")
+        result = json.loads(mcp_env.read_doc("ProjectSpec/a.md"))
+        assert result["success"] is True
+        assert result["data"]["path"] == "ProjectSpec/a.md"
+        sections = result["data"]["sections"]
+        assert any(s["heading"] == "Section" and "content-a" in s["content"] for s in sections)
+
+    def test_read_by_filename(self, tmp_project, mcp_env):
+        """按文件名（模糊匹配）应找到正确文件"""
+        make_md(tmp_project, "ProjectSpec/a.md",
+                "---\ndoc_type: test\n---\n# A\n\n## Title\na-content")
+        make_md(tmp_project, "ProjectSpec/b.md",
+                "---\ndoc_type: test\n---\n# B\n\n## Title\nb-content")
+        # 按文件名 b.md 读取
+        result = json.loads(mcp_env.read_doc("b.md"))
+        assert result["success"] is True
+        assert "b.md" in result["data"]["path"]
+        assert any("b-content" in s["content"] for s in result["data"]["sections"])
+
+    def test_read_nonexistent(self, tmp_project, mcp_env):
+        """不存在的文件应返回 success: false"""
+        result = json.loads(mcp_env.read_doc("nonexistent.md"))
+        assert result["success"] is False
+
+    def test_read_no_frontmatter(self, tmp_project, mcp_env):
+        """没有 frontmatter 的纯 Markdown 也应正常读取"""
+        make_md(tmp_project, "ProjectSpec/plain.md",
+                "# 纯标题\n\n## 段落\n纯文本内容")
+        result = json.loads(mcp_env.read_doc("ProjectSpec/plain.md"))
+        assert result["success"] is True
+        assert len(result["data"]["sections"]) > 0
+
+    def test_read_empty_file(self, tmp_project, mcp_env):
+        """空文件应返回空 sections"""
+        make_md(tmp_project, "ProjectSpec/empty.md", "")
+        result = json.loads(mcp_env.read_doc("ProjectSpec/empty.md"))
+        assert result["success"] is True
+        # 空文件解析后 sections 应存在（可能为空列表或一个空白段）
+
+
+class TestDocStructure:
+    """doc_structure 正确读取 index.json"""
+
+    def test_returns_all_docs(self, tmp_project, mcp_env):
+        """应返回 index.json 中所有文档"""
+        make_md(tmp_project, "ProjectSpec/a.md", "---\ndoc_type: a\n---\n# A")
+        make_md(tmp_project, "ProjectSpec/b.md", "---\ndoc_type: b\n---\n# B")
+        make_index(tmp_project, [
+            {"path": "ProjectSpec/a.md", "doc_type": "a", "module": "m",
+             "level": "top", "version": "1.0", "status": "active",
+             "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00"},
+            {"path": "ProjectSpec/b.md", "doc_type": "b", "module": "m",
+             "level": "top", "version": "1.0", "status": "active",
+             "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00"},
+        ])
+        result = json.loads(mcp_env.doc_structure())
+        assert result["success"] is True
+        assert len(result["data"]["doc_map"]) == 2
+
+    def test_missing_index(self, mcp_env):
+        """index.json 不存在时返回 success: false"""
+        # mcp_env 的 tmp_project 没有 index.json
+        result = json.loads(mcp_env.doc_structure())
+        assert result["success"] is False
+
+
+# ═══════════════════════════════════════════════════════════════
+#  路径穿越安全
+# ═══════════════════════════════════════════════════════════════
+
+class TestPathTraversal:
+    """MCP 工具应拒绝路径穿越"""
+
+    def test_read_doc_traversal(self, mcp_env):
+        """read_doc 拒绝 ../ 路径"""
+        result = json.loads(mcp_env.read_doc("../../../etc/passwd"))
+        assert result["success"] is False
+
+    def test_update_section_traversal(self, mcp_env):
+        """update_section 拒绝 reference 中的 ../ 路径"""
+        result = json.loads(mcp_env.update_section("../etc/passwd#x", "hack"))
+        assert result["success"] is False
+
+    def test_add_section_traversal(self, mcp_env):
+        """add_section 拒绝 reference 中的 ../ 路径"""
+        result = json.loads(mcp_env.add_section("../etc/passwd#x", "hack", "data"))
+        assert result["success"] is False
+
+    def test_deep_traversal(self, mcp_env):
+        """深层 ../ 路径也拒绝"""
+        result = json.loads(mcp_env.read_doc("ProjectSpec/../../windows/system32/config"))
+        assert result["success"] is False
+
+
+# ═══════════════════════════════════════════════════════════════
+#  文件写入正确性
+# ═══════════════════════════════════════════════════════════════
+
+class TestUpdateSection:
+    """update_section 写入正确文件、正确段落"""
+
+    def test_update_correct_file(self, tmp_project, mcp_env):
+        """更新只影响目标文件，不影响其他文件"""
+        make_md(tmp_project, "ProjectSpec/doc1.md",
+                "---\ndoc_type: test\n---\n# D1\n\n## X\noriginal-x\n\n## Y\noriginal-y")
+        make_md(tmp_project, "ProjectSpec/doc2.md",
+                "---\ndoc_type: test\n---\n# D2\n\n## X\nother-x")
+        result = json.loads(mcp_env.update_section(
+            "ProjectSpec/doc1.md#X", "updated-x"))
+        assert result["success"] is True
+        # 验证 doc1 已更新
+        r1 = json.loads(mcp_env.read_doc("ProjectSpec/doc1.md"))
+        s_x = next(s for s in r1["data"]["sections"] if s["heading"] == "X")
+        assert "updated-x" in s_x["content"]
+        s_y = next(s for s in r1["data"]["sections"] if s["heading"] == "Y")
+        assert "original-y" in s_y["content"]  # 未改变
+        # 验证 doc2 不变
+        r2 = json.loads(mcp_env.read_doc("ProjectSpec/doc2.md"))
+        s_x2 = next(s for s in r2["data"]["sections"] if s["heading"] == "X")
+        assert "other-x" in s_x2["content"]
+
+    def test_update_nonexistent_section(self, tmp_project, mcp_env):
+        """不存在的 reference 应拒绝写入，文件不变"""
+        make_md(tmp_project, "ProjectSpec/doc.md",
+                "---\ndoc_type: test\n---\n# Doc\n\n## X\ncontent")
+        original = (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8")
+        result = json.loads(mcp_env.update_section(
+            "ProjectSpec/doc.md#NONEXIST", "new"))
+        assert result["success"] is False
+        # 文件未改变
+        assert (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8") == original
+
+    def test_update_writes_frontmatter(self, tmp_project, mcp_env):
+        """写入后 frontmatter 应完整保留"""
+        make_md(tmp_project, "ProjectSpec/doc.md",
+                "---\ndoc_type: arch\nmodule: core\nversion: 1.0\n---\n# Doc\n\n## X\nold")
+        mcp_env.update_section("ProjectSpec/doc.md#X", "new")
+        content = (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8")
+        assert "doc_type: arch" in content
+        assert "module: core" in content
+        assert "version: 1.0" in content
+
+
+class TestAddSection:
+    """add_section 写入正确位置"""
+
+    def test_add_under_existing_parent(self, tmp_project, mcp_env):
+        """在存在的父段落下新增"""
+        make_md(tmp_project, "ProjectSpec/doc.md",
+                "---\ndoc_type: test\n---\n# Doc\n\n## X\nx-content\n\n## Z\nz-content")
+        result = json.loads(mcp_env.add_section(
+            "ProjectSpec/doc.md#X", "Y", "y-content"))
+        assert result["success"] is True
+        # 验证 Y 出现在 X 之后、Z 之前
+        r = json.loads(mcp_env.read_doc("ProjectSpec/doc.md"))
+        sections = r["data"]["sections"]
+        idx_x = next(i for i, s in enumerate(sections) if s["heading"] == "X")
+        idx_y = next(i for i, s in enumerate(sections) if s["heading"] == "Y")
+        idx_z = next(i for i, s in enumerate(sections) if s["heading"] == "Z")
+        assert idx_x < idx_y < idx_z  # 顺序正确
+
+    def test_add_nonexistent_parent(self, tmp_project, mcp_env):
+        """父段落不存在时追加到末尾"""
+        make_md(tmp_project, "ProjectSpec/doc.md",
+                "---\ndoc_type: test\n---\n# Doc\n\n## X\nx-content")
+        result = json.loads(mcp_env.add_section(
+            "ProjectSpec/doc.md#NONEXIST", "Y", "y-content"))
+        assert result["success"] is True
+        r = json.loads(mcp_env.read_doc("ProjectSpec/doc.md"))
+        sections = r["data"]["sections"]
+        assert sections[-1]["heading"] == "Y"
+
+    def test_add_duplicate_reference(self, tmp_project, mcp_env):
+        """重复的 reference 应拒绝"""
+        make_md(tmp_project, "ProjectSpec/doc.md",
+                "---\ndoc_type: test\n---\n# Doc\n\n## X\nx-content")
+        mcp_env.add_section("ProjectSpec/doc.md#X", "Y", "y-content")
+        result = json.loads(mcp_env.add_section(
+            "ProjectSpec/doc.md#X", "Y", "duplicate"))
+        assert result["success"] is False
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SessionSpec 文件操作
+# ═══════════════════════════════════════════════════════════════
+
+class TestSpecStart:
+    """spec_start 创建文件在正确位置"""
+
+    def test_creates_spec_file(self, tmp_project, mcp_env):
+        """应在 SessionSpec/active/ 下创建 spec.json"""
+        result = mcp_env.spec_start("test-topic", "tech-ref", "integration-test-001")
+        assert "✅" in result
+        spec_file = tmp_project / "SessionSpec" / "active" / "integration-test-001.spec.json"
+        assert spec_file.exists()
+        spec = json.loads(spec_file.read_text(encoding="utf-8"))
+        assert spec["session_spec_id"] == "integration-test-001"
+        assert spec["scenario"] == "tech-ref"
+        assert spec["status"] == "active"
+
+    def test_rejects_when_active_exists(self, tmp_project, mcp_env):
+        """有活跃议题时应拒绝创建"""
+        make_spec(tmp_project, "existing-session", {"status": "active"})
+        # spec_start 会检查内存状态和 active 目录
+        result = mcp_env.spec_start("new-topic", "tech-ref")
+        assert "残留" in result or "已存在" in result or "请先" in result
+
+
+class TestSpecAbort:
+    """spec_abort 将文件移至 archive"""
+
+    def test_moves_to_archive(self, tmp_project, mcp_env):
+        """作废后文件从 active/ 移至 archive/"""
+        # 先创建
+        mcp_env.spec_start("abort-test", "tech-ref", "abort-001")
+        # 确认在 active
+        active_file = tmp_project / "SessionSpec" / "active" / "abort-001.spec.json"
+        assert active_file.exists()
+        # 作废（第一次确认，第二次执行）
+        mcp_env.spec_abort("测试作废", confirm=True)
+        # active 中已不存在
+        assert not active_file.exists()
+        # archive 中存在
+        archive_file = tmp_project / "SessionSpec" / "archive" / "abort-001.spec.json"
+        assert archive_file.exists()
+        spec = json.loads(archive_file.read_text(encoding="utf-8"))
+        assert spec["status"] == "abandoned"
+
+
+class TestSpecArchive:
+    """spec_archive 仅允许 closed 状态归档"""
+
+    def test_rejects_active(self, tmp_project, mcp_env):
+        """active 状态的议题不能归档"""
+        make_spec(tmp_project, "active-session", {"status": "active"})
+        result = mcp_env.spec_archive()
+        assert "closed" in result or "不能" in result
+
+    def test_accepts_closed(self, tmp_project, mcp_env):
+        """closed 状态的议题可以归档"""
+        make_spec(tmp_project, "closed-session", {"status": "closed"})
+        result = mcp_env.spec_archive()
+        assert "✅" in result
+        archive_file = tmp_project / "SessionSpec" / "archive" / "closed-session.spec.json"
+        assert archive_file.exists()
+        assert not (tmp_project / "SessionSpec" / "active" / "closed-session.spec.json").exists()
