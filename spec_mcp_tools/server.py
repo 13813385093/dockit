@@ -840,6 +840,8 @@ def _scan_level2_headings(project_root: Path | None, doc_rel_path: str) -> list[
 
 
 def _simplify_depends_on(depends_on: list[dict]) -> list[str]:
+    if depends_on is None:
+        return []
     result: list[str] = []
     for dep in depends_on:
         if isinstance(dep, dict):

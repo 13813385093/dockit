@@ -21,6 +21,10 @@ class IndexEntry:
     depends_on: list[dict] = field(default_factory=list)
     mtime: str = ""
 
+    def __post_init__(self):
+        if self.depends_on is None:
+            self.depends_on = []
+
 
 class IndexManager:
     """Manages .doc-kit/index.json with read and query capabilities."""
