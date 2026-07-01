@@ -1,10 +1,10 @@
-# spec-archive — 归档已完成的议题
+# spec-archive — 归档已关闭的议题
 
 ## 定位
 
 将已关闭（closed）的议题从 `active/` 移至 `archive/`。
 
-> 已作废（abandoned）的议题在 `spec_abort` 时已自动归档，无需额外操作。
+> 已作废（abandoned）的议题在 spec_abort 时已自动归档，无需额外操作。
 
 ## 在哪选
 
