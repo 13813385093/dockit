@@ -18,7 +18,7 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
             "version: 0.1.0\nstatus: active\n---\n"
             "# 业务背景\n\n## 项目动因\n\n原始项目动因内容\n")
     make_index(tmp_project, [
-        {"path": "ProjectSpec/business-context.md",
+        {"path": "business-context.md",
          "doc_type": "business_context", "module": "project-charter",
          "level": "top", "version": "0.1.0", "status": "active",
          "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00"},
@@ -58,7 +58,7 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
     # Step 4: read_doc → update_section
     # ═══════════════════════════════════
     # 4a. 读取文档，获取 section reference
-    result4 = json.loads(mcp_env.read_doc("ProjectSpec/business-context.md"))
+    result4 = json.loads(mcp_env.read_doc("business-context.md"))
     assert result4["success"] is True
     sections = result4["data"]["sections"]
     ref = None

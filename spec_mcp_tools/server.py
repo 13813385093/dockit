@@ -112,7 +112,8 @@ def safe_join(root: Path, sub_path: str) -> Path | None:
 def _find_doc(project_root: Path, doc_path: str) -> Path | None:
     """在 ProjectSpec/ 中查找文档文件。
 
-    doc_path 可以是完整路径或文件名（取首个匹配）。
+    doc_path 不应包含 ProjectSpec/ 前缀（doc_structure 返回的路径已不带此前缀），
+    可以是路径片段（module-Xxx/arch.md）或文件名（取首个匹配）。
     """
     docs_root = project_root / "ProjectSpec"
     if not docs_root.exists():
@@ -368,6 +369,11 @@ class DocStructure:
 
     def _build(self) -> None:
         for entry in sorted(self._entries, key=lambda x: x.path):
+            # index.json 的 path 带 ProjectSpec/ 前缀，对外统一去掉
+            clean_path = entry.path
+            if clean_path.startswith("ProjectSpec/"):
+                clean_path = clean_path[len("ProjectSpec/"):]
+
             headings = _scan_level2_headings(self._project_root, entry.path)
             deps = _simplify_depends_on(entry.depends_on)
             meta = DocMeta(
@@ -378,8 +384,8 @@ class DocStructure:
                 status=entry.status,
                 mtime=entry.mtime,
             )
-            self.doc_map[entry.path] = DocNode(
-                path=entry.path,
+            self.doc_map[clean_path] = DocNode(
+                path=clean_path,
                 name=Path(entry.path).name,
                 meta=meta,
                 section=headings,
@@ -474,6 +480,8 @@ def read_doc(doc_path: str) -> str:
         mtime="",
     )
     rel_path = str(full_path.relative_to(_project_root).as_posix()) if _project_root else str(full_path)
+    if rel_path.startswith("ProjectSpec/"):
+        rel_path = rel_path[len("ProjectSpec/"):]
     content = DocContent.from_body(rel_path, doc_meta, body, raw_frontmatter=meta_dict)
     data = content.to_dict()
     result = {
@@ -492,7 +500,9 @@ def update_section(reference: str, content: str) -> str:
     if not _project_root:
         return json.dumps({"success": False, "data": None, "suggestions": ["项目根目录未初始化"]}, indent=2, ensure_ascii=False)
     file_rel = reference.split("#")[0]
-    safe_path = safe_join(_project_root, file_rel)
+    # 补回 ProjectSpec/ 前缀以确保路径正确
+    doc_rel = file_rel if file_rel.startswith("ProjectSpec/") else f"ProjectSpec/{file_rel}"
+    safe_path = safe_join(_project_root, doc_rel)
     if safe_path is None:
         return json.dumps({"success": False, "data": None, "suggestions": [f"非法的路径: {file_rel}"]}, indent=2, ensure_ascii=False)
     full_path = safe_path
@@ -532,7 +542,8 @@ def add_section(reference: str, heading: str, content: str = "") -> str:
     if not _project_root:
         return json.dumps({"success": False, "data": None, "suggestions": ["项目根目录未初始化"]}, indent=2, ensure_ascii=False)
     file_rel = reference.split("#")[0]
-    safe_path = safe_join(_project_root, file_rel)
+    doc_rel = file_rel if file_rel.startswith("ProjectSpec/") else f"ProjectSpec/{file_rel}"
+    safe_path = safe_join(_project_root, doc_rel)
     if safe_path is None:
         return json.dumps({"success": False, "data": None, "suggestions": [f"非法的路径: {file_rel}"]}, indent=2, ensure_ascii=False)
     full_path = safe_path
@@ -634,7 +645,7 @@ def doc_structure() -> str:
     doc_map_dict = {k: v.to_dict() for k, v in structure.doc_map.items()}
     return json.dumps({
         "success": True, "data": {"doc_map": doc_map_dict},
-        "suggestions": ["获取文档完整内容请调用 read_doc(doc_map中的path值)，如 read_doc(\"ProjectSpec/business-context.md\")"],
+        "suggestions": ["获取文档完整内容请调用 read_doc(doc_map中的path值)，如 read_doc(\"business-context.md\")"],
     }, indent=2, ensure_ascii=False)
 
 
@@ -651,6 +662,15 @@ def spec_start(topic: str, scenario: str, session_spec_id: str | None = None) ->
         return f"当前已有活跃议题 {_current_session_id}，请先 specClose 或 specAbort 后再开启新议题。"
     if _project_root is None:
         return "错误: 项目根目录未初始化"
+
+    # 检查 ProjectSpec/ 是否存在且包含 .md 文档
+    docs_root = _project_root / "ProjectSpec"
+    if not docs_root.is_dir():
+        return "错误: 未找到 ProjectSpec/ 目录。请先创建项目规格化文档后再开启议题。"
+    md_files = list(docs_root.rglob("*.md"))
+    if not md_files:
+        return "错误: ProjectSpec/ 下没有 .md 文档。请先创建项目规格化文档后再开启议题。"
+
     try:
         recovered = _detect_active_session(_project_root)
         if recovered:
@@ -671,25 +691,22 @@ def spec_start(topic: str, scenario: str, session_spec_id: str | None = None) ->
 
 @mcp.tool()
 def spec_status() -> str:
-    """查看当前议题状态。"""
-    global _current_session_id
-    sid = _check_active()
+    """查看当前议题状态 — 检查 SessionSpec/active/ 下是否存在活跃议题。"""
+    if _project_root is None:
+        return "错误: 项目根目录未初始化"
+
+    try:
+        sid = _detect_active_session(_project_root)
+    except ValueError as e:
+        return f"检测活跃会话失败: {e}"
+
     if sid is None:
-        if _project_root is not None:
-            try:
-                recovered = _detect_active_session(_project_root)
-                if recovered:
-                    spec = _read_spec_file(recovered)
-                    if spec and spec.get("status") == "active":
-                        _current_session_id = recovered
-                        return render_summary(spec)
-            except ValueError as e:
-                return f"检测活跃会话失败: {e}"
         return "当前没有活跃议题。如需开启新议题，请调用 specStart。"
+
     spec = _read_spec_file(sid)
     if spec is None:
-        _current_session_id = None
         return "当前会话已失效（文件不存在），请调用 specStart 开启新议题。"
+
     return render_summary(spec)
 
 

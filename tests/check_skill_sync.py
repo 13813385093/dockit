@@ -17,7 +17,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 REPO = Path(__file__).resolve().parents[1]
-SKILL_DIR = REPO / "src" / "skill" / "skills"
+SKILL_DIR = REPO / "skills"
 MCP_SERVER = REPO / "spec_mcp_tools" / "server.py"
 SPEC_SCHEMA = REPO / "spec_mcp_tools" / "spec_schema.py"
 
