@@ -251,12 +251,6 @@ class DocNode:
     def to_dict(self) -> dict:
         return {
             "name": self.name,
-            "doc_type": self.meta.doc_type,
-            "module": self.meta.module,
-            "level": self.meta.level,
-            "version": self.meta.version,
-            "status": self.meta.status,
-            "mtime": self.meta.mtime,
             "section": self.section,
             "depends_on": self.depends_on,
         }
@@ -471,19 +465,33 @@ def read_doc(doc_path: str) -> str:
         meta_dict, body = FrontmatterParser.parse(raw_text)
     except Exception:
         meta_dict, body = {}, raw_text
+
+    rel_path = str(full_path.relative_to(_project_root).as_posix()) if _project_root else str(full_path)
+    if rel_path.startswith("ProjectSpec/"):
+        rel_path = rel_path[len("ProjectSpec/"):]
+
+    # 从 index 中补充 mtime 和 depends_on
+    index = _load_index(_project_root)
+    index_depends_on: list[str] = []
+    index_mtime = ""
+    if index:
+        index_path_key = f"ProjectSpec/{rel_path}"
+        entry = index.get_entry(index_path_key)
+        if entry:
+            index_mtime = entry.mtime
+            index_depends_on = _simplify_depends_on(entry.depends_on)
+
     doc_meta = DocMeta(
         doc_type=meta_dict.get("doc_type", ""),
         module=meta_dict.get("module", ""),
         level=meta_dict.get("level", ""),
         version=meta_dict.get("version", ""),
         status=meta_dict.get("status", "active"),
-        mtime="",
+        mtime=index_mtime,
     )
-    rel_path = str(full_path.relative_to(_project_root).as_posix()) if _project_root else str(full_path)
-    if rel_path.startswith("ProjectSpec/"):
-        rel_path = rel_path[len("ProjectSpec/"):]
     content = DocContent.from_body(rel_path, doc_meta, body, raw_frontmatter=meta_dict)
     data = content.to_dict()
+    data["depends_on"] = index_depends_on
     result = {
         "success": True, "data": data,
         "suggestions": [
