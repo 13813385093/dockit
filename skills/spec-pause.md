@@ -12,6 +12,8 @@
 | 待定决议 | 新增 + 状态改为 resolved | 不存在删除，不需要讨论的标记为 resolved |
 | 后续计划 | 新增 + 删除 | 按文本精确匹配删除 |
 
+> 以上操作在 skill 层通过 `spec_read()` → 内存修改 → `spec_write(spec_json)` 实现。
+
 ## 在哪选
 
 `active` 状态下，当用户说「今天就到这里」「先保存」「下次继续」时。
@@ -22,11 +24,11 @@
 
 从本次对话中提取：
 
-- 哪些议题达成了明确结论 → `new_resolutions[]`
-- 哪些待定决议有了进展或已有明确答案 → `pending_status_changes[]`
-- 哪些新问题悬而未决 → `new_pending[]`
-- 下一步要做什么 → `new_next_steps[]`
-- 哪些旧的后续计划已不需要 → `remove_next_steps[]`
+- 哪些议题达成了明确结论 → `resolutions[]` 新增
+- 哪些待定决议有了进展或已有明确答案 → `pending_decisions[].status` 变更
+- 哪些新问题悬而未决 → `pending_decisions[]` 新增
+- 下一步要做什么 → `next_steps[]` 新增
+- 哪些旧的后续计划已不需要 → `next_steps[]` 删除
 
 ### Step 2：完整化 Detail（必填，≥150 字）
 
@@ -86,24 +88,38 @@
 
 📌 后续计划：
   + 调研 ELK 和 Loki
-
-以上是否正确？各条 detail 是否需要调整？
+  - 旧的计划项
 ```
 
-### Step 5：调用工具
+以上是否正确？各条 detail 是否需要调整？
+
+### Step 5：组装完整 spec
+
+调 `spec_read()` 获取当前议题的完整数据，然后根据 Step 1 的提取结果修改内存中的 spec：
+
+| 变更操作 | 做法 |
+|---------|------|
+| 新增决议 | `spec["resolutions"].append({"topic": ..., "decision": ..., "detail": ...})` |
+| 变更待定决议状态 | 按 `topic` 匹配后改 `status` |
+| 新增待定决议 | `spec["pending_decisions"].append({"topic": ..., "status": "needs_discussion", "note": ...})` |
+| 新增后续计划 | `spec["next_steps"].append(...)` |
+| 删除后续计划 | `spec["next_steps"].remove(...)` 或 list comprehension |
+
+> 调用 `spec_schema()` 可以获取各字段的详细约束（如 `detail` 最小 150 字）。
+
+### Step 6：调用工具
 
 用户确认后：
 
-1. 先调 `spec_pause(spec_json)` 保存会议纪要
-2. 再按用户确认的写入清单，逐条调 `update_section()` 或 `add_section()` 写入文档
+1. **先**调 `spec_write(spec_json)` — 将完整 spec 写回（全量替换模式，保存决议/待定/计划到 SessionSpec/）
+2. **后**按用户确认的写入清单，逐条调 `update_section()` 或 `add_section()` 写入文档（写入 ProjectSpec/）
 
-> **写入时机**：spec_pause 调用后才写入文档，确保会议纪要已安全保存。
+> **写入时机**：spec_write 调用后才写入文档，确保会议纪要已安全保存。
 
 ## 边界
 
-- 不改变 status（保持 active）
+- 不改变 status（保持 `active`）
 - Topic 名称是待定决议匹配的 key，必须精确一致
-- 字段为空数组时可以不传
-- **每条决议的 `detail` 必须 ≥150 字符**，否则 MCP 校验会拒绝保存
+- **每条决议的 `detail` 必须 ≥150 字符**，否则 spec_write 的 Schema 校验会拒绝保存
 - 决议→文档映射通过 `doc_structure()` 动态判断，不预置硬编码映射
 - 写入文档的操作必须经用户确认后再执行

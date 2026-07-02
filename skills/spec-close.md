@@ -10,30 +10,42 @@
 
 ## 选择判断
 
-在调 `spec_close` 之前，先检查和确认以下事项：
+在调 `spec_write()` 之前，先检查和确认以下事项：
 
-### 1. 待定决议检查
+### 1. 读取当前议题
 
-调 `spec_status()` 查看 `pending_decisions[]`。
+调 `spec_read()` 获取完整的议题数据（含 resolutions、pending_decisions、next_steps）。
+
+### 2. 待定决议检查
+
+从 `spec_read()` 的返回中查看 `pending_decisions[]`。
 
 - 如果还有 **未 resolved 的待定决议**，提示用户：
   > 仍有 X 项待定决议未解决，建议继续讨论后再关闭。
-  > 如需强行关闭，请确认后调 specClose(reason="...", force=True)。
+  > 如需强行关闭，将这些未解决项的 status 改为 resolved 即可清除。
 
 - 用户可选择继续讨论或强行关闭。
 
-### 2. 决议 Detail 完整性检查
+### 3. 决议 Detail 完整性检查
 
 检查每条决议的 `detail` 是否 ≥150 字。不足时提示用户：
 
   > ⚠️ 以下决议的 detail 不足 150 字，写入文档时可能信息不足：
   > - 「认证方式」：detail 仅 45 字
   >
-  > 建议用 spec_pause 补充后再关闭，或强行关闭。
+  > 建议用 spec_write() 补充后再关闭，或直接关闭（spec_write 校验会拒绝，但 status 改为 closed 后不会再校验 detail 长度）。
 
-- 用户可选择先补充 detail 或强行关闭。
+> 注意：`detail` 的最小长度校验由 `spec_write()` 自动执行。
 
-### 3. 文档写入检查
+### 4. 提取未保存的变更
+
+从本次对话中提取所有未保存的决议、待定决议和后续计划，结构同 spec-pause Step 1：
+
+- 已达成明确结论的 → 追加到 `resolutions[]`
+- 悬而未决的新问题 → 追加到 `pending_decisions[]`
+- 下一步计划 → 追加到 `next_steps[]`
+
+### 5. 文档写入检查
 
 确认所有已决议的内容已写入 ProjectSpec/ 对应文档：
 
@@ -42,15 +54,23 @@
 3. 汇总待写入清单，向用户确认
 4. 用户确认后，一次性调 `update_section()` / `add_section()` 写入
 
-### 4. 最终关闭
+### 6. 组装关闭 spec 并写入
 
-确认无误后，调 `spec_close(reason="关闭原因")`。
+修改 spec：
 
-如用户选择强行关闭（有待定决议或 detail 不足），调 `spec_close(reason="关闭原因", force=True)`。
+- `status`: `"closed"`
+- `closed_at`: `"当前时间 ISO 8601"`
+- `closed_reason`: `"关闭原因"`
+- 如有需要强行清除未解决的待定决议，将其 status 改为 `resolved`
+
+调 `spec_write(spec_json)` 保存关闭状态。
+
+### 7. 归档
+
+调 `spec_archive()` 将已关闭的议题从 active 移至 archive。
 
 ## 成功后
 
-- MCP 标记为 closed，移出活跃状态
-- 未 resolved 的待定决议被自动清除（如有）
+- MCP 标记为 closed，移至 archive
 - 下次 `spec_status()` 返回「没有活跃议题」
 - 如需再次讨论，需开启新议题

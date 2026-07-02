@@ -205,14 +205,23 @@ class TestAddSection:
 #  SessionSpec 文件操作
 # ═══════════════════════════════════════════════════════════════
 
-class TestSpecStart:
-    """spec_start 创建文件在正确位置"""
+class TestSpecWrite:
+    """spec_write 创建和更新文件"""
 
     def test_creates_spec_file(self, tmp_project, mcp_env):
-        """应在 SessionSpec/active/ 下创建 spec.json"""
+        """spec_write 应在 SessionSpec/active/ 下创建 spec.json"""
+        import json
         make_md(tmp_project, "ProjectSpec/doc.md",
                 "---\ndoc_type: test\n---\n# Doc\n\n## X\ncontent")
-        result = mcp_env.spec_start("test-topic", "tech-ref", "integration-test-001")
+        data = json.dumps({
+            "session_spec_id": "integration-test-001",
+            "scenario": "tech-ref",
+            "status": "active",
+            "resolutions": [],
+            "pending_decisions": [],
+            "next_steps": [],
+        })
+        result = mcp_env.spec_write(data)
         assert "✅" in result
         spec_file = tmp_project / "SessionSpec" / "active" / "integration-test-001.spec.json"
         assert spec_file.exists()
@@ -220,34 +229,64 @@ class TestSpecStart:
         assert spec["session_spec_id"] == "integration-test-001"
         assert spec["scenario"] == "tech-ref"
         assert spec["status"] == "active"
+        assert spec["project"] == "test-project"  # 自动填充
 
     def test_rejects_when_active_exists(self, tmp_project, mcp_env):
-        """有活跃议题时应拒绝创建"""
+        """有活跃议题时应拒绝创建新议题"""
+        import json
         make_md(tmp_project, "ProjectSpec/doc.md",
                 "---\ndoc_type: test\n---\n# Doc\n\n## X\ncontent")
         make_spec(tmp_project, "existing-session", {"status": "active"})
-        # spec_start 会检查内存状态和 active 目录
-        result = mcp_env.spec_start("new-topic", "tech-ref")
-        assert "残留" in result or "已存在" in result or "请先" in result
+        data = json.dumps({
+            "session_spec_id": "new-session",
+            "scenario": "tech-ref",
+            "status": "active",
+            "resolutions": [],
+            "pending_decisions": [],
+            "next_steps": [],
+        })
+        result = mcp_env.spec_write(data)
+        assert "残留" in result or "请先处理" in result
 
 
 class TestSpecAbort:
-    """spec_abort 将文件移至 archive"""
+    """通过 spec_write + spec_archive 实现作废"""
 
-    def test_moves_to_archive(self, tmp_project, mcp_env):
-        """作废后文件从 active/ 移至 archive/"""
-        # 先创建
+    def test_abort_via_write_and_archive(self, tmp_project, mcp_env):
+        """作废：spec_write 设 abandoned → spec_archive 移至 archive"""
+        import json
         make_md(tmp_project, "ProjectSpec/doc.md",
                 "---\ndoc_type: test\n---\n# Doc\n\n## X\ncontent")
-        mcp_env.spec_start("abort-test", "tech-ref", "abort-001")
-        # 确认在 active
+        # 先创建
+        create = json.dumps({
+            "session_spec_id": "abort-001",
+            "scenario": "tech-ref",
+            "status": "active",
+            "resolutions": [],
+            "pending_decisions": [],
+            "next_steps": [],
+        })
+        mcp_env.spec_write(create)
         active_file = tmp_project / "SessionSpec" / "active" / "abort-001.spec.json"
         assert active_file.exists()
-        # 作废（第一次确认，第二次执行）
-        mcp_env.spec_abort("测试作废", confirm=True)
-        # active 中已不存在
+
+        # 设 abandoned
+        abandon = json.dumps({
+            "session_spec_id": "abort-001",
+            "scenario": "tech-ref",
+            "status": "abandoned",
+            "closed_at": "2026-01-02T00:00:00+00:00",
+            "closed_reason": "测试作废",
+            "resolutions": [],
+            "pending_decisions": [],
+            "next_steps": [],
+        })
+        result = mcp_env.spec_write(abandon)
+        assert "✅" in result
+
+        # 归档
+        mcp_env.spec_archive()
         assert not active_file.exists()
-        # archive 中存在
         archive_file = tmp_project / "SessionSpec" / "archive" / "abort-001.spec.json"
         assert archive_file.exists()
         spec = json.loads(archive_file.read_text(encoding="utf-8"))
@@ -255,13 +294,13 @@ class TestSpecAbort:
 
 
 class TestSpecArchive:
-    """spec_archive 仅允许 closed 状态归档"""
+    """spec_archive 仅允许 closed/abandoned 状态归档"""
 
     def test_rejects_active(self, tmp_project, mcp_env):
         """active 状态的议题不能归档"""
         make_spec(tmp_project, "active-session", {"status": "active"})
         result = mcp_env.spec_archive()
-        assert "closed" in result or "不能" in result
+        assert "closed" in result or "abandoned" in result or "不能" in result
 
     def test_accepts_closed(self, tmp_project, mcp_env):
         """closed 状态的议题可以归档"""
@@ -271,3 +310,11 @@ class TestSpecArchive:
         archive_file = tmp_project / "SessionSpec" / "archive" / "closed-session.spec.json"
         assert archive_file.exists()
         assert not (tmp_project / "SessionSpec" / "active" / "closed-session.spec.json").exists()
+
+    def test_accepts_abandoned(self, tmp_project, mcp_env):
+        """abandoned 状态的议题也可以归档"""
+        make_spec(tmp_project, "abandoned-session", {"status": "abandoned"})
+        result = mcp_env.spec_archive()
+        assert "✅" in result
+        archive_file = tmp_project / "SessionSpec" / "archive" / "abandoned-session.spec.json"
+        assert archive_file.exists()

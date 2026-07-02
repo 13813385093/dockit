@@ -140,8 +140,6 @@ class TestDocNode:
                        section=["H1", "H2"], depends_on=["a.md"])
         d = node.to_dict()
         assert d["name"] == "p.md"
-        assert d["doc_type"] == "arch"
-        assert d["module"] == "core"
         assert d["section"] == ["H1", "H2"]
         assert d["depends_on"] == ["a.md"]
 

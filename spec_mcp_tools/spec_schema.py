@@ -3,14 +3,7 @@ doc-kit SpecStruct — 统一的 Schema 定义与校验。
 
 本文件是 SpecStruct 的**唯一权威来源**。
 MCP Server 通过 `validate(spec)` 校验写入数据。
-Skills 通过引用本文件获取字段定义和合法取值。
-
-使用方法：
-    from spec_schema import validate, SPEC_SCHEMA
-    errors = validate(spec_dict)
-    if errors:
-        print(f"校验失败: {errors}")
-"""
+`get_schema_metadata()` 通过 MCP 工具 `spec_schema()` 暴露给 Skills。"""
 
 from typing import Any
 
@@ -225,140 +218,67 @@ def validate(spec: dict) -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  模板生成（给 Skills 引用，MCP 启动时自动刷新）
+#  Schema 元数据（给 LLM 读取，替代 spec-template.json）
 # ═══════════════════════════════════════════════════════════════
 
 
-def generate_template() -> dict:
-    """返回一个完整的 SpecStruct 骨架，字段值用占位符填充。
+def get_schema_metadata() -> dict:
+    """从 SPEC_SCHEMA 生成 LLM 友好的字段定义。
 
-    Skills 通过 `read_file("spec-template.json")` 引用此结构。
-    不允许任何内联硬编码的 JSON 模板。
+    Skills 调 spec_schema() 获取此结构，了解各字段的类型、约束和允许值。
+    是字段定义的**唯一公开来源**，skill 中不应硬编码任何 JSON 模板。
     """
+    result = {}
+    for name, schema in SPEC_SCHEMA.items():
+        entry = {
+            "type": _type_name(schema["type"]),
+            "required": schema.get("required", False),
+            "description": schema.get("description", ""),
+        }
+        allowed = schema.get("allowed")
+        if allowed is not None:
+            entry["allowed_values"] = list(allowed)
+        min_len = schema.get("min_length")
+        if min_len is not None:
+            entry["min_length"] = min_len
+        # 标记只读字段
+        if name in ("session_spec_id", "project", "created_at"):
+            entry["readonly"] = True
+            entry["auto_filled"] = True
+
+        item_schema = schema.get("item_schema")
+        if item_schema is not None and isinstance(item_schema, dict):
+            if "type" in item_schema:
+                # 简单列表，如 next_steps: list[str]
+                entry["item_type"] = _type_name(item_schema["type"])
+            else:
+                # 嵌套对象列表，如 resolutions: list[{topic, decision, detail}]
+                entry["items"] = {}
+                for fname, fschema in item_schema.items():
+                    fentry = {
+                        "type": _type_name(fschema["type"]),
+                        "required": fschema.get("required", False),
+                        "description": fschema.get("description", ""),
+                    }
+                    f_min_len = fschema.get("min_length")
+                    if f_min_len is not None:
+                        fentry["min_length"] = f_min_len
+                    f_allowed = fschema.get("allowed")
+                    if f_allowed is not None:
+                        fentry["allowed_values"] = list(f_allowed)
+                    entry["items"][fname] = fentry
+
+        result[name] = entry
+
     return {
-        "session_spec_id": "{唯一标识，如 ss-tech-ref-module-A-001}",
-        "project": "{项目名}",
-        "scenario": "{场景: spec-scribe | tech-ref | feature-dev}",
-        "related_doc_types": ["{根据 scenario 自动填充的文档类型列表}"],
-        "created_at": "{ISO 8601 时间}",
-        "resolutions": [
-            {
-                "topic": "{决议主题（简洁明了）}",
-                "decision": "{决议内容}",
-                "detail": "{决议理由与补充说明（必填，≥150 字，供后续写入文档用）}",
-            }
-        ],
-        "pending_decisions": [
-            {
-                "topic": "{待定决议主题}",
-                "status": "{状态: needs_discussion | deferred | blocked | resolved}",
-                "note": "{说明}",
-            }
-        ],
-        "next_steps": ["{后续计划项}"],
-        "status": "active",
-        "closed_at": None,
-        "closed_reason": None,
+        "description": "SpecStruct — 议题会话的数据结构。全量替换模式：调用 spec_write() 时必须传入完整的 spec JSON，缺失的字段会被视为清空。",
+        "valid_status_transitions": {
+            "active": ["closed", "abandoned"],
+            "closed": [],
+            "abandoned": [],
+        },
+        "fields": result,
     }
-
-
-# ═══════════════════════════════════════════════════════════════
-#  SpecStruct 工厂函数
-# ═══════════════════════════════════════════════════════════════
-
-
-def new_spec(
-    session_spec_id: str,
-    project: str,
-    scenario: str,
-    created_at: str,
-) -> dict:
-    """创建一个初始的 SpecStruct（空决议/待定/计划）。"""
-    related = SCENARIO_DOC_TYPES.get(scenario, [])
-    return {
-        "session_spec_id": session_spec_id,
-        "project": project,
-        "scenario": scenario,
-        "related_doc_types": related,
-        "created_at": created_at,
-        "resolutions": [],
-        "pending_decisions": [],
-        "next_steps": [],
-        "status": "active",
-        "closed_at": None,
-        "closed_reason": None,
-    }
-
-
-# ═══════════════════════════════════════════════════════════════
-#  状态转移函数
-# ═══════════════════════════════════════════════════════════════
-
-
-def apply_pause(spec: dict, data: dict) -> list[str]:
-    """对 spec 应用 specPause 变更，返回执行错误（空=成功）。"""
-    errors = []
-
-    # 1) 新增决议
-    for r in data.get("new_resolutions", []):
-        if not isinstance(r, dict) or "topic" not in r or "decision" not in r:
-            errors.append(f"决议格式错误: {r}")
-            continue
-        spec["resolutions"].append({
-            "topic": r["topic"],
-            "decision": r["decision"],
-            "detail": r.get("detail", ""),
-        })
-
-    # 2) 待定决议状态变更（按 topic 匹配）
-    status_topics = {c["topic"] for c in data.get("pending_status_changes", [])
-                     if isinstance(c, dict) and "topic" in c and "status" in c}
-    for pd in spec["pending_decisions"]:
-        if pd["topic"] in status_topics:
-            match = [c for c in data["pending_status_changes"]
-                     if c["topic"] == pd["topic"]]
-            if match:
-                new_status = match[0]["status"]
-                if new_status in ("needs_discussion", "deferred", "blocked", "resolved"):
-                    pd["status"] = new_status
-                else:
-                    errors.append(f"待定决议 '{pd['topic']}' 的状态 '{new_status}' 不合法")
-
-    # 3) 新增待定决议
-    for p in data.get("new_pending", []):
-        if not isinstance(p, dict) or "topic" not in p or "note" not in p:
-            errors.append(f"待定决议格式错误: {p}")
-            continue
-        spec["pending_decisions"].append({
-            "topic": p["topic"],
-            "status": "needs_discussion",
-            "note": p["note"],
-        })
-
-    # 4) 新增后续计划
-    for step in data.get("new_next_steps", []):
-        if isinstance(step, str) and step.strip():
-            spec["next_steps"].append(step.strip())
-
-    # 5) 删除后续计划（按文本精确匹配）
-    remove_set = set(data.get("remove_next_steps", []))
-    spec["next_steps"] = [s for s in spec["next_steps"] if s not in remove_set]
-
-    return errors
-
-
-def close_spec(spec: dict, reason: str, closed_at: str) -> None:
-    """标记 SpecStruct 为 closed。"""
-    spec["status"] = "closed"
-    spec["closed_at"] = closed_at
-    spec["closed_reason"] = reason
-
-
-def abort_spec(spec: dict, reason: str, closed_at: str) -> None:
-    """标记 SpecStruct 为 abandoned。"""
-    spec["status"] = "abandoned"
-    spec["closed_at"] = closed_at
-    spec["closed_reason"] = reason
 
 
 # ═══════════════════════════════════════════════════════════════

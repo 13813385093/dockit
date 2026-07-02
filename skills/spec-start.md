@@ -4,25 +4,53 @@
 
 当用户提出一个需求或想法、当前没有活跃议题时，选择此岔路。
 
-字段定义见运行时生成的 `.reasonix/spec-template.json`。
-
 ## 在哪选
 
 这是 `idle` 状态下的唯一岔路。如果没有活跃议题，这就是第一步。
 
 ## 选择判断
 
-调 `spec_status()` 确认当前状态。当返回「没有活跃议题」时：
+### Step 0：确认当前状态
 
-1. 从用户描述中提取 **topic**（2-6 个英文词概括）
-2. 判断 **scenario**：
-   - 纯需求讨论、业务背景、目标用户 → `spec-scribe`
-   - 技术选型、模块划分、架构设计 → `tech-ref`
-   - 功能规格、测试用例、实现细节 → `feature-dev`
-3. 向用户提议议题名称，等待确认
-4. 用户确认后，调 `spec_start(topic, scenario)` 完成创建
+调 `spec_status()` 确认。如果返回「当前有活跃议题」，则引导用户先处理已有议题。
 
-## 创建后的引导
+### Step 1：获取字段结构
+
+调 `spec_schema()` 了解 SpecStruct 的字段定义（类型、允许值、约束），为组装初始数据做准备。
+
+### Step 2：提取议题信息
+
+从用户描述中提取：
+- **topic**（2-6 个英文词概括）→ 用于生成 `session_spec_id`
+- **scenario**：
+  - 纯需求讨论、业务背景、目标用户 → `spec-scribe`
+  - 技术选型、模块划分、架构设计 → `tech-ref`
+  - 功能规格、测试用例、实现细节 → `feature-dev`
+
+### Step 3：生成 session_spec_id
+
+按格式 `{日期}-{topic-kebab}` 生成，例如 `20260618-cert-auth`。
+
+向用户提议议题名称，等待确认。
+
+### Step 4：组装初始 spec 并写入
+
+按 spec_schema() 的结构组装完整的 spec JSON，调 `spec_write(spec_json)`：
+
+```json
+{
+  "session_spec_id": "20260618-cert-auth",
+  "scenario": "tech-ref",
+  "status": "active",
+  "resolutions": [],
+  "pending_decisions": [],
+  "next_steps": []
+}
+```
+
+> 注意：`project`、`created_at`、`related_doc_types` 等字段由服务端自动填充，无需传入。
+
+### 创建后的引导
 
 议题创建完成后，调 `doc_structure()` 查看当前项目的文档结构。
 每个文档节点带有 `level` 字段（top / module / feature），可作为引导用户的参考：
@@ -38,4 +66,4 @@
 
 ## 成功后的状态
 
-进入 `active`。MCP 返回的状态摘要包含当前决议、待定决议和后续计划（全空）。
+进入 `active`。`spec_write()` 返回的摘要包含当前决议、待定决议和后续计划（全空）。

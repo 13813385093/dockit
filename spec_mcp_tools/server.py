@@ -37,12 +37,8 @@ from frontmatter import FrontmatterParser
 from index_manager import IndexManager, IndexEntry
 from spec_schema import (
     validate as validate_spec,
-    new_spec,
-    apply_pause,
-    close_spec,
-    abort_spec,
     render_summary,
-    generate_template,
+    get_schema_metadata,
 )
 
 
@@ -192,17 +188,6 @@ def _generate_spec_id(topic: str) -> str:
     clean = re.sub(r'[^a-zA-Z0-9\-]', '-', topic)
     clean = re.sub(r'-+', '-', clean).strip('-').lower()
     return f"{today}-{clean}"
-
-
-def _check_active() -> str | None:
-    return _current_session_id
-
-
-def _require_active() -> str:
-    sid = _check_active()
-    if sid is None:
-        raise RuntimeError("当前没有活跃议题，请先调用 specStart。")
-    return sid
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -663,143 +648,215 @@ def doc_structure() -> str:
 
 
 @mcp.tool()
-def spec_start(topic: str, scenario: str, session_spec_id: str | None = None) -> str:
-    """开启新议题。"""
-    global _current_session_id
-    if _current_session_id is not None:
-        return f"当前已有活跃议题 {_current_session_id}，请先 specClose 或 specAbort 后再开启新议题。"
+def spec_schema() -> str:
+    """返回 SpecStruct 的完整字段定义，包括类型、允许值、长度约束等。
+
+    Skills 通过此工具获取数据结构模板，替代硬编码的 JSON 示例。
+    返回 JSON 格式的字段元数据。"""
     if _project_root is None:
         return "错误: 项目根目录未初始化"
-
-    # 检查 ProjectSpec/ 是否存在且包含 .md 文档
-    docs_root = _project_root / "ProjectSpec"
-    if not docs_root.is_dir():
-        return "错误: 未找到 ProjectSpec/ 目录。请先创建项目规格化文档后再开启议题。"
-    md_files = list(docs_root.rglob("*.md"))
-    if not md_files:
-        return "错误: ProjectSpec/ 下没有 .md 文档。请先创建项目规格化文档后再开启议题。"
-
-    try:
-        recovered = _detect_active_session(_project_root)
-        if recovered:
-            return f"SessionSpec/active/ 下存在残留文件 {recovered}.spec.json，请先 specClose、specAbort 或 specArchive 处理后重试。"
-    except ValueError as e:
-        return f"检测活跃会话失败: {e}"
-    sid = session_spec_id or _generate_spec_id(topic)
-    if _spec_path(_project_root, sid).exists():
-        return f"错误: session_spec_id '{sid}' 已存在，请手动指定其他名称。"
-    spec = new_spec(session_spec_id=sid, project=_project_root.name, scenario=scenario, created_at=datetime.now(timezone.utc).isoformat())
-    errors = validate_spec(spec)
-    if errors:
-        return "Schema 校验失败:\n" + "\n".join(f"  - {e}" for e in errors)
-    _write_spec_file(spec)
-    _current_session_id = sid
-    return f"## ✅ 议题已创建\n\n{render_summary(spec)}\n\n可以开始讨论了。"
+    metadata = get_schema_metadata()
+    return json.dumps(metadata, indent=2, ensure_ascii=False)
 
 
 @mcp.tool()
 def spec_status() -> str:
-    """查看当前议题状态 — 检查 SessionSpec/active/ 下是否存在活跃议题。"""
+    """检查当前议题状态并给出下一步操作指引。
+
+    状态路由：
+    - 未初始化 → 自动创建 SessionSpec/ 目录，提示开启新议题
+    - 无活跃议题 → 提示参考 spec-start 流程
+    - 有活跃议题 → 提示调 spec_read() 读取
+    - 有已关闭未归档 → 提示调 spec_archive() 归档"""
     if _project_root is None:
         return "错误: 项目根目录未初始化"
+
+    # 自动初始化 SessionSpec 目录
+    active_dir = _project_root / "SessionSpec" / "active"
+    archive_dir = _project_root / "SessionSpec" / "archive"
+    if not active_dir.is_dir() or not archive_dir.is_dir():
+        active_dir.mkdir(parents=True, exist_ok=True)
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        return "✅ 项目已初始化，SessionSpec/ 目录已就绪。当前无活跃议题，可参考 spec-start 流程开启新议题。"
 
     try:
         sid = _detect_active_session(_project_root)
     except ValueError as e:
-        return f"检测活跃会话失败: {e}"
+        return f"错误: {e}"
 
     if sid is None:
-        return "当前没有活跃议题。如需开启新议题，请调用 specStart。"
+        return "当前没有活跃议题。可参考 spec-start 流程开启新议题。"
 
     spec = _read_spec_file(sid)
     if spec is None:
-        return "当前会话已失效（文件不存在），请调用 specStart 开启新议题。"
+        return "当前会话已失效（文件不存在）。可参考 spec-start 流程开启新议题。"
 
-    return render_summary(spec)
+    status = spec.get("status", "active")
+    if status == "active":
+        return f"当前有活跃议题：**{sid}**。请调用 spec_read() 读取完整内容。"
+    if status == "closed":
+        return f"当前有已关闭但未归档的议题：**{sid}**。请调用 spec_archive() 归档。"
+    if status == "abandoned":
+        return f"当前有已作废但未归档的议题：**{sid}**。请调用 spec_archive() 归档。"
+
+    return f"当前文件状态异常: {sid} (status={status})"
 
 
 @mcp.tool()
-def spec_pause(spec_json: str) -> str:
-    """保存当前议题进度，不改变状态。"""
-    sid = _require_active()
+def spec_read() -> str:
+    """读取当前活跃议题的完整内容。
+
+    返回完整的 SpecStruct JSON，包含 resolutions、pending_decisions、next_steps 等。
+    如需了解各字段的定义和约束，请先调用 spec_schema()。"""
+    if _project_root is None:
+        return "错误: 项目根目录未初始化"
+    try:
+        sid = _detect_active_session(_project_root)
+    except ValueError as e:
+        return f"错误: {e}"
+    if sid is None:
+        return "当前没有活跃议题。可参考 spec-start 流程开启新议题。"
+
     spec = _read_spec_file(sid)
     if spec is None:
-        _current_session_id = None
-        return f"错误: 会话 {sid} 的文件已不存在"
+        return "错误: 文件不存在"
+    return json.dumps(spec, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+def spec_write(spec_json: str) -> str:
+    """写入完整的议题数据（全量替换模式）。
+
+    传入完整的 SpecStruct JSON，服务端会校验字段合法性并执行业务规则检查：
+    - 新创建：自动填充 project、created_at，默认为空决议/待定/计划
+    - 更新：校验只读字段不可改、状态转移合法、关闭必填原因
+
+    建议先调 spec_schema() 获取字段定义。"""
+    global _current_session_id
+    if _project_root is None:
+        return "错误: 项目根目录未初始化"
+
+    # 1) 解析 JSON
     if len(spec_json) > 1_000_000:
-        return "错误: spec_json 数据量过大（超过 1MB），请精简后再试"
+        return "错误: 数据量过大（超过 1MB），请精简后再试"
     try:
         data = json.loads(spec_json)
     except json.JSONDecodeError as e:
-        return f"错误: spec_json 不是合法 JSON: {e}"
+        return f"错误: 不是合法 JSON: {e}"
     if not isinstance(data, dict):
-        return "错误: spec_json 必须是一个 JSON 对象"
-    errors = apply_pause(spec, data)
-    if errors:
-        return "数据处理错误:\n" + "\n".join(f"  - {e}" for e in errors)
-    errors = validate_spec(spec)
-    if errors:
-        return "Schema 校验失败:\n" + "\n".join(f"  - {e}" for e in errors)
-    _write_spec_file(spec)
-    return f"## ✅ 进度已保存\n\n{render_summary(spec)}\n\n**下一步建议**：调用 doc_structure() 查看 ProjectSpec/ 文档结构，根据文档 section 将决议内容写入对应段落。写入时可使用 read_doc() 查看目标文档当前内容，再调 update_section() 或 add_section() 操作。"
+        return "错误: 必须是一个 JSON 对象"
 
+    # 必填字段检查
+    for field in ("session_spec_id", "scenario", "status"):
+        if field not in data:
+            return f"错误: 缺少必填字段 '{field}'"
 
-@mcp.tool()
-def spec_close(reason: str, force: bool = False) -> str:
-    """关闭当前议题。"""
-    global _current_session_id
-    sid = _require_active()
-    spec = _read_spec_file(sid)
-    if spec is None:
-        _current_session_id = None
-        return f"错误: 会话 {sid} 的文件已不存在"
-    pending = spec.get("pending_decisions", [])
-    unresolved = [p for p in pending if p.get("status") != "resolved"]
-    if unresolved and not force:
-        topics = "\n".join(f"  - {p['topic']} [{p['status']}]: {p['note']}" for p in unresolved)
-        return f"⚠️ 仍有 {len(unresolved)} 项待定决议未解决：\n{topics}\n\n建议先讨论解决后再关闭。如需强行关闭，请再次调用 specClose(reason='{reason}', force=True)，未解决项将被自动清除。"
-    if force and unresolved:
-        spec["pending_decisions"] = [p for p in pending if p.get("status") == "resolved"]
-    close_spec(spec, reason, datetime.now(timezone.utc).isoformat())
-    errors = validate_spec(spec)
+    sid = data["session_spec_id"]
+    spec_path = _spec_path(_project_root, sid)
+    existing = None
+    if spec_path.exists():
+        try:
+            existing = json.loads(spec_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # 2) 新创建 vs 更新
+    if existing is None:
+        # ——— 新创建 ———
+        # 检查 ProjectSpec/ 是否存在
+        docs_root = _project_root / "ProjectSpec"
+        if not docs_root.is_dir() or not list(docs_root.rglob("*.md")):
+            return "错误: 未找到 ProjectSpec/ 或项目规格文档。请先创建项目规格文档后再开启议题。"
+        try:
+            recovered = _detect_active_session(_project_root)
+            if recovered:
+                return f"SessionSpec/active/ 下存在残留文件，请先处理后再创建新议题。"
+        except ValueError as e:
+            return f"检测活跃会话失败: {e}"
+        if spec_path.exists():
+            return f"错误: session_spec_id '{sid}' 已存在，请使用其他名称。"
+
+        # 自动填充
+        data.setdefault("project", _project_root.name)
+        data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        data.setdefault("related_doc_types", [])
+        data.setdefault("resolutions", [])
+        data.setdefault("pending_decisions", [])
+        data.setdefault("next_steps", [])
+        data.setdefault("closed_at", None)
+        data.setdefault("closed_reason", None)
+    else:
+        # ——— 更新 ———
+        # 只读字段一致检查
+        for fld in ("session_spec_id", "project", "created_at"):
+            if fld in data and data[fld] != existing.get(fld):
+                return (
+                    f"错误: 字段 '{fld}' 不可修改（只读）。"
+                    f" 已有值: '{existing.get(fld)}'，提交值: '{data[fld]}'"
+                )
+
+        # 状态转移校验
+        old_status = existing.get("status", "active")
+        new_status = data.get("status", old_status)
+        if old_status != new_status:
+            allowed = {"active": {"closed", "abandoned"}, "closed": set(), "abandoned": set()}
+            if new_status not in allowed.get(old_status, set()):
+                return (
+                    f"错误: 状态 {old_status} → {new_status} 不合法。"
+                    f" active 可转为 closed 或 abandoned；closed/abandoned 不可再变更。"
+                )
+
+        # 关闭/作废必须提供原因
+        if new_status in ("closed", "abandoned") and not data.get("closed_reason"):
+            labels = {"closed": "关闭", "abandoned": "作废"}
+            return f"错误: status 为 {new_status} 时必须提供 {labels[new_status]}原因（closed_reason）。"
+
+        # 从已有数据补充缺失字段（全量替换模式下 LLM 可能漏传）
+        for fld in ("project", "created_at", "related_doc_types"):
+            if fld not in data:
+                data[fld] = existing.get(fld, "")
+
+    # 3) Schema 校验
+    errors = validate_spec(data)
     if errors:
-        return "Schema 校验失败:\n" + "\n".join(f"  - {e}" for e in errors)
-    _write_spec_file(spec)
-    _current_session_id = None
-    cleared_note = ""
-    if force and unresolved:
-        cleared_note = f"\n（已自动清除 {len(unresolved)} 项未解决的待定决议）"
-    doc_sync_note = "\n\n**⚠️ 请确认**：关闭前应先调 doc_structure() 查看文档结构，确认所有决议已通过 update_section() / add_section() 同步到 ProjectSpec/ 对应文档中。未同步的决议不会自动写入文档。"
-    return f"## ✅ 议题已关闭\n\n**议题**: {sid}\n**关闭原因**: {reason}{cleared_note}{doc_sync_note}\n\n{render_summary(spec)}\n\n如需开启新议题，请调用 specStart。"
+        # 增强错误提示
+        enhanced = []
+        for e in errors:
+            if "最小 150 字符" in e:
+                enhanced.append(f"  - {e} — 建议补充决策理由、约束条件或影响范围。")
+            elif "不在允许范围内" in e:
+                enhanced.append(f"  - {e} — 请检查是否拼写错误。")
+            else:
+                enhanced.append(f"  - {e}")
+        return "Schema 校验失败:\n" + "\n".join(enhanced)
 
+    # 4) 写入
+    _write_spec_file(data)
+    _current_session_id = sid
 
-@mcp.tool()
-def spec_abort(reason: str, confirm: bool = False) -> str:
-    """作废当前议题。"""
-    global _current_session_id
-    if not confirm:
-        return f"⚠️ 作废不可撤销。请确认要将议题 {_current_session_id} 作废（原因: {reason}）。如确认，请再次调用 specAbort 并设置 confirm=True。"
-    sid = _require_active()
-    spec = _read_spec_file(sid)
-    if spec is None:
-        _current_session_id = None
-        return f"错误: 会话 {sid} 的文件已不存在"
-    abort_spec(spec, reason, datetime.now(timezone.utc).isoformat())
-    errors = validate_spec(spec)
-    if errors:
-        return "Schema 校验失败:\n" + "\n".join(f"  - {e}" for e in errors)
-    _write_spec_file(spec)
-    src = _spec_path(_project_root, sid)
-    dst = _archive_path(_project_root, sid)
-    _ensure_dir(dst)
-    src.replace(dst)
-    _current_session_id = None
-    return f"## 🚫 议题已作废并归档\n\n**议题**: {sid}\n**作废原因**: {reason}\n\n如需开启新议题，请调用 specStart。"
+    summary = render_summary(data)
+    result = f"## ✅ 议题已保存\n\n{summary}"
+
+    # 空决议覆盖警告（仅更新场景）
+    if existing is not None:
+        existing_res = existing.get("resolutions", [])
+        new_res = data.get("resolutions", [])
+        if existing_res and not new_res:
+            result += f"\n\n⚠️ **注意**：提交的 resolutions 为空，但该议题原有 {len(existing_res)} 条决议。如果是有意清空请忽略此提示。"
+
+    # 状态特定后续建议
+    if data.get("status") == "closed":
+        result += "\n\n**下一步建议**：调用 spec_archive() 归档已关闭的议题。"
+    elif data.get("status") == "abandoned":
+        result += "\n\n**下一步建议**：调用 spec_archive() 归档已作废的议题。"
+    else:
+        result += "\n\n**下一步建议**：调用 doc_structure() 查看文档结构，将决议写入对应文档。"
+    return result
 
 
 @mcp.tool()
 def spec_archive() -> str:
-    """归档已关闭的议题（从 active 移至 archive）。仅当议题状态为 closed 时有效。"""
+    """归档已关闭或已作废的议题（从 active 移至 archive）。"""
     if _project_root is None:
         return "错误: 项目根目录未初始化"
     try:
@@ -812,8 +869,8 @@ def spec_archive() -> str:
     if spec is None:
         return "错误: 文件不存在"
     status = spec.get("status")
-    if status != "closed":
-        return f"议题 {sid} 状态为 {status}，只有 closed 的议题才能归档。请先调用 specClose。"
+    if status not in ("closed", "abandoned"):
+        return f"议题 {sid} 状态为 {status}，只有 closed 或 abandoned 的议题才能归档。请先通过 spec_write() 设置正确状态。"
     src = _spec_path(_project_root, sid)
     dst = _archive_path(_project_root, sid)
     _ensure_dir(dst)
@@ -869,12 +926,6 @@ def main():
     index = _load_index(_project_root)
     if index is None:
         print(f"警告: {_project_root / '.doc-kit' / 'index.json'} 不存在。\n  请先在项目中运行初始化。MCP 服务器仍将启动，但部分工具将返回空结果。", file=sys.stderr)
-    template_path = _project_root / ".reasonix" / "spec-template.json"
-    try:
-        template = generate_template()
-        template_path.write_text(json.dumps(template, indent=2, ensure_ascii=False), encoding="utf-8")
-    except OSError as e:
-        print(f"  警告: spec-template.json 写入失败: {e}", file=sys.stderr)
     try:
         recovered = _detect_active_session(_project_root)
         if recovered:
@@ -891,7 +942,7 @@ def main():
         f"  会话: {session_status}\n"
         f"  传输: stdio\n"
         f"  工具: read_doc, doc_structure, update_section, add_section, "
-        f"spec_start, spec_status, spec_pause, spec_close, spec_abort, spec_archive",
+        f"spec_schema, spec_status, spec_read, spec_write, spec_archive",
         file=sys.stderr,
     )
     mcp.run(transport="stdio")

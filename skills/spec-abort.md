@@ -19,13 +19,23 @@
 作废不可撤销，请确认。
 ```
 
-### Step 2：调工具
+### Step 2：读取当前议题
 
-用户确认后，直接调 `spec_abort(reason="作废原因", confirm=True)`。
-（一次调用即执行，MCP 在确认后会完成归档。）
+调 `spec_read()` 获取完整的议题数据。
+
+### Step 3：修改为作废状态
+
+在 spec 上设置：
+- `status` → `"abandoned"`
+- `closed_at` → 当前时间 ISO 8601
+- `closed_reason` → 用户提供的原因
+
+### Step 4：写入并归档
+
+1. 调 `spec_write(spec_json)` 保存作废状态
+2. 调 `spec_archive()` 归档
 
 ### 成功后
 
-- MCP 标记为 abandoned，直接移至 SessionSpec/archive/
-- 不再占用 active 位置，可立刻开启新议题
+- MCP 标记为 abandoned，移至 SessionSpec/archive/
 - 下次 `spec_status()` 返回「没有活跃议题」
