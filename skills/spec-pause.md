@@ -16,7 +16,7 @@
 
 ## 在哪选
 
-`active` 状态下，当用户说「今天就到这里」「先保存」「下次继续」时。
+`active` 状态下，当用户说「就到这里」「先保存」「下次继续」时。
 
 ## 选择判断
 
@@ -44,7 +44,7 @@
 | 影响范围 | 影响哪些模块或功能？ | 跨模块决策 |
 | 具体配置/参数 | 如版本号、阈值、协议参数 | 技术选型类 |
 
-如果用户不愿意补充太多细节，AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确认。
+AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确认。
 
 ### Step 3：决议写入文档
 
@@ -56,6 +56,8 @@
 4. 判断是更新已有 section（`update_section(reference, content)`）还是新增 section（`add_section(reference, heading, content)`）
 5. 汇总所有待写入操作，形成清单
 
+> **缓存提示**：`doc_structure()` 的结果在 Step 6 中同样需要用到，建议将返回缓存在内存中，无需重复调用。
+
 > **约束一致性**：决议中的 `[MUST]` / `[SHOULD]` / `[MAY]` 标记应忠实地保留到目标文档中，不可降级或升格。
 
 ### Step 4：用户确认
@@ -65,30 +67,18 @@
 ```
 📋 今天的变更清单，请确认：
 
-✅ 新增决议（共 2 条）：
-  ① 认证方式：采用 OAuth2 + JWT
-     detail：选择 OAuth2 是为了满足第三方系统安全接入要求，
-     同时已有团队基础设施支持。授权模型采用 RBAC。
-     传输加密使用 TLS 1.3。[MUST] 所有 API 必须携带 Bearer token。
-     涉及模块：API 网关、用户服务、设备管理。
-     （162 字 ✅）
-     → 计划写入：global-policies.md → §安全与认证（update_section）
-
-  ② 架构模式：微服务架构，消息总线选择 Kafka
-     detail：采用微服务架构是为了支持各模块独立部署和扩展。
-     消息总线选择 Kafka 而非 RabbitMQ，因为 Kafka 更适合
-     高吞吐量场景（预估峰值 50000 msg/s）。Kafka 集群
-     至少 3 节点。[MUST] 消息投递保证 at-least-once。
-     涉及模块：所有业务模块。
-     （138 字 ❌ 不足 150 字，请补充）
+✅ 新增决议（共 N 条）：
+  ① 决议标题（简要）
+     detail：…（N 字 ✅/❌）
+     → 计划写入：xxx.md → §段落名（update_section / add_section）
 
 ❓ 待定决议：
-  - 日志方案 [needs_discussion]：ELK vs Loki（新增）
-  - 缓存策略 [resolved]：留到功能设计（已解决）
+  - 议题 [needs_discussion]：备注（新增）
+  - 议题 [resolved]：备注（已解决）
 
 📌 后续计划：
-  + 调研 ELK 和 Loki
-  - 旧的计划项
+  + 新增项
+  - 删除项
 ```
 
 以上是否正确？各条 detail 是否需要调整？

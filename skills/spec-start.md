@@ -14,7 +14,7 @@
 
 调 `spec_status()` 确认。如果返回「当前有活跃议题」，则引导用户先处理已有议题。
 
-### Step 1：获取字段结构
+### Step 1：获取数据模板
 
 调 `spec_schema()` 了解 SpecStruct 的字段定义（类型、允许值、约束），为组装初始数据做准备。
 
@@ -35,18 +35,7 @@
 
 ### Step 4：组装初始 spec 并写入
 
-按 spec_schema() 的结构组装完整的 spec JSON，调 `spec_write(spec_json)`：
-
-```json
-{
-  "session_spec_id": "20260618-cert-auth",
-  "scenario": "tech-ref",
-  "status": "active",
-  "resolutions": [],
-  "pending_decisions": [],
-  "next_steps": []
-}
-```
+按 spec_schema() 的结构组装完整的 spec JSON，调 `spec_write(spec_json)`。
 
 > 注意：`project`、`created_at`、`related_doc_types` 等字段由服务端自动填充，无需传入。
 

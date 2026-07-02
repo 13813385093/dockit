@@ -10,4 +10,5 @@
 
 ## 选择判断
 
-调 `spec_archive()` 完成归档。
+1. 调 `spec_status()` 确认当前议题状态为 **closed** 或 **abandoned**。如仍为 active，应先调 `spec_close` 或 `spec_abort`。
+2. 确认后调 `spec_archive()` 完成归档。

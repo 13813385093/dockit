@@ -238,6 +238,7 @@ class DocNode:
             "name": self.name,
             "section": self.section,
             "depends_on": self.depends_on,
+            "level": self.meta.level,
         }
 
 
