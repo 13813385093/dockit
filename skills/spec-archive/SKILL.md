@@ -1,3 +1,8 @@
+---
+name: spec-archive
+description: 归档已关闭或已作废的议题（从 active 移至 archive）
+---
+
 # spec-archive — 归档已关闭或已作废的议题
 
 ## 定位

@@ -1,3 +1,8 @@
+---
+name: spec-load
+description: 查看当前议题状态，决定下一步走哪个岔路
+---
+
 # spec-load — 查看当前议题状态
 
 ## 定位

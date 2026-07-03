@@ -1,3 +1,8 @@
+---
+name: spec-abort
+description: 作废当前议题，非正常终止时使用
+---
+
 # spec-abort — 作废当前议题
 
 ## 定位

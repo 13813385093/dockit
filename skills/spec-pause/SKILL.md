@@ -1,3 +1,8 @@
+---
+name: spec-pause
+description: 保存当前议题进度，提取决议并写入文档，不改变状态
+---
+
 # spec-pause — 保存当前议题进度
 
 ## 定位

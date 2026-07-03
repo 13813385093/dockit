@@ -1,3 +1,8 @@
+---
+name: spec-start
+description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
+---
+
 # spec-start — 开启新议题
 
 ## 定位

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Skill 提示词回归检查 — 验证 .md Skill 描述与实际工具签名一致。
+"""Skill 提示词回归检查 — 验证 SKILL.md 描述与实际工具签名一致。
 
 用法:
     python tests/check_skill_sync.py
@@ -55,10 +55,10 @@ def extract_tool_signatures() -> dict[str, list[str]]:
 # ═══════════════════════════════════════════════════════════════
 
 def extract_skill_refs() -> dict[str, set[str]]:
-    """从 skill/*.md 提取所有 `函数名(...)` 调用模式，返回 {工具名: set(参数名)}。"""
+    """从 skill/*/SKILL.md 提取所有 `函数名(...)` 调用模式，返回 {工具名: set(参数名)}。"""
     skill_refs: dict[str, set[str]] = {}
 
-    for md_file in sorted(SKILL_DIR.glob("*.md")):
+    for md_file in sorted(SKILL_DIR.glob("**/SKILL.md")):
         text = md_file.read_text(encoding="utf-8")
         # 匹配 `funcName(arg1, arg2, ...)` 或 `funcName(arg1=val, arg2=val)`
         pattern = r'`([a-zA-Z_]\w*)\s*\(([^)]*)\)`'

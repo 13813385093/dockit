@@ -1,3 +1,8 @@
+---
+name: spec-close
+description: 关闭当前议题，包含决议完整性检查和文档写入确认
+---
+
 # spec-close — 关闭当前议题
 
 ## 定位
