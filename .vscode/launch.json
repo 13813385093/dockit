@@ -8,7 +8,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "python": "C:/ProgramData/miniconda3/envs/doc-kit/python.exe",
+            "python": "C:/Users/yet/miniconda3/envs/doc-kit/python.exe",
             "cwd": "${workspaceFolder}"
         }
     ]

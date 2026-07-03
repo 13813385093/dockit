@@ -182,14 +182,27 @@ class TestDocContent:
         assert len(results) == 1
         assert results[0].heading == "H1"
 
-    def test_insert_section_under_parent(self, content):
-        new_s = content.insert_section("doc.md#H1", "H1sub", "sub content")
+    def test_insert_section_child(self, content):
+        new_s = content.insert_section("doc.md#H1", "H1sub", "sub content", level_offset=1)
         assert new_s.level == 2
         assert new_s.reference == "doc.md#H1#H1sub"
         # 应在 H1 的子段落后（H2 之前）
         h1_idx = content.sections.index(content.get_section("doc.md#H1"))
         new_idx = content.sections.index(new_s)
         assert new_idx > h1_idx
+
+    def test_insert_section_sibling(self, content):
+        """默认 level_offset=0 时插入同级段落"""
+        new_s = content.insert_section("doc.md#H1", "H1sibling", "sibling content")
+        assert new_s.level == 1  # 与 H1 同级
+        assert new_s.reference == "doc.md#H1sibling"  # 同级 reference 取父路径 + 标题
+        # 应在 H1 之后、H3 之前
+        h1_idx = content.sections.index(content.get_section("doc.md#H1"))
+        new_idx = content.sections.index(new_s)
+        assert new_idx > h1_idx
+        # H3 应在新增同级段落后
+        h3_idx = content.sections.index(content.get_section("doc.md#H3"))
+        assert new_idx < h3_idx
 
     def test_insert_section_no_parent(self, content):
         new_s = content.insert_section("doc.md#NONEXIST", "NewTop", "new content")

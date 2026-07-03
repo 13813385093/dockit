@@ -293,25 +293,47 @@ class DocContent:
     def find_by_heading(self, keyword: str) -> list[Section]:
         return [s for s in self.sections if keyword in s.heading]
 
-    def insert_section(self, parent_reference: str, heading: str, content: str) -> Section:
-        parent = self.get_section(parent_reference)
-        if parent:
-            level = parent.level + 1
-            parent_idx = self.sections.index(parent)
-            insert_idx = parent_idx + 1
-            for i in range(parent_idx + 1, len(self.sections)):
-                if self.sections[i].level > parent.level:
+    def insert_section(self, reference: str, heading: str, content: str, level_offset: int = 0) -> Section:
+        """在reference段落后插入新段落。
+
+        Args:
+            reference: 锚点段落的reference
+            heading: 新段落标题
+            content: 正文
+            level_offset: 相对于reference的层级偏移。
+                          0（默认）= 同级插入
+                          1 = 子级插入
+        """
+        target = self.get_section(reference)
+        if target:
+            level = target.level + level_offset
+            target_idx = self.sections.index(target)
+            insert_idx = target_idx + 1
+            for i in range(target_idx + 1, len(self.sections)):
+                if self.sections[i].level > target.level:
                     insert_idx = i + 1
                 else:
                     break
-            new_ref = parent.reference + "#" + heading
+            if level_offset == 0:
+                # 同级插入：reference 取锚点的父路径 + 新标题
+                last_hash = target.reference.rfind("#")
+                if last_hash != -1:
+                    new_ref = target.reference[:last_hash] + "#" + heading
+                else:
+                    new_ref = target.reference + "#" + heading
+            else:
+                # 子级插入：reference 取锚点 reference + 新标题
+                new_ref = target.reference + "#" + heading
         else:
             level = 1
             insert_idx = len(self.sections)
-            file_path = parent_reference.split("#")[0]
+            file_path = reference.split("#")[0]
             new_ref = file_path + "#" + heading
 
         new_section = Section(level=level, heading=heading, reference=new_ref, content=content)
+        # 查重：同一 reference 不应重复插入
+        if self.get_section(new_ref) is not None:
+            raise ValueError(f"段落已存在: {new_ref}，不允许重复创建")
         self.sections.insert(insert_idx, new_section)
         return new_section
 
@@ -330,9 +352,11 @@ class DocContent:
             heading_marker = "#" * (s.level + 1)
             block = f"{heading_marker} {s.heading}"
             if s.content:
-                block += f"\n{s.content}"
+                block += f"\n\n{s.content}"
             body_parts.append(block)
         body = "\n\n".join(body_parts)
+        if not body.endswith("\n"):
+            body += "\n"
         if self._raw_frontmatter:
             return FrontmatterParser.dump(self._raw_frontmatter, body)
         return body
@@ -531,8 +555,16 @@ def update_section(reference: str, content: str) -> str:
 
 
 @mcp.tool()
-def add_section(reference: str, heading: str, content: str = "") -> str:
-    """在文档中新增一个段落，自动写回文件。"""
+def add_section(reference: str, heading: str, content: str = "", level: str = "sibling") -> str:
+    """在文档中新增一个段落，自动写回文件。
+
+    Args:
+        reference: 锚点段落的 reference 路径
+        heading: 新段落标题
+        content: 正文（可选）
+        level: 层级关系，"sibling"（默认）— 在锚点段落后追加同级段落；
+               "child" — 在锚点段落内追加子段落
+    """
     if not _project_root:
         return json.dumps({"success": False, "data": None, "suggestions": ["项目根目录未初始化"]}, indent=2, ensure_ascii=False)
     file_rel = reference.split("#")[0]
@@ -558,15 +590,14 @@ def add_section(reference: str, heading: str, content: str = "") -> str:
         level=meta_dict.get("level", ""), version=meta_dict.get("version", ""),
         status=meta_dict.get("status", "active"), mtime="",
     )
+    if level not in ("sibling", "child"):
+        return json.dumps({"success": False, "data": None, "suggestions": ["level 参数仅支持 'sibling' 或 'child'"]}, indent=2, ensure_ascii=False)
     doc_content = DocContent.from_body(file_rel, doc_meta, body, raw_frontmatter=meta_dict)
-    parent = doc_content.get_section(reference)
-    if parent:
-        new_ref = parent.reference + "#" + heading.strip()
-    else:
-        new_ref = file_rel + "#" + heading.strip()
-    if doc_content.get_section(new_ref) is not None:
-        return json.dumps({"success": False, "data": None, "suggestions": [f"段落已存在: {new_ref}，不允许重复创建"]}, indent=2, ensure_ascii=False)
-    new_section = doc_content.insert_section(reference, heading.strip(), content.strip())
+    level_offset = 1 if level == "child" else 0
+    try:
+        new_section = doc_content.insert_section(reference, heading.strip(), content.strip(), level_offset=level_offset)
+    except ValueError as e:
+        return json.dumps({"success": False, "data": None, "suggestions": [str(e)]}, indent=2, ensure_ascii=False)
     try:
         new_markdown = doc_content.to_markdown()
         full_path.write_text(new_markdown, encoding="utf-8")
