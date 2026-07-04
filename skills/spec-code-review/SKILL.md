@@ -35,11 +35,36 @@ Phase 4 — 收尾
 
 ## Phase 1：收集
 
+### Step 1-0：前置条件
+
+在开始任何 git 操作之前，先确认环境就绪：
+
+```bash
+git --version 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1
+```
+
+**不满足条件时**，直接输出以下文案并终止流程（不再执行后续 Steps）：
+
+```
+❌ 前置条件不满足：系统未安装 git 或当前目录不是 git 仓库。
+
+建议操作：
+  • git --version 确认安装
+  • git init 初始化仓库
+  • cd 切换到 git 仓库目录后重试
+```
+
+执行成功后继续到 Step 1-1。
+
 ### Step 1-1：解析用户描述
 
 从 `/spec-code-review {描述}` 中提取：
 - **关注范围**：用户指定要评审的文件、模块或功能点（如「评审 auth 模块的改动」）
-- 如描述为空或无明确指向，则评审锚点之后的所有新增提交
+- 如描述为空或无明确指向，则向用户提问确认范围
+
+> **文档排除**：本 skill 聚焦**代码变更**评审。新增的 markdown、docs/、CHANGELOG、
+> README 等纯文档类文件会自动从 git diff 中排除。如果用户明确要求评审文档
+> （如「顺便看看 README 改得对不对」），则在 git 命令中**不加入**排除规则。
 
 ### Step 1-2：获取评审锚点
 
@@ -62,18 +87,22 @@ Phase 4 — 收尾
 
 ### Step 1-3：获取 git 变更
 
+默认排除纯文档类文件（`.md`、`docs/`、`CHANGELOG*`、`README*`、`LICENSE*`），聚焦代码变更。
+如果用户描述中要求评审文档，则不加入排除规则。
+
 ```bash
-# 提交清单
-git log <锚点>..HEAD --oneline
+# 提交清单（仅代码）
+git log <锚点>..HEAD --oneline -- . ':(exclude)*.md' ':(exclude)docs/' ':(exclude)CHANGELOG*' ':(exclude)README*' ':(exclude)LICENSE*'
 
-# 变更文件概览
-git diff --stat <锚点>..HEAD
+# 变更文件概览（仅代码）
+git diff --stat <锚点>..HEAD -- . ':(exclude)*.md' ':(exclude)docs/' ':(exclude)CHANGELOG*' ':(exclude)README*' ':(exclude)LICENSE*'
 
-# 完整 diff
-git diff <锚点>..HEAD
+# 完整 diff（仅代码）
+git diff <锚点>..HEAD -- . ':(exclude)*.md' ':(exclude)docs/' ':(exclude)CHANGELOG*' ':(exclude)README*' ':(exclude)LICENSE*'
 ```
 
-如果用户描述中指定了关注范围，追加路径过滤缩小结果：
+如果用户描述中指定了关注范围，用 `-- <路径>` 取代上述排除规则：
+
 ```bash
 git log <锚点>..HEAD --oneline -- <路径1> <路径2>
 git diff <锚点>..HEAD -- <路径>
