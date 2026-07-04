@@ -914,6 +914,198 @@ def spec_archive() -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Code Review 状态管理
+# ═══════════════════════════════════════════════════════════════
+
+
+def _review_state_path() -> Path | None:
+    """返回 code-review-state.json 的路径，项目未初始化时返回 None。"""
+    if _project_root is None:
+        return None
+    return _project_root / ".doc-kit" / "code-review-state.json"
+
+
+REVIEW_STATE_DEFAULTS = {
+    "last_reviewed_commit": None,
+    "last_reviewed_at": None,
+    "review_history": [],
+}
+
+
+def _read_review_state() -> dict:
+    """读取 code-review-state.json，不存在则返回默认结构。"""
+    path = _review_state_path()
+    if path is None or not path.exists():
+        return dict(REVIEW_STATE_DEFAULTS)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        # 补全缺失字段
+        for k, v in REVIEW_STATE_DEFAULTS.items():
+            data.setdefault(k, v)
+        return data
+    except (json.JSONDecodeError, OSError):
+        return dict(REVIEW_STATE_DEFAULTS)
+
+
+def _write_review_state(state: dict) -> None:
+    """写入 code-review-state.json。"""
+    path = _review_state_path()
+    if path is None:
+        raise RuntimeError("项目根目录未初始化")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+@mcp.tool()
+def get_git_history() -> str:
+    """获取上一次 code review 的 git 提交锚点。
+
+    返回上次评审时的 commit hash，以及评审历史列表。
+    首次使用（无锚点）时返回空状态，提示从头开始评审。"""
+    state = _read_review_state()
+    commit = state.get("last_reviewed_commit")
+    if not commit:
+        return json.dumps({
+            "success": True,
+            "data": {"last_reviewed_commit": None, "last_reviewed_at": None, "review_history": []},
+            "suggestions": ["尚无评审记录，将从头开始评审所有提交。"],
+        }, indent=2, ensure_ascii=False)
+
+    return json.dumps({
+        "success": True,
+        "data": {
+            "last_reviewed_commit": commit,
+            "last_reviewed_at": state.get("last_reviewed_at"),
+            "review_history": state.get("review_history", []),
+        },
+        "suggestions": [
+            f"上次评审锚点: {commit}",
+            f"可用 git log {commit}..HEAD --oneline 查看新增提交。",
+        ],
+    }, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+def add_git_history(commit_hash: str, session_spec_id: str = "") -> str:
+    """保存本次 code review 的 git 提交锚点。
+
+    Args:
+        commit_hash: 本次评审到的 commit hash（完整 hash）
+        session_spec_id: 关联的议题 ID（可选，便于追溯）
+    """
+    if not commit_hash or not commit_hash.strip():
+        return json.dumps({"success": False, "data": None, "suggestions": ["commit_hash 不能为空"]}, indent=2, ensure_ascii=False)
+
+    commit_hash = commit_hash.strip()
+    state = _read_review_state()
+
+    # 更新锚点
+    state["last_reviewed_commit"] = commit_hash
+    state["last_reviewed_at"] = datetime.now(timezone.utc).isoformat()
+
+    # 追加评审记录
+    record = {
+        "commit": commit_hash,
+        "time": state["last_reviewed_at"],
+    }
+    if session_spec_id:
+        record["session"] = session_spec_id
+    state.setdefault("review_history", []).append(record)
+
+    _write_review_state(state)
+
+    return json.dumps({
+        "success": True,
+        "data": {"last_reviewed_commit": commit_hash, "last_reviewed_at": state["last_reviewed_at"]},
+        "suggestions": [f"评审锚点已更新为 {commit_hash}。下次 code review 将从此 commit 开始。"],
+    }, indent=2, ensure_ascii=False)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Code Review 报告管理
+# ═══════════════════════════════════════════════════════════════
+
+
+REVIEW_REPORT_SECTIONS = {
+    "required": [
+        ("# ", "报告标题"),
+        ("## 基本信息", "基本信息段"),
+        ("## 评审热点", "热点区域段"),
+    ],
+    "recommended": [
+        ("## 深入确认项", "确认项段"),
+        ("## 未深入比对项", "未深入比对项段"),
+        ("## 后续动作", "后续动作段"),
+    ],
+}
+"""评审报告必须/推荐的 Markdown 段落。"""
+
+
+def _validate_review_report(markdown: str) -> list[str]:
+    """校验评审报告的段落结构，返回缺失段落警告列表（空列表 = 通过）。"""
+    warnings = []
+    for heading, label in REVIEW_REPORT_SECTIONS["required"]:
+        if heading not in markdown:
+            warnings.append(f"缺少必填段落: {label} (以 '{heading}' 开头)")
+    for heading, label in REVIEW_REPORT_SECTIONS["recommended"]:
+        if heading not in markdown:
+            warnings.append(f"建议补充段落: {label} (以 '{heading}' 开头)")
+    return warnings
+
+
+@mcp.tool()
+def write_review_report(report_markdown: str) -> str:
+    """将代码评审报告写入 ReviewSpec/ 目录。
+
+    报告需包含以下 Markdown 段落结构：
+      # {报告标题}
+      ## 基本信息    — 评审日期、关注范围、变更文件清单
+      ## 评审热点    — AI 标注的潜在偏差区域
+      ## 深入确认项  — 经用户确认的差异及其判定（推荐）
+      ## 未深入比对项 — 标注但未深入处理的热点（推荐）
+      ## 后续动作    — 基于评审结果的可选后续步骤（推荐）
+
+    服务端校验必填段落，缺失时返回警告但仍写入文件。
+    文件名格式：code-review-{YYYYMMDD-HHMMSS}.md
+    """
+    if _project_root is None:
+        return json.dumps({"success": False, "data": None, "suggestions": ["项目根目录未初始化"]}, indent=2, ensure_ascii=False)
+
+    if not report_markdown or not report_markdown.strip():
+        return json.dumps({"success": False, "data": None, "suggestions": ["report_markdown 不能为空"]}, indent=2, ensure_ascii=False)
+
+    # 校验段落结构
+    warnings = _validate_review_report(report_markdown)
+
+    # 生成文件名
+    now = datetime.now()
+    filename = f"code-review-{now.strftime('%Y%m%d-%H%M%S')}.md"
+    reviews_dir = _project_root / "ReviewSpec"
+    reviews_dir.mkdir(parents=True, exist_ok=True)
+    file_path = reviews_dir / filename
+
+    # 写入文件
+    file_path.write_text(report_markdown.strip() + "\n", encoding="utf-8")
+
+    result = {
+        "success": True,
+        "data": {
+            "file": filename,
+            "path": str(file_path.relative_to(_project_root)),
+        },
+        "suggestions": [],
+    }
+
+    if warnings:
+        result["warnings"] = warnings
+        result["suggestions"].append(f"报告已写入但格式有 {len(warnings)} 个提示，详见 warnings 字段")
+    else:
+        result["suggestions"].append("报告格式完整，已写入 ReviewSpec/")
+
+    return json.dumps(result, indent=2, ensure_ascii=False)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  辅助函数
 # ═══════════════════════════════════════════════════════════════
 
@@ -974,7 +1166,8 @@ def main():
         f"  会话: {session_status}\n"
         f"  传输: stdio\n"
         f"  工具: read_doc, doc_structure, update_section, add_section, "
-        f"spec_schema, spec_status, spec_read, spec_write, spec_archive",
+        f"spec_schema, spec_status, spec_read, spec_write, spec_archive, "
+        f"get_git_history, add_git_history, write_review_report",
         file=sys.stderr,
     )
     mcp.run(transport="stdio")
