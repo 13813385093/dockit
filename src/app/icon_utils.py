@@ -1,10 +1,16 @@
 """图标加载工具 — 从 resources/icons/ 加载 SVG 图标。"""
+import sys
 from pathlib import Path
 
 from PySide6.QtGui import QIcon, QColor
 from PySide6.QtCore import Qt
 
-_ICONS_DIR = Path(__file__).resolve().parent / "resources" / "icons"
+def _get_resources_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "src" / "app" / "resources"
+    return Path(__file__).resolve().parent / "resources"
+
+_ICONS_DIR = _get_resources_dir() / "icons"
 
 _ICON_CACHE: dict[str, QIcon] = {}
 

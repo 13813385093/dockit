@@ -1,4 +1,5 @@
 """项目初始化的纯逻辑函数 — 从 CLI init.py 提取，无 typer 依赖。"""
+import sys
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,8 +9,12 @@ from src.app.engine.frontmatter import FrontmatterParser
 from src.app.engine.index import IndexManager, IndexEntry
 from src.app.engine.registry import Registry
 
-# 内置模板目录
-BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
+def _get_builtin_templates_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "src" / "app" / "templates"
+    return Path(__file__).resolve().parent.parent.parent / "templates"
+
+BUILTIN_TEMPLATES_DIR = _get_builtin_templates_dir()
 
 
 def get_project_name(project_root: Path) -> str:

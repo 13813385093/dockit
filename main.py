@@ -11,12 +11,18 @@ from PySide6.QtGui import QIcon
 from src.app.main_window import MainWindow
 from qt_material import apply_stylesheet
 
+def get_app_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("DocKit Studio")
     app.setOrganizationName("DocKit Studio")
     
-    icon_path = Path(__file__).resolve().parent / "src" / "app" / "resources" / "icons" / "dropbox.png"
+    app_root = get_app_root()
+    icon_path = app_root / "src" / "app" / "resources" / "icons" / "dropbox.png"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
     

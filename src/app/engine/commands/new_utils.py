@@ -1,12 +1,17 @@
 """新建文档的纯逻辑函数 — 从 CLI new.py 提取，无 typer 依赖。"""
+import sys
 from pathlib import Path
 from string import Template
 
 from src.app.engine.frontmatter import FrontmatterParser
 from src.app.engine.validation import parse_module_path
 
-# 内置模板目录
-BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
+def _get_builtin_templates_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "src" / "app" / "templates"
+    return Path(__file__).resolve().parent.parent.parent / "templates"
+
+BUILTIN_TEMPLATES_DIR = _get_builtin_templates_dir()
 
 
 def resolve_template_path(template_name: str, kit_dir: Path | None) -> Path:
