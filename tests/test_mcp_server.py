@@ -316,10 +316,10 @@ class TestDocStructure:
         ds._entries = []
         ds.doc_map = {}
         for p, dt, mod, lvl in [
-            ("a.md", "arch", "core", "top"),
-            ("b.md", "domain_model", "core", "top"),
-            ("c.md", "arch", "modX", "module"),
-            ("d.md", "feature_design", "modX", "feature"),
+            ("ProjectSpec/a.md", "arch", "core", "top"),
+            ("ProjectSpec/b.md", "domain_model", "core", "top"),
+            ("ProjectSpec/c.md", "arch", "modX", "module"),
+            ("ProjectSpec/d.md", "feature_design", "modX", "feature"),
         ]:
             meta = DocMeta(dt, mod, lvl, "1.0", "active", "")
             ds.doc_map[p] = DocNode(p, Path(p).name, meta, [], [])
@@ -340,14 +340,14 @@ class TestDocStructure:
     def test_get_dependency_chain_simple(self, structure):
         from spec_mcp_tools.server import DocMeta, DocNode
         meta = DocMeta("arch", "core", "top", "1.0", "active", "")
-        structure.doc_map["e.md"] = DocNode(
-            "e.md", "e.md", meta, [], ["a.md", "b.md"])
-        chain = structure.get_dependency_chain("e.md")
-        assert "a.md" in chain
-        assert "b.md" in chain
+        structure.doc_map["ProjectSpec/e.md"] = DocNode(
+            "ProjectSpec/e.md", "e.md", meta, [], ["ProjectSpec/a.md", "ProjectSpec/b.md"])
+        chain = structure.get_dependency_chain("ProjectSpec/e.md")
+        assert "ProjectSpec/a.md" in chain
+        assert "ProjectSpec/b.md" in chain
 
     def test_get_dependency_chain_no_deps(self, structure):
-        chain = structure.get_dependency_chain("a.md")
+        chain = structure.get_dependency_chain("ProjectSpec/a.md")
         assert chain == []
 
     def test_get_dependency_chain_dedup(self, structure):
@@ -355,9 +355,9 @@ class TestDocStructure:
         from spec_mcp_tools.server import DocMeta, DocNode
         meta = DocMeta("arch", "core", "top", "1.0", "active", "")
         # e -> a, b; f -> a (共享 a)
-        structure.doc_map["e.md"] = DocNode("e.md", "e.md", meta, [], ["a.md"])
-        structure.doc_map["f.md"] = DocNode("f.md", "f.md", meta, [], ["a.md"])
+        structure.doc_map["ProjectSpec/e.md"] = DocNode("ProjectSpec/e.md", "e.md", meta, [], ["ProjectSpec/a.md"])
+        structure.doc_map["ProjectSpec/f.md"] = DocNode("ProjectSpec/f.md", "f.md", meta, [], ["ProjectSpec/a.md"])
         # f 依赖 e, e 依赖 a → a 应只出现一次
-        structure.doc_map["g.md"] = DocNode("g.md", "g.md", meta, [], ["f.md", "e.md"])
-        chain = structure.get_dependency_chain("g.md")
+        structure.doc_map["ProjectSpec/g.md"] = DocNode("ProjectSpec/g.md", "g.md", meta, [], ["ProjectSpec/f.md", "ProjectSpec/e.md"])
+        chain = structure.get_dependency_chain("ProjectSpec/g.md")
         assert len(chain) == len(set(chain))  # 无重复

@@ -108,24 +108,30 @@ def safe_join(root: Path, sub_path: str) -> Path | None:
 def _find_doc(project_root: Path, doc_path: str) -> Path | None:
     """在 ProjectSpec/ 中查找文档文件。
 
-    doc_path 不应包含 ProjectSpec/ 前缀（doc_structure 返回的路径已不带此前缀），
+    doc_path 可带 ProjectSpec/ 前缀（如 "ProjectSpec/business-context.md"），
+    也可不带（如 "business-context.md"），两种形式均可；
     可以是路径片段（module-Xxx/arch.md）或文件名（取首个匹配）。
     """
     docs_root = project_root / "ProjectSpec"
     if not docs_root.exists():
         return None
 
-    target = safe_join(docs_root, doc_path)
+    # 统一去除 ProjectSpec/ 前缀（如有），避免 docs_root 拼接后双重路径
+    search_path = doc_path
+    if search_path.startswith("ProjectSpec/"):
+        search_path = search_path[len("ProjectSpec/"):]
+
+    target = safe_join(docs_root, search_path)
     if target and target.exists() and target.is_file():
         return target
 
-    for f in sorted(docs_root.rglob(doc_path)):
+    for f in sorted(docs_root.rglob(search_path)):
         if f.is_file():
             return f
 
-    name = Path(doc_path).name
+    name = Path(search_path).name
     for f in sorted(docs_root.rglob("*.md")):
-        if f.name == name or f.stem == Path(doc_path).stem:
+        if f.name == name or f.stem == Path(search_path).stem:
             return f
 
     return None
@@ -373,11 +379,6 @@ class DocStructure:
 
     def _build(self) -> None:
         for entry in sorted(self._entries, key=lambda x: x.path):
-            # index.json 的 path 带 ProjectSpec/ 前缀，对外统一去掉
-            clean_path = entry.path
-            if clean_path.startswith("ProjectSpec/"):
-                clean_path = clean_path[len("ProjectSpec/"):]
-
             headings = _scan_level2_headings(self._project_root, entry.path)
             deps = _simplify_depends_on(entry.depends_on)
             meta = DocMeta(
@@ -388,8 +389,8 @@ class DocStructure:
                 status=entry.status,
                 mtime=entry.mtime,
             )
-            self.doc_map[clean_path] = DocNode(
-                path=clean_path,
+            self.doc_map[entry.path] = DocNode(
+                path=entry.path,
                 name=Path(entry.path).name,
                 meta=meta,
                 section=headings,
@@ -477,16 +478,13 @@ def read_doc(doc_path: str) -> str:
         meta_dict, body = {}, raw_text
 
     rel_path = str(full_path.relative_to(_project_root).as_posix()) if _project_root else str(full_path)
-    if rel_path.startswith("ProjectSpec/"):
-        rel_path = rel_path[len("ProjectSpec/"):]
 
     # 从 index 中补充 mtime 和 depends_on
     index = _load_index(_project_root)
     index_depends_on: list[str] = []
     index_mtime = ""
     if index:
-        index_path_key = f"ProjectSpec/{rel_path}"
-        entry = index.get_entry(index_path_key)
+        entry = index.get_entry(rel_path)
         if entry:
             index_mtime = entry.mtime
             index_depends_on = _simplify_depends_on(entry.depends_on)
@@ -502,12 +500,20 @@ def read_doc(doc_path: str) -> str:
     content = DocContent.from_body(rel_path, doc_meta, body, raw_frontmatter=meta_dict)
     data = content.to_dict()
     data["depends_on"] = index_depends_on
+
+    suggestions = [
+        "如需修改某个段落，请调用 update_section(reference, content)",
+        "如需新增段落，请调用 add_section(reference, heading, content)",
+    ]
+    if index_depends_on:
+        dep_list = "、".join(index_depends_on)
+        suggestions.append(
+            f"该文档依赖: {dep_list}，可调用 read_doc() 查看依赖文档了解上下文"
+        )
+
     result = {
         "success": True, "data": data,
-        "suggestions": [
-            "如需修改某个段落，请调用 update_section(reference, content)",
-            "如需新增段落，请调用 add_section(reference, heading, content)",
-        ],
+        "suggestions": suggestions,
     }
     return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -518,7 +524,7 @@ def update_section(reference: str, content: str) -> str:
     if not _project_root:
         return json.dumps({"success": False, "data": None, "suggestions": ["项目根目录未初始化"]}, indent=2, ensure_ascii=False)
     file_rel = reference.split("#")[0]
-    # 补回 ProjectSpec/ 前缀以确保路径正确
+    # 确保以 ProjectSpec/ 开头以便 safe_join 拼接（向后兼容裸路径）
     doc_rel = file_rel if file_rel.startswith("ProjectSpec/") else f"ProjectSpec/{file_rel}"
     safe_path = safe_join(_project_root, doc_rel)
     if safe_path is None:
@@ -568,6 +574,7 @@ def add_section(reference: str, heading: str, content: str = "", level: str = "s
     if not _project_root:
         return json.dumps({"success": False, "data": None, "suggestions": ["项目根目录未初始化"]}, indent=2, ensure_ascii=False)
     file_rel = reference.split("#")[0]
+    # 确保以 ProjectSpec/ 开头以便 safe_join 拼接（向后兼容裸路径）
     doc_rel = file_rel if file_rel.startswith("ProjectSpec/") else f"ProjectSpec/{file_rel}"
     safe_path = safe_join(_project_root, doc_rel)
     if safe_path is None:
@@ -670,7 +677,7 @@ def doc_structure() -> str:
     doc_map_dict = {k: v.to_dict() for k, v in structure.doc_map.items()}
     return json.dumps({
         "success": True, "data": {"doc_map": doc_map_dict},
-        "suggestions": ["获取文档完整内容请调用 read_doc(doc_map中的path值)，如 read_doc(\"business-context.md\")"],
+        "suggestions": ["获取文档完整内容请调用 read_doc(doc_map中的path值)，如 read_doc(\"ProjectSpec/business-context.md\")"],
     }, indent=2, ensure_ascii=False)
 
 
