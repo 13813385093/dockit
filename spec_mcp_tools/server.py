@@ -456,7 +456,9 @@ class DocStructure:
 # ═══════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(name="read_doc", description="""
+根据文件路径读取项目规格文档的完整内容，它是`add_section`和`update_section`的前置工具
+""")
 def read_doc(doc_path: str) -> str:
     """读取指定文档的完整内容，按段落层级拍平成 JSON。"""
     full_path = _find_doc(_project_root, doc_path)
@@ -518,7 +520,9 @@ def read_doc(doc_path: str) -> str:
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(name="update_section", description="""
+路径加段落(reference)定位后写入正文内容(content)，并更新规格化文档，它适合作为文档更新的首选
+""")
 def update_section(reference: str, content: str) -> str:
     """更新文档中指定段落的正文内容，自动写回文件。"""
     if not _project_root:
@@ -560,7 +564,15 @@ def update_section(reference: str, content: str) -> str:
     return json.dumps({"success": True, "suggestions": ["段落已更新，可通过 read_doc() 读取最新文档内容验证"]}, indent=2, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(name="add_section", description="""
+在文档中新增一个段落，写回文件。
+    Args:
+        reference: 锚点段落的 reference 路径
+        heading: 新段落标题
+        content: 正文
+        level: 层级关系，"sibling"（默认）— 在锚点段落后追加同级段落；
+               "child" — 在锚点段落内添加子段落
+""")
 def add_section(reference: str, heading: str, content: str = "", level: str = "sibling") -> str:
     """在文档中新增一个段落，自动写回文件。
 
@@ -664,7 +676,9 @@ def _parse_sections(body: str, file_path: str) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(name="doc_structure", description="""
+读取项目规格化文档的文档结构和大纲，作为文档速查表
+""")
 def doc_structure() -> str:
     """扫描 ProjectSpec/ 下所有文档，返回 JSON 格式的文档结构树和查找表。"""
     index = _load_index(_project_root)
@@ -686,7 +700,9 @@ def doc_structure() -> str:
 # ═══════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(name="spec_schema", description="""
+会议模板及完整字段定义，包括类型、允许值、长度约束等
+""")
 def spec_schema() -> str:
     """返回 SpecStruct 的完整字段定义，包括类型、允许值、长度约束等。
 
@@ -698,7 +714,14 @@ def spec_schema() -> str:
     return json.dumps(metadata, indent=2, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(name="spec_status", description="""
+检查当前议题状态并给出下一步操作指引。
+    状态路由：
+    - 未初始化 → 自动创建 SessionSpec/ 目录，提示开启新议题
+    - 无活跃议题 → 提示参考 spec-start 流程
+    - 有活跃议题 → 提示调 spec_read() 读取
+    - 有已关闭未归档 → 提示调 spec_archive() 归档
+""")
 def spec_status() -> str:
     """检查当前议题状态并给出下一步操作指引。
 
@@ -741,7 +764,9 @@ def spec_status() -> str:
     return f"当前文件状态异常: {sid} (status={status})"
 
 
-@mcp.tool()
+@mcp.tool(name="spec_read", description="""
+读取当前活跃议题的完整内容。返回完整会议记录
+""")
 def spec_read() -> str:
     """读取当前活跃议题的完整内容。
 
@@ -762,7 +787,9 @@ def spec_read() -> str:
     return json.dumps(spec, indent=2, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(name="spec_write", description="""
+写入完整的议题数据（全量替换模式）。 传入完整的 SpecStruct JSON，建议先调 `spec_schema`或`spec_read` 获取信息
+""")
 def spec_write(spec_json: str) -> str:
     """写入完整的议题数据（全量替换模式）。
 
@@ -893,7 +920,9 @@ def spec_write(spec_json: str) -> str:
     return result
 
 
-@mcp.tool()
+@mcp.tool(name="spec_archive", description="""
+归档已关闭或已作废的议题（从 active 移至 archive）
+""")
 def spec_archive() -> str:
     """归档已关闭或已作废的议题（从 active 移至 archive）。"""
     if _project_root is None:
@@ -963,7 +992,9 @@ def _write_review_state(state: dict) -> None:
     path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-@mcp.tool()
+@mcp.tool(name="get_git_history", description="""
+获取上一次 code review 的 git 提交锚点。 返回上次评审时的 commit hash，以及评审历史列表。 首次使用（无锚点）时返回空状态，提示从头开始评审。
+""")
 def get_git_history() -> str:
     """获取上一次 code review 的 git 提交锚点。
 
@@ -992,7 +1023,9 @@ def get_git_history() -> str:
     }, indent=2, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(name="add_git_history", description="""
+保存本次 code review 的 git 提交锚点。 Args: commit_hash: 本次评审到的 commit hash（完整 hash） session_spec_id: 关联的议题 ID（可选，便于追溯）
+""")
 def add_git_history(commit_hash: str, session_spec_id: str = "") -> str:
     """保存本次 code review 的 git 提交锚点。
 
@@ -1060,7 +1093,9 @@ def _validate_review_report(markdown: str) -> list[str]:
     return warnings
 
 
-@mcp.tool()
+@mcp.tool(name="write_review_report", description="""
+将代码评审报告写入文件。 报告需包含以下 Markdown 段落结构： # {报告标题} ## 基本信息 — 评审日期、关注范围、变更文件清单 ## 评审热点 — AI 标注的潜在偏差区域 ## 深入确认项 — 经用户确认的差异及其判定（推荐） ## 未深入比对项 — 标注但未深入处理的热点（推荐） ## 后续动作 — 基于评审结果的可选后续步骤（推荐） 服务端校验必填段落，缺失时返回警告但仍写入文件。
+""")
 def write_review_report(report_markdown: str) -> str:
     """将代码评审报告写入 ReviewSpec/ 目录。
 

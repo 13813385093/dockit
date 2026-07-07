@@ -2,6 +2,16 @@
 name: spec-code-review
 description: 独立代码评审，从 git 变更出发比对设计文档，记录差异
 ---
+# 最高优先级：
+
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**使用以下 MCP 专用工具：
+- `mcp__spec_mcp_tools__doc_structure`
+- `mcp__spec_mcp_tools__read_doc`
+- `mcp__spec_mcp_tools__add_section`
+- `mcp__spec_mcp_tools__update_section`
+- `mcp__spec_mcp_tools__write_review_report`
+
+---
 
 # spec-code-review — 代码评审
 
@@ -192,8 +202,7 @@ AI 基于 diff 文本和设计文档，做 best-effort 扫描，标注"可能存
 
 A. **设计变更** — 代码有意偏离原设计，需更新文档记录新决策
 B. **实现偏差** — 代码实现有误，应改回与文档一致
-C. **文档过时** — 文档未及时更新，需更新文档以反映实际实现
-D. **误报** — 代码与文档一致，AI 判断有误
+C. **误报** — 代码与文档一致，AI 判断有误
 ```
 
 ### Step 3-3：记录判定
@@ -302,7 +311,7 @@ AI 标注的 N 个潜在偏差区域：
 
 ### Step 4-4：引导后续动作
 
-> ✅ 代码评审完成。报告已写入 ReviewSpec/{filename}，评审锚点已更新。
+> 代码评审完成。报告已写入 ReviewSpec/{filename}，评审锚点已更新。
 >
-> 🔗 如需将差异记入会议议题追踪，可调 spec-start 开启新议题。
-> 📄 如需直接更新文档，可用 update_section() 或 add_section()。
+> 如需将差异记入会议议题追踪，可调 spec-start 开启新议题。
+> 如需直接更新文档，可用 update_section() 或 add_section()。

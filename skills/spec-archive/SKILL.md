@@ -2,6 +2,13 @@
 name: spec-archive
 description: 归档已关闭或已作废的议题（从 active 移至 archive）
 ---
+# 最高优先级：
+
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**使用以下 MCP 专用工具：
+- `mcp__spec_mcp_tools__spec_write`
+- `mcp__spec_mcp_tools__spec_archive`
+
+---
 
 # spec-archive — 归档已关闭或已作废的议题
 

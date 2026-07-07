@@ -2,6 +2,16 @@
 name: spec-pause
 description: 保存当前议题进度，提取决议并写入文档，不改变状态
 ---
+# 最高优先级：
+
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**使用以下 MCP 专用工具：
+- `mcp__spec_mcp_tools__read_doc`
+- `mcp__spec_mcp_tools__add_section`
+- `mcp__spec_mcp_tools__update_section`
+- `mcp__spec_mcp_tools__spec_read`
+- `mcp__spec_mcp_tools__spec_write`
+
+---
 
 # spec-pause — 保存当前议题进度
 
