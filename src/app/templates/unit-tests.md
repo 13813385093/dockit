@@ -53,28 +53,27 @@ depends_on: []
 #### 测试代码
 
 <!-- 
-使用 Given-When-Then 注释标记测试代码结构。
+使用 Given-When-Then 结构编写伪代码，语言无关，具体实现时转换为目标语言语法。
 正例：
-  def test_voltage_over_threshold_triggers_trip():
-      # Given: 模拟电压异常场景
-      sv_data = create_sv_data(voltage=1.2 * RATED_VOLTAGE)
-      
-      # When: 保护装置监测到异常
-      result = protection_monitor.process(sv_data)
-      
-      # Then: 验证 GOOSE 报文生成
-      assert result.goose_command.pos_ctl_val == False
-      assert result.latency <= 0.004  # ≤4ms
+  // Given: 模拟电压异常场景
+  sv_data = create_sv_data(voltage: 1.2 * RATED_VOLTAGE)
+  
+  // When: 保护装置监测到异常
+  result = protection_monitor.process(sv_data)
+  
+  // Then: 验证 GOOSE 报文生成
+  assert result.goose_command.pos_ctl_val == false
+  assert result.latency <= 0.004  // ≤4ms
 -->
 
-```python
-def test_<!-- 用例名称 -->():
-    # Given:
-    
-    # When:
-    
-    # Then:
-    assert 
+```pseudo
+// <用例名称>
+// Given:
+//   
+// When:
+//   
+// Then:
+//   assert 
 ```
 
 ---
