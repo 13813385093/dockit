@@ -48,16 +48,22 @@ from spec_schema import (
 
 
 def find_project_root(cli_arg: str | None = None) -> Path:
-    """自动发现 doc-kit 项目根目录。
+    """获取 doc-kit 项目根目录。
 
-    优先级: CLI 参数 > 环境变量 > cwd 向上遍历找 .doc-kit/。
-    返回 Path 或抛出 SystemExit。
+    优先级: CLI 参数 > DOC_KIT_PROJECT_ROOT 环境变量。
+    均未提供或指向无效目录时，打印引导信息并退出。
+
+    各 IDE/MCP 客户端应在 MCP 配置中通过 args 或 env 传入项目路径。
     """
     if cli_arg:
         candidate = Path(cli_arg).resolve()
         if _is_valid_project(candidate):
             return candidate
-        print(f"错误: 指定目录不存在或不是 doc-kit 项目: {cli_arg}", file=sys.stderr)
+        print(
+            f"错误: 指定目录不存在或不是 doc-kit 项目: {cli_arg}\n"
+            f"  项目目录必须包含 .doc-kit/ 或 SessionSpec/ 目录。",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     env_val = os.environ.get("DOC_KIT_PROJECT_ROOT")
@@ -65,19 +71,31 @@ def find_project_root(cli_arg: str | None = None) -> Path:
         candidate = Path(env_val).resolve()
         if _is_valid_project(candidate):
             return candidate
-        print(f"错误: DOC_KIT_PROJECT_ROOT 指向无效目录: {env_val}", file=sys.stderr)
+        print(
+            f"错误: DOC_KIT_PROJECT_ROOT 指向无效目录: {env_val}\n"
+            f"  该目录必须包含 .doc-kit/ 或 SessionSpec/ 目录。",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    start = Path.cwd().resolve()
-    for parent in [start] + list(start.parents):
-        if _is_valid_project(parent):
-            return parent
-
     print(
-        "错误: 未找到 doc-kit 项目目录。\n"
-        "  用法: python -m mcp_tools.server /path/to/project\n"
-        "  或设置环境变量 DOC_KIT_PROJECT_ROOT\n"
-        "  或从包含 .doc-kit/ 的目录下运行",
+        "错误: 未指定 doc-kit 项目目录。\n"
+        "\n"
+        "请在 MCP 客户端配置中传入项目根路径。常见配置方式：\n"
+        "\n"
+        "  VS Code (.vscode/mcp.json):\n"
+        '    {\n'
+        '      "doc-kit": {\n'
+        '        "command": "python",\n'
+        '        "args": ["-m", "mcp_tools.server", "D:/dockit"],\n'
+        '        "cwd": "D:/dockit"\n'
+        '      }\n'
+        '    }\n'
+        "\n"
+        "  或设置环境变量:\n"
+        '    set DOC_KIT_PROJECT_ROOT=D:/dockit\n'
+        "\n"
+        "  项目目录必须包含 .doc-kit/ 或 SessionSpec/ 目录。",
         file=sys.stderr,
     )
     sys.exit(1)
