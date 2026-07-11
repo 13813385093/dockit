@@ -539,7 +539,10 @@ def read_doc(doc_path: str) -> str:
 
 
 @mcp.tool(name="update_section", description="""
-路径加段落(reference)定位后写入正文内容(content)，并更新规格化文档，它适合作为文档更新的首选
+在文档中更新一个段落
+    Args:
+        reference: `read_doc`工具获取的段落引用
+        content: 正文
 """)
 def update_section(reference: str, content: str) -> str:
     """更新文档中指定段落的正文内容，自动写回文件。"""
@@ -583,9 +586,9 @@ def update_section(reference: str, content: str) -> str:
 
 
 @mcp.tool(name="add_section", description="""
-在文档中新增一个段落，写回文件。
+在文档中新增一个段落
     Args:
-        reference: 锚点段落的 reference 路径
+        reference: `read_doc`工具获取的段落引用
         heading: 新段落标题
         content: 正文
         level: 层级关系，"sibling"（默认）— 在锚点段落后追加同级段落；

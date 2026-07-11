@@ -728,6 +728,7 @@ class DocEditor(QWidget):
             cursor.movePosition(QTextCursor.Start)
             self._body_edit.setTextCursor(cursor)
             self._body_edit.find(text)
+        self._body_edit.setFocus()
 
     def _find_prev(self):
         text = self._search_input.text()
@@ -738,6 +739,7 @@ class DocEditor(QWidget):
             cursor.movePosition(QTextCursor.End)
             self._body_edit.setTextCursor(cursor)
             self._body_edit.find(text, QTextDocument.FindBackward)
+        self._body_edit.setFocus()
 
     def _replace_one(self):
         search = self._search_input.text()
@@ -865,6 +867,16 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         self._body_edit.setPlainText(self._body)
         self._update_preview()
         self._set_editable(True)
+
+    def jump_to_line(self, line_number: int):
+        """跳转到指定行并居中显示。"""
+        block = self._body_edit.document().findBlockByNumber(max(0, line_number - 1))
+        if not block.isValid():
+            return
+        cursor = QTextCursor(block)
+        self._body_edit.setTextCursor(cursor)
+        self._body_edit.centerCursor()
+        self._body_edit.setFocus()
 
     @Slot()
     def _on_deps_save(self, deps: list[dict]):

@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot, QSettings, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QStatusBar,
     QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton,
@@ -19,6 +19,7 @@ from src.app.dep_graph import DepGraphPanel
 from src.app.lifecycle import LifecyclePanel
 from src.app.settings import SettingsPanel
 from src.app.dialogs.init_dialog import InitDialog
+from src.app.dialogs.global_search import GlobalSearchDialog
 from src.app.engine.index import IndexManager, IndexEntry
 from src.app.engine.frontmatter import FrontmatterParser
 from src.app.engine.registry import Registry
@@ -70,6 +71,11 @@ class MainWindow(QMainWindow):
         self._setup_toolbar()
         self._setup_status_bar()
         load_stylesheet()
+
+        # 全局搜索快捷键
+        self._shortcut_global_search = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        self._shortcut_global_search.setContext(Qt.ApplicationShortcut)
+        self._shortcut_global_search.activated.connect(self._on_global_search)
 
         # 自动打开上次的项目
         last_project = self._settings.value("last_project", None)
@@ -201,6 +207,16 @@ class MainWindow(QMainWindow):
         self._toolbar_save_btn.setToolTip("保存 (Ctrl+S)")
         self._toolbar_save_btn.clicked.connect(self._on_global_save)
         toolbar.addWidget(self._toolbar_save_btn)
+
+        # 分隔线
+        toolbar.addSeparator()
+
+        # 全局搜索按钮
+        self._toolbar_search_btn = QToolButton()
+        self._toolbar_search_btn.setIcon(get_icon("search"))
+        self._toolbar_search_btn.setToolTip("全局搜索 (Ctrl+Shift+F)")
+        self._toolbar_search_btn.clicked.connect(self._on_global_search)
+        toolbar.addWidget(self._toolbar_search_btn)
 
 
     def _refresh_recent_menu(self):
@@ -645,6 +661,37 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentWidget(self.dashboard)
         msg = f"检查完成: {len(drifts)} 个漂移, {len(deprecated)} 个废弃依赖"
         self.status.showMessage(msg, 5000)
+
+    @Slot()
+    def _on_global_search(self):
+        """打开全局搜索对话框。"""
+        if not self._project_root or not self._index:
+            QMessageBox.information(self, "提示", "请先打开一个项目")
+            return
+
+        entries = self._index.list_entries()
+        if not entries:
+            QMessageBox.information(self, "全局搜索", "项目中没有文档")
+            return
+
+        dlg = GlobalSearchDialog(self._project_root, entries, self)
+        dlg.navigate_to.connect(self._on_search_navigate)
+        dlg.exec()
+
+    @Slot(str, int)
+    def _on_search_navigate(self, rel_path: str, line_number: int):
+        """从全局搜索结果跳转到文档的指定行。"""
+        if not self._project_root:
+            return
+        full_path = self._project_root / rel_path
+        if not full_path.exists():
+            QMessageBox.warning(self, "跳转失败", f"文件不存在: {rel_path}")
+            return
+
+        self._current_doc_rel = rel_path
+        self.editor.open_document(full_path, rel_path, self._index, self._registry)
+        self.editor.jump_to_line(line_number)
+        self.tabs.setCurrentWidget(self.editor)
 
     @Slot()
     def _on_about(self):
