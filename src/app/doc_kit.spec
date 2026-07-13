@@ -9,12 +9,12 @@ app_root = Path(sys.argv[0]).resolve().parent
 
 a = Analysis(
     ['main.py'],
-    pathex=[str(app_root)],
+    pathex=[str(app_root.parent.parent), str(app_root)],
     binaries=[],
     datas=[
-        (str(app_root / 'src' / 'app' / 'resources' / 'icons'), 'src/app/resources/icons'),
-        (str(app_root / 'src' / 'app' / 'resources' / 'styles'), 'src/app/resources/styles'),
-        (str(app_root / 'src' / 'app' / 'templates'), 'src/app/templates'),
+        (str(app_root / 'resources' / 'icons'), 'src/app/resources/icons'),
+        (str(app_root / 'resources' / 'styles'), 'src/app/resources/styles'),
+        (str(app_root / 'templates'), 'src/app/templates'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -55,7 +55,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(app_root / 'src' / 'app' / 'resources' / 'icons' / 'dropbox.png'),
+    icon=str(app_root / 'resources' / 'icons' / 'dropbox.png'),
 )
 
 coll = COLLECT(
