@@ -1,6 +1,6 @@
 ---
 name: spec-load
-description: 查看当前议题状态，决定下一步走哪个岔路
+description: 加载之前的会议记录，继续讨论
 ---
 # 最高优先级：
 
