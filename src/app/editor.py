@@ -76,25 +76,27 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         quote_fmt.setFontItalic(True)
         self._rules.append((r'^>\s.*$', quote_fmt))
 
-        self._code_block_active = False
-
     def highlightBlock(self, text: str):
-        # 代码块状态机
+        # 代码块状态机（使用 QSyntaxHighlighter 官方推荐的 previousBlockState 机制，
+        # 而非实例变量，避免增量重高亮时状态不一致）
+        prev_state = self.previousBlockState()
         if text.strip().startswith("```"):
-            self._code_block_active = not self._code_block_active
+            new_state = 0 if prev_state == 1 else 1
             fmt = QTextCharFormat()
             fmt.setFontFamily("Consolas, 'Courier New', monospace")
             fmt.setBackground(QColor("#f5f5f5"))
             fmt.setForeground(QColor("#95a5a6"))
             self.setFormat(0, len(text), fmt)
-            self.setCurrentBlockState(1 if self._code_block_active else 0)
+            self.setCurrentBlockState(new_state)
             return
 
-        if self._code_block_active:
+        in_code_block = prev_state == 1
+        if in_code_block:
             fmt = QTextCharFormat()
             fmt.setFontFamily("Consolas, 'Courier New', monospace")
             fmt.setBackground(QColor("#f5f5f5"))
             self.setFormat(0, len(text), fmt)
+            self.setCurrentBlockState(1)
             return
 
         # 普通行：应用正则规则
