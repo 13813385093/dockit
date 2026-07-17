@@ -20,7 +20,7 @@ from qt_material import apply_stylesheet
 
 def get_app_root() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "src" / "app"
     return Path(__file__).resolve().parent
 
 def main():
