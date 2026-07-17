@@ -50,7 +50,7 @@ Phase 4 — 收尾
 在开始任何 git 操作之前，先确认环境就绪：
 
 ```bash
-git --version 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1
+git --version >nul 2>&1 && git rev-parse --git-dir >nul 2>&1
 ```
 
 **不满足条件时**，直接输出以下文案并终止流程（不再执行后续 Steps）：
