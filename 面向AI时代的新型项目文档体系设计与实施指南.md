@@ -91,7 +91,7 @@
 - **纵向划分**：按业务模块组织文档，每个**模块**自包含完整的架构设计、领域模型、功能规格
 - **顶层共享**：项目背景、技术框架等公用信息集中在顶层，一次加载多处复用
 - **渐进披露（按需加载）**：人可以按「顶层→模块→功能」的顺序逐层深入阅读，AI 也可以按需加载最小上下文集（详见 §2.2）
-- **工具链（规划中）**：统一的 frontmatter 与 [MUST]/[SHOULD] 约束标记，便于用脚本 / MCP 工具自动校验与辅助编写；规划中工具将自动承担 `last_updated` 更新与 `depends_on` 推导（见 §3.5.2 字段表），当前阶段由人工维护
+- **工具链**：统一的 frontmatter 与 [MUST]/[SHOULD] 约束标记，便于用脚本 / MCP 工具自动校验与辅助编写；规划中工具将自动承担 `last_updated` 更新与 `depends_on` 推导（见 §3.5.2 字段表）
 
 ### 2.2 核心设计原则
 
@@ -119,7 +119,7 @@
 >
 > | frontmatter `level` 值 | 通用说法 | 中文称呼 | 包含文档 |
 > |------|---------|---------|---------|
-> | `top` | Level 0 | 顶层（项目宪章） | `business_context` 等 6 种顶层文档类型 |
+> | `top` | Level 0 | 顶层（项目宪章） | `business_context` 等 7 种顶层文档类型 |
 > | `module` | Level 1 | 模块层 | `architecture`、`domain_model`、`module_manifest`、`integration` |
 > | `feature` | Level 2 | 功能层 | `feature_design`、`decision_log`、`unit_test`、`acceptance_test` |
 
@@ -138,12 +138,13 @@
 ├── non-functional-constraints.md    # 非功能性约束（必选）
 ├── global-policies.md               # 全局策略（必选）
 ├── inter-module-contracts.md        # 模块间契约（推荐）
-└── stakeholders.md                  # 干系人分析（可选）
+├── stakeholders.md                  # 干系人分析（可选）
+└── release-policy.md                # 发布策略（推荐，见 §3.9）
 ```
 
 #### 3.1.2 各文档基本结构
 
-项目宪章包含 6 份顶层文档（`stakeholders.md` 可选、`inter-module-contracts.md` 推荐，其余必选），按"业务背景 → 技术框架 → 约束 → 策略 → 契约 → 干系人"的逻辑组织。以下逐份说明每份文档的核心定位与推荐章节结构。
+项目宪章包含 7 份顶层文档（`stakeholders.md` 可选；`inter-module-contracts.md` 与 `release-policy.md` 推荐，其余必选），按"业务背景 → 技术框架 → 约束 → 策略 → 契约 → 干系人"的逻辑组织；`release-policy.md` 定义发布域（见 §3.9），独立于上述逻辑链，其基本结构见本节末尾。以下逐份说明每份文档的核心定位与推荐章节结构。
 
 > **术语说明**：以下各文档中的「约束」指**写作边界**（哪些内容不应写进本文档）；它不同于 §3.5.5 的内容级约束标记 `[MUST]` / `[SHOULD]` / `[MAY]`，两者勿混淆。
 
@@ -255,8 +256,10 @@
 
 | 文档 | 层级 | 回答什么问题 | 详细程度 | 举例 |
 |------|------|------------|---------|------|
-| `module-manifest.md` | 每个模块一份（Level 1） | "这个模块依赖谁、被谁依赖" | 能力名称级 | 声明 imports inventory > deduct_stock |
+| `module-manifest.md` | 每个模块一份（Level 1） | "本模块提供什么能力、消费谁的什么能力" | 能力名称级（存在性） | exports 声明 `deduct_stock`；imports 声明 inventory > deduct_stock |
 | `inter-module-contracts.md` | 全局一份（Level 0） | "对接时输入/输出是什么格式" | 字段级 + 协议级 | 定义 deduct_stock 请求体格式、返回结构和错误码 |
+
+> 两者是「目录」与「说明书」的关系：`module-manifest.md` 声明能力**是否存在、由谁提供**（每个 import 必须与提供方的 export 配对，见 §3.2.2），`inter-module-contracts.md` 定义能力**长什么样、出错怎么办**；同一能力在两份文档中的名称必须保持一致。
 
 **约束**：不写单个模块的内部接口；不在 module-manifest 已声明的能力关系之外另造接口。
 
@@ -345,9 +348,31 @@
 ## 信息需求
 ```
 
+##### release-policy.md — 发布策略
+
+**定位**：定义项目发布域的权威规则——发布单元划分、发布门禁、发布流水线、发布号规则与回滚策略，是发布域（§3.9）的策略载体：门禁与流程的默认定义在 §3.9，项目可在本文档中自定义。本文档为**推荐**，精简模式可省略（使用工具默认门禁）。
+
+**约束**：不写部署操作细节——部署模型归 `technical-framework.md`；不写某次具体发布的内容——发布记录为工具链生成的派生制品，不属于 Spec 文档。
+
+```markdown
+## 发布单元划分
+
+## 发布门禁
+
+## 发布流水线
+
+## 发布号规则
+
+## 回滚策略
+```
+
+**编写要点**：
+- 门禁在 §3.9.3 的 G1~G6 基础上按需增删
+- 发布号建议采用 `YYYY.MM.n` 格式，与 Spec 版本（§3.5.7）相互独立
+
 #### 3.1.3 通用元数据结构
 
-项目宪章下的 6 份文档遵循统一的元数据格式，确保人和机器均可快速解析文档的身份、层级和依赖关系。顶层文档的 YAML frontmatter 采用以下结构：
+项目宪章下的 7 份文档遵循统一的元数据格式，确保人和机器均可快速解析文档的身份、层级和依赖关系。顶层文档的 YAML frontmatter 采用以下结构：
 
 ```yaml
 ---
@@ -392,7 +417,7 @@ module-name/
 │   │   └── acceptance-tests.md     # 验收测试 (BDD)
 │   └── feature-b/
 │       └── ...
-└── sub-modules/             # 子模块（可选）
+└── sub-modules/              # 子模块（可选）
     └── sub-module-a/
         └── ...
 ```
@@ -489,7 +514,40 @@ module-name/
 
 **定位**：声明模块对外提供的能力（exports）和本模块依赖的其他模块能力（imports）。工具链可以基于此文件自动推导模块间依赖图，检测循环依赖和分析调用链异常。
 
-**约束**：不写内部实现细节或仅供模块内部使用的非公开能力。
+> 模块清单把编程语言模块系统（ES Module、Java package、Go package 等）中经过数十年验证的 `import` / `export` 依赖表达范式，原样引入了文档体系。传统软件设计文档（接口文档、架构文档）只描述「接口长什么样」（字段、协议、时序），从不机械地声明「这个能力由谁提供、被谁消费」。而 `module-manifest.md` 把「谁依赖谁」从散落在各架构文档的叙述文字中**提取成一张张可机械校验的表**：整个项目的全部模块清单拼在一起，就是系统的**能力地图**——等价于把每个模块的 `package.json` / `go.mod` 汇总成一张依赖拓扑。
+
+**核心不变式：import 必须配对 export**
+
+模块清单最重要的规则只有一条，它等价于编程中的符号解析：**消费方声明的每个 import（`来源模块` + `能力名称`），必须能在来源模块的 exports 中找到对应条目**——就像 `import` 一个不存在的导出会编译失败，import 一个不存在的模块能力同样非法。
+
+```markdown
+# 提供方：inventory/module-manifest.md
+## Exports
+| 能力名称     | 类型      | 描述     | 稳定性 |
+|------------|----------|---------|--------|
+| deduct_stock | interface | 扣减库存 | stable |
+| query_stock  | interface | 查询库存 | stable |
+
+# 消费方：order/module-manifest.md
+## Imports
+| 来源模块  | 能力名称     | 用途     |
+|---------|------------|---------|
+| inventory | deduct_stock | 扣减库存 |
+```
+
+- `order` 的 `imports.inventory.deduct_stock` ↔ `inventory` 的 `exports.deduct_stock` 一一对应 → ✅ 配对闭合
+- `inventory` 删除或改名 `deduct_stock` 而 `order` 未同步 → ❌ 配对断裂，工具链应在第一时间标记所有 import 方
+- `order` 把能力拼写为 `deduct_stock2` → ❌ 无法配对，视为非法依赖，要求修正
+
+**配对的三种结果与含义**：
+
+| import ↔ export 配对 | 判定 | 含义 |
+|---------------------|------|------|
+| import 存在，export 存在 | ✅ 合法 | 依赖闭合，调用链可追溯 |
+| import 存在，export 不存在 | ❌ 非法 | 消费了不存在的能力：拼写错误，或提供方删改后未同步 |
+| export 存在，无人 import | ⚠️ 审视 | 能力未被消费：可能冗余，或供外部系统 / 未来功能使用 |
+
+**约束**：不写内部实现细节或仅供模块内部使用的非公开能力；exports 只列**模块契约边界**上的能力，且能力名称应与 `inter-module-contracts.md` 中的接口一一对应——模块清单声明「能力是否存在、由谁提供」，模块间契约定义「能力长什么样、出错怎么办」，二者分工互补（见 §3.1.2）。
 
 ```markdown
 ## Exports
@@ -512,9 +570,15 @@ module-name/
 | notification | notify_user | 发送订单状态通知 |
 ```
 
+**使用场景**：
+- **架构评审**：通读全部模块清单即可掌握系统能力拓扑，无需翻阅每份架构文档
+- **变更影响评估**：删改一个 export 前，先反向查询谁在 import 它
+- **AI 跨模块开发**：生成跨模块调用前，先查消费方 imports 确认能力存在，再查 `inter-module-contracts.md` 获取字段级契约
+- **新人上手**：模块清单 + `inter-module-contracts.md` 构成系统的「能力地图 + 接口说明书」，是理解系统最快的入口
+
 **工具链能力**：
 - 自动收集所有模块的 exports → imports，生成全局依赖图
-- 检测循环依赖、扇入/扇出异常、层级越界
+- 校验 import/export 配对（核心不变式），检测循环依赖、扇入/扇出异常、层级越界
 - 当被依赖模块删除或修改 exports 条目时，第一时间标记所有 import 方
 - `imports`（能力依赖）与 `depends_on`（文档依赖）是两个独立维度，互不替代：跨模块的**文档引用**（如 `architecture.md` 引用 `global-policies.md`）仍需在 `depends_on` 中声明
 
@@ -715,6 +779,7 @@ project-docs/
 ├── global-policies.md                # Level 0：全局策略
 ├── inter-module-contracts.md         # Level 0：模块间契约
 ├── stakeholders.md                   # Level 0：干系人分析（可选）
+├── release-policy.md                 # Level 0：发布策略（推荐，见 §3.9）
 ├── module-order/                     # Level 1：模块1 — 订单
 │   ├── module-manifest.md            # 模块清单：exports/imports
 │   ├── architecture.md               # 模块架构设计
@@ -798,6 +863,10 @@ superseded_by:                   # 替代文档（废弃且存在替代时必填
   - doc: feature-design-v2.md
     module: order
 archived_at:                     # 归档日期（status=archived 时必填）
+# implemented_in 仅 Level 2 功能/测试文档需要（见 §3.5.9），基础类型不声明
+implemented_in:                  # 实现位置，工具校验路径存在性
+  - path: src/order/features/timeout_cancel/
+    lang: go
 # contains 仅复合类型文档需要（见 §3.7），基础类型不声明
 depends_on:                      # 依赖声明，精确版本锁定
   - doc: domain-model.md
@@ -830,6 +899,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 | `superseded_by` | 条件 | 用户手动 | 替代文档的引用列表（废弃且存在替代文档时必填，无替代可省略） |
 | `archived_at` | 条件 | 用户手动 | 仅 `status=archived` 时需要，填写 ISO 8601 日期 |
 | `contains` | 条件 | 创建时设定 | 仅复合类型需要（见 §3.7），声明合并的子类型列表 |
+| `implemented_in` | 条件 | 用户+工具 | 仅 Level 2 功能/测试文档需要（见 §3.5.9），声明实现位置；工具校验路径存在性 |
 | `depends_on` | 条件 | 用户+工具 | 声明依赖的其他文档（见 §3.5.7），工具在保存时重新推导，用户确认版本号 |
 
 **维护分工**：frontmatter 并非全部由工具自动管理——`last_updated` 由工具在保存时更新、`depends_on` 的结构由工具推导（版本号由用户确认），其余字段（`version`、`status` 及废弃/归档相关字段）由用户手动维护。字段表中「维护者」一列为此分工的权威说明。
@@ -887,6 +957,18 @@ depends_on:                      # 依赖声明，精确版本锁定
 - 开发者 [MAY] 选择使用同步或异步方式实现
 ```
 
+**约束 ID（追踪机制）**：为支持「[MUST] 约束 → 测试用例」的机械覆盖校验（见 §3.9.3 门禁 G4），约束需携带唯一标识：
+
+- `[MUST]` **必须**编号（如 `C-101`）；`[SHOULD]` 可选编号（建议编，如 `S-101`）；`[MAY]` 不编号
+- ID 在所属文档内唯一；跨文档引用用完整形式 `feature-design@<功能名>:C-101`
+- ID 绑定约束条目而非内容：修改约束内容保留 ID（配合版本 bump），删除约束则 ID 废弃不复用
+
+```markdown
+- [MUST] C-101 扫描周期 ≤ 5 分钟
+- [MUST] C-102 取消与释放库存原子执行（同一事务）
+- [SHOULD] S-101 超时通知在 1 分钟内完成
+```
+
 **约束级别的意义**：
 - **对开发者**：[MUST] 是代码评审的红线，违反直接打回；[SHOULD] 是需要 justify 的规则
 - **对 AI**：约束标记是生成代码时的硬性边界条件，AI 应将其翻译为代码中的断言/配置/校验逻辑
@@ -900,6 +982,8 @@ depends_on:                      # 依赖声明，精确版本锁定
 ```markdown
 ### [测试场景名称]
 
+覆盖约束: [引用的约束 ID，如 C-101；无则省略]
+
 #### Given 前置条件
 [描述输入状态、前置数据]
 
@@ -909,6 +993,8 @@ depends_on:                      # 依赖声明，精确版本锁定
 #### Then 预期结果
 - [预期返回值 / 状态变化 / 异常]
 ```
+
+> 场景通过 `覆盖约束` 行声明其验证的约束 ID（语法见 §3.5.5）；工具据此机械校验「每个编号的 [MUST] 约束至少被一个场景引用」（门禁 G4，见 §3.9.3）。
 
 #### 3.5.7 版本依赖管理
 
@@ -962,9 +1048,51 @@ depends_on:
     那么 <预期结果>
 ```
 
+#### 3.5.9 实现映射规范（Spec ↔ 代码）
+
+**定位**：建立 Spec 与源码之间的**映射**与**一致性校验**。§3.5.3 的内容引用规范解决文档之间的引用；当引用跨越文档域进入代码域——AI 读完 `feature-design.md` 需要知道代码在哪、变更代码后需要知道影响哪份 Spec——就需要实现映射。它是 AI 独立完成开发、测试、评审、发布的基础设施，也是「文档更新滞后于代码变更」的检测器。
+
+**单向声明为主**：实现映射只要求**文档侧**声明实现位置（`implemented_in`），不要求代码侧任何反向标注。代码是 Spec 的派生制品——让代码文件维护指向 Spec 的注释，既违背「Spec 即资产」的单一权威原则，也会随开发推进迅速腐坏（注释过期比没有更危险）。反向溯源由结构性映射免费获得（见下）。
+
+**结构性映射**：当代码目录与文档目录同构时，代码 → 文档的反向导航是天然的：
+
+- 源码按 `src/<模块名>/features/<功能名>/` 组织，目录名与文档目录 `module-<模块名>/features/<功能名>/` 保持一致（kebab-case）
+- 每个功能足够小：目录内文件数量少、职责单一，目录 = 功能，映射无歧义
+- 模块/功能边界与文档体系一致：禁止跨功能共享文件、禁止一个功能目录容纳多个功能
+
+满足结构性映射时，工具可**自动推导**代码 → 文档的反向索引（trace-map，派生制品），无需任何人工声明。
+
+**映射载体**：
+
+- 文档侧：feature 级文档 frontmatter 声明 `implemented_in`（条件字段，见 §3.5.2）：
+
+```yaml
+implemented_in:
+  - path: src/order/features/timeout_cancel/
+    lang: go
+```
+
+- 测试侧：测试函数按场景命名（`TestCancelExpiredOrders` ↔ 场景「超时订单被扫描」），靠命名约定 + AI 对照，不要求机械标注
+
+**映射粒度**：
+
+| 粒度 | 文档侧 | 代码侧 | 用途 | 级别 |
+|------|--------|--------|------|------|
+| 功能级 | `feature-design.md` 的 `implemented_in` | 功能实现源码目录/文件 | AI 定位实现、变更影响分析 | [MUST] |
+| 用例级 | `unit-tests.md` 的测试场景名 | 测试函数/方法（命名约定） | 约束覆盖追踪（见 §3.9.3 门禁 G4） | [SHOULD] |
+| 契约级 | `inter-module-contracts.md` 的接口名 | RPC 方法 / API 端点 | 契约实现验证 | [MAY] |
+
+**校验规则**：
+
+- `implemented_in` 声明的路径必须真实存在，否则告警（Spec 声明了实现但代码缺失）
+- 目录契约违反（目录名与功能名不一致、跨功能共享文件）→ 告警
+- 可选：基于 git 历史，功能目录发生变更时提醒核对对应 Spec 版本
+
+> 与 `depends_on` 的分工：`depends_on` 是文档域内部的依赖（文档↔文档），实现映射是跨域链接（文档↔代码），两维正交、缺一不可——前者保证文档自洽，后者保证文档与实现一致。
+
 ### 3.6 文档类型注册表
 
-本节完整枚举本体系定义的 17 种文档类型（14 种基础类型 + 3 种复合类型），明确每种类型的责任、层级归属、版本策略和依赖规则。
+本节完整枚举本体系定义的 18 种文档类型（15 种基础类型 + 3 种复合类型），明确每种类型的责任、层级归属、版本策略和依赖规则。
 
 #### 3.6.1 Level 0：项目宪章
 
@@ -976,6 +1104,7 @@ depends_on:
 | T-04 | `global_policies`        | global-policies.md        | ✅ 必选 | 跨模块全局策略：认证、可观测性、数据一致性  | 全局策略变化时 bump  | T-01, T-02, T-03 | 4th  |
 | T-05 | `inter_module_contract`  | inter-module-contracts.md | 推荐   | 模块间接口规范：请求/响应格式、共享事件、数据结构 | 接口变更时 bump    | T-04, T-02       | 5th  |
 | T-06 | `stakeholders`           | stakeholders.md           | 可选   | 干系人分析：角色、关注点、决策权       | 干系人变动时 bump   | T-01             | 6th  |
+| T-15 | `release_policy`         | release-policy.md         | 推荐   | 发布域权威定义：门禁、流水线、发布号、回滚策略（见 §3.9） | 门禁/流程变更时 bump | T-01, T-02, T-03, T-05 | 15th |
 
 #### 3.6.2 Level 1：模块层
 
@@ -984,7 +1113,7 @@ depends_on:
 | T-07 | `architecture`    | architecture.md    | ✅ 必选 | 模块组件划分、职责、组件间关系、关键流程      | 架构调整时 bump               | T-01~T-06             | 7th  |
 | T-08 | `domain_model`    | domain-model.md    | ✅ 必选 | 领域实体、值对象、聚合根及其关系约束         | 领域模型变更时 bump             | T-07                  | 8th  |
 | T-09 | `integration`     | integration.md     | 可选   | 外部系统依赖：协议、数据流、降级策略         | 外部集成变更时 bump             | T-07                  | 9th  |
-| T-10 | `module_manifest` | module-manifest.md | ✅ 必选 | 模块对外接口与依赖声明                | exports/imports 变更时 bump | T-07, T-08           | 10th |
+| T-10 | `module_manifest` | module-manifest.md | ✅ 必选 | 模块对外能力（exports）与能力依赖（imports）声明，import/export 须配对 | exports/imports 变更时 bump | T-07, T-08 | 10th |
 
 #### 3.6.3 Level 2：功能层
 
@@ -1116,9 +1245,9 @@ status: active
 ══════════════════════════════════════════════════
 
               废弃                        归档
-  ┌─────────┐  ──────────→  ┌─────────┐  ──────────→  ┌─────────┐
-  │  Active  │              │ Deprec. │              │  Arch.   │
-  │  活跃    │              │  废弃   │              │  归档    │
+  ┌─────────┐  ──────────→ ┌─────────┐  ──────────→ ┌─────────┐
+  │  Active │              │ Deprec. │              │  Arch.  │
+  │  活跃   │              │  废弃   │              │  归档   │
   └─────────┘              └─────────┘              └─────────┘
 
 回退路径（图中未画箭头；两种回退均为人工操作，改回 `active` 后按 §3.5.2 清理废弃/归档相关字段）：
@@ -1177,6 +1306,51 @@ status: active
 - 定期审查所有 `active` 文档的有效性
 - 不再适用的文档优先标记为 `deprecated`
 - `deprecated` 超过一定周期（如 6 个月）且确认无依赖方的，可转为 `archived`
+
+### 3.9 发布域（AICoding 版 CI/CD）
+
+§3.8 管理文档的**内容维度**——一份文档是否可信（active / deprecated / archived）。内容可信之外还有**上线维度**——可信的文档能否进入生产环境，本节回答后者。传统 CI/CD 的流水线对象是代码（build → test → deploy）；本体系的发布流水线对象是 **Spec**——发布不是「部署一次代码」，而是「把一组 Spec 推进到 released 状态」，代码、测试、部署配置、变更日志均作为**派生制品**在该状态生成。这与结语「Spec 即资产」一脉相承：Spec 是唯一权威，发布是对 Spec 状态的固化。
+
+#### 3.9.1 发布状态机
+
+发布状态衡量**可上线度**，与 §3.8 的内容生命周期正交——文档可以 active 但尚未通过发布门禁：
+
+```
+draft（草稿）→ in-review（评审中）→ ready（门禁通过）→ released（已发布）→ superseded（被新发布替代）
+```
+
+#### 3.9.2 发布单元（Release Unit）
+
+发布的最小粒度 = **一个 feature-package（4 份文档）+ 其 `depends_on` 依赖链**。修改一个功能只发布该功能及其依赖文档的版本，不整仓发布——与「改一个模块只触发该模块的 CI」同构。
+
+#### 3.9.3 发布门禁（Release Gates）
+
+| 门禁 | 校验内容 | 依据机制 |
+|------|---------|---------|
+| G1 文档健康 | 发布单元内文档全部 `active`，无 deprecated 阻断 | §3.8 |
+| G2 依赖一致 | `depends_on` 精确版本、无漂移/循环/反向依赖 | §3.5.7 |
+| G3 契约闭合 | imports ↔ exports 配对、契约无悬空接口 | §3.2.2 |
+| G4 约束覆盖 | 每个编号的 [MUST] 约束（`C-101` 等）在 unit-tests.md 中有对应场景引用 | §3.5.5、§3.5.6 |
+| G5 测试全绿 | unit-tests + acceptance-tests 执行通过 | §3.3.3 |
+| G6 实现映射 | `implemented_in` 声明的实现真实存在、目录契约一致 | §3.5.9 |
+
+#### 3.9.4 发布流水线（Release Pipeline）
+
+```
+Spec 变更提交
+  → P0 变更检测：diff 定位变更文档，自动建议版本 bump，识别发布单元
+  → P1 静态门禁：G1 / G2 / G3 / G4 / G6（不执行代码）
+  → P2 动态门禁：G5（执行测试；AI 生成/修复测试）
+  → P3 制品生成：生成 release-manifest、变更日志、部署配置快照
+  → P4 发布验证：验收测试运行于部署环境（冒烟）
+  → P5 固化：文档状态置 released，release-manifest 归档
+任一步失败 → 回退至对应阶段修复（AI 修复，例外决策交人工）
+```
+
+#### 3.9.5 分级适用
+
+- **小型项目 / 起步期**：使用精简模式，门禁用工具默认值，发布 = 跑通 G1/G2/G3/G5 最小门禁
+- **正式项目**：启用 G4/G6 全部门禁，`release-policy.md` 落文档
 
 ## 结语：走向 Spec 即资产的时代
 
