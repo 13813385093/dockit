@@ -29,15 +29,15 @@
 
 **提升开发效率（人工 + AI）**
 
-- 提供人和AI都能快速定位的结构化需求描述
+- 提供人和AI都能快速定位的结构化规格描述（需求由 `business-context.md` 的项目目标与 `feature-design.md` 的功能规格共同承载，体系中不设独立的「需求文档」）
 - 明确的边界约束 — 人工评审有据可依，AI 生成有规可循
-- 实现从需求到测试的完整可追溯闭环
+- 实现从需求（项目目标 / 功能规格）到测试的完整可追溯闭环
 
 **强化工程纪律**
 
 - 内建测试驱动流程
 - 确保决策可追溯
-- 实现文档与代码的同步演进
+- 以规格化文档（Spec，即本体系中全部文档类型，见 §3.6）为唯一权威（Single Source of Truth），代码作为 Spec 的派生制品随 Spec 同步演进（Spec-first），避免「文档更新滞后于代码变更」
 
 **提高团队协作效率**
 
@@ -51,7 +51,7 @@
 
 | 场景     | 使用的文档                                           | 价值                  |
 | ------ | ----------------------------------------------- | ------------------- |
-| 新人入职   | `charter.md` + 一个完整模块                           | 1 小时内理解业务全貌和技术架构    |
+| 新人入职   | 项目宪章（顶层文档集合，精简模式为 `charter.md`）+ 一个完整模块 | 1 小时内理解业务全貌和技术架构 |
 | 代码评审   | `feature-design.md` + `decision-log.md`         | 验证实现是否匹配设计意图，了解选型理由 |
 | 架构评审   | `architecture.md` + `inter-module-contracts.md` | 检查模块边界和接口设计的合理性     |
 | 变更影响评估 | 查 `depends_on` 反向链                              | 修改一个文档前知道会影响谁       |
@@ -68,7 +68,7 @@
 - 纯软件领域，或软件占绝对主导（硬件部分通过 `integration.md` 封装后纳入）
 - 以 AI 辅助编码或纯人工开发为主要生产方式
 - 团队规模 1-50 人，无需多级审批的阶段门禁流程
-- 语义化版本管理、模块化拆分、Markdown 协作有基础
+- 团队已具备 Git 与 Markdown 协作习惯，并接受语义化版本与模块化拆分的约定
 
 **本体系不适用的场景**：
 - 软硬结合产品需要严格的 IPD 阶段评审交付物（如 MRD/CDCP/ADCP）
@@ -90,8 +90,8 @@
 
 - **纵向划分**：按业务模块组织文档，每个**模块**自包含完整的架构设计、领域模型、功能规格
 - **顶层共享**：项目背景、技术框架等公用信息集中在顶层，一次加载多处复用
-- **渐进披露（按需加载）**：人可以按「顶层→模块→功能」的顺序逐层深入阅读，AI 也可以按需加载最小上下文集
-- **工具链（规划）**：文档独有的标签设计易通过辅助工具检查和编写
+- **渐进披露（按需加载）**：人可以按「顶层→模块→功能」的顺序逐层深入阅读，AI 也可以按需加载最小上下文集（详见 §2.2）
+- **工具链（规划中）**：统一的 frontmatter 与 [MUST]/[SHOULD] 约束标记，便于用脚本 / MCP 工具自动校验与辅助编写；规划中工具将自动承担 `last_updated` 更新与 `depends_on` 推导（见 §3.5.2 字段表），当前阶段由人工维护
 
 ### 2.2 核心设计原则
 
@@ -99,13 +99,13 @@
 
 - **结构化表达** — 人通过清晰的信息层级快速定位关键内容，机器通过规范的 frontmatter 和格式准确解析
 - **明确的约束边界** — [MUST]/[SHOULD]/[MAY] **让人工评审时有据可依、减少争议**，同时约束 AI 生成的产品不超出范围
-- **明确的 What + HOW + Why 描述** — 代码评审时对照设计意图判断实现是否正确，AI 理解设计前提后生成的代码更贴合预期
+- **明确的 What / Why / 验证描述** — 功能层按 What（`feature-design.md` 行为规格）+ Why（`decision-log.md` 决策理由）+ 验证（测试用例）组织；HOW（实现方式）属于模块层 `architecture.md`，功能层不描述实现。代码评审时对照设计意图判断实现是否正确，AI 理解设计前提后生成的代码更贴合预期
 
 **工程实践融合**
 
-- 融合DDD（领取驱动）、BDD（行为驱动）、TDD（测试驱动）三大方法论
-- 左翼（设计决策）→ 右翼（预期目标）形成闭环
-- 实现从战略设计到战术实现的完整闭环
+- 融合 DDD（领域驱动）、BDD（行为驱动）、TDD（测试驱动）三大方法论，对应关系：DDD → `domain-model.md` 与模块/子模块划分；BDD → `acceptance-tests.md`（Gherkin 场景）；TDD → `unit-tests.md` 先于实现编写、约束用例先行
+- 左翼（设计决策：`decision-log.md`）→ 右翼（测试验证：`unit-tests.md` + `acceptance-tests.md`）形成闭环；`feature-design.md`（What）作为连接两翼的行为规格中枢
+- 实现从战略设计（模块边界、顶层契约）到战术实现（领域模型、功能规格、测试）的完整闭环
 
 **渐进式知识披露**
 
@@ -115,25 +115,37 @@
 
 ## 3. 文档体系结构详解
 
+> **层级术语对照**：本文档交替使用三套说法，含义一一对应——
+>
+> | frontmatter `level` 值 | 通用说法 | 中文称呼 | 包含文档 |
+> |------|---------|---------|---------|
+> | `top` | Level 0 | 顶层（项目宪章） | `business_context` 等 6 种顶层文档类型 |
+> | `module` | Level 1 | 模块层 | `architecture`、`domain_model`、`module_manifest`、`integration` |
+> | `feature` | Level 2 | 功能层 | `feature_design`、`decision_log`、`unit_test`、`acceptance_test` |
+
 ### 3.1 顶层：项目宪章（project-charter）
 
 项目宪章是整个文档体系的顶层，包含项目全局信息，所有模块共享。
 
 #### 3.1.1 文档结构
 
+项目宪章由以下文档组成。它们**直接平铺在文档根目录**（与各模块目录 `module-*/` 同级，完整目录见 §3.4.1）；`project-charter` 仅作为 frontmatter 中 `module` 字段的概念值，不对应真实目录：
+
 ```
-project-charter/
-├── business-context.md              # 业务背景
-├── technical-framework.md           # 技术框架
-├── technical-constraints.md         # 技术约束
-├── global-policies.md               # 全局策略
-├── inter-module-contracts.md        # 模块间契约
-└── stakeholders.md                  # 干系人分析
+（文档根目录）
+├── business-context.md              # 业务背景（必选）
+├── technical-framework.md           # 技术框架（必选）
+├── non-functional-constraints.md    # 非功能性约束（必选）
+├── global-policies.md               # 全局策略（必选）
+├── inter-module-contracts.md        # 模块间契约（推荐）
+└── stakeholders.md                  # 干系人分析（可选）
 ```
 
 #### 3.1.2 各文档基本结构
 
-项目宪章包含 6 份顶层文档，按"业务背景 → 技术框架 → 约束 → 策略 → 契约 → 干系人"的逻辑组织。以下逐份说明每份文档的核心定位与推荐章节结构。
+项目宪章包含 6 份顶层文档（`stakeholders.md` 可选、`inter-module-contracts.md` 推荐，其余必选），按"业务背景 → 技术框架 → 约束 → 策略 → 契约 → 干系人"的逻辑组织。以下逐份说明每份文档的核心定位与推荐章节结构。
+
+> **术语说明**：以下各文档中的「约束」指**写作边界**（哪些内容不应写进本文档）；它不同于 §3.5.5 的内容级约束标记 `[MUST]` / `[SHOULD]` / `[MAY]`，两者勿混淆。
 
 ##### business-context.md — 业务背景
 
@@ -171,21 +183,21 @@ project-charter/
 ## 开发环境与工具链
 ```
 
-##### technical-constraints.md — 技术约束
+##### non-functional-constraints.md — 非功能性约束
 
-**定位**：列出项目必须达到的技术指标，是模块设计和代码评审的判断依据。约束应使用 [MUST]/[SHOULD]/[MAY] 标记明确级别。
+**定位**：列出项目必须达到的非功能性指标与底线（性能、安全、合规、兼容性、编码规范等），是模块设计和代码评审的判断依据。约束应使用 [MUST]/[SHOULD]/[MAY] 标记明确级别。
 
-**约束**：不写理想目标或愿景（如"希望系统性能卓越"），每条约束应可量化；不在此处重复技术框架中已声明的选型。
+**约束**：不写理想目标或愿景（如"希望系统性能卓越"）；每条约束应**可验证**——量化指标直接给出数值（如下单接口 P99 响应时间 ≤ 300ms），规则类约束给出可判定的标准（如"遵循团队编码规范"）；不在此处重复技术框架中已声明的选型。
 
 ```markdown
 ## 性能约束
-- 通信延迟 [MUST] ≤ 4ms
-- 系统 [MUST] 支持双网口冗余（PRP/HSR）
+- 下单接口 P99 响应时间 [MUST] ≤ 300ms
+- 系统 [MUST] 支持多可用区部署，任一可用区故障不影响下单
 
 ## 安全约束
 
 ## 编码规范
-- 代码 [MUST] 遵循MISRA C安全编码规范
+- 代码 [MUST] 遵循团队编码规范（ESLint 规则集）
 
 ## 平台兼容性
 
@@ -196,11 +208,11 @@ project-charter/
 
 **定位**：定义必须统一执行、无法归属到单个业务模块的全局性设计策略。当同一件事情（如认证、日志、错误码）在两个以上模块中都会出现时，就应该在此处统一定义，避免各模块各自为政。
 
-**与 technical-constraints.md 的分工**：
+**与 non-functional-constraints.md 的分工**：
 
 | 文档 | 回答什么问题 | 典型内容 |
 |------|------------|---------|
-| `technical-constraints.md` | "必须达到什么指标/门槛" | 延迟 ≤4ms、支持双网口冗余、[MUST] 遵循 MISRA C |
+| `non-functional-constraints.md` | "必须达到什么指标/门槛" | 下单接口 P99 ≤ 300ms、支持多可用区部署、[MUST] 遵循团队编码规范 |
 | `global-policies.md` | "全局方案怎么选、怎么做" | 统一用 OAuth2 认证、统一结构化日志格式、统一错误码体系 |
 
 **约束**：不替代各模块内的具体实现细节；模块级的特殊处理不在此处定义。
@@ -209,7 +221,7 @@ project-charter/
 - ✅ 该策略影响 **2 个或以上**的模块 → 写这里
 - ✅ 不统一的后果是 **系统级问题**（安全漏洞、无法运维、数据不一致）→ 写这里
 - ❌ 只影响单个模块 → 写在该模块自己的文档中
-- ❌ 是量化指标或门槛 → 写 `technical-constraints.md`
+- ❌ 是量化指标或门槛 → 写 `non-functional-constraints.md`
 
 ```markdown
 ## [策略名称]
@@ -243,8 +255,8 @@ project-charter/
 
 | 文档 | 层级 | 回答什么问题 | 详细程度 | 举例 |
 |------|------|------------|---------|------|
-| `module-manifest.md` | 每个模块一份（Level 1） | "这个模块依赖谁、被谁依赖" | 能力名称级 | 声明 imports data-storage > store_timeseries |
-| `inter-module-contracts.md` | 全局一份（Level 0） | "对接时输入/输出是什么格式" | 字段级 + 协议级 | 定义 store_timeseries 请求体格式、返回结构和错误码 |
+| `module-manifest.md` | 每个模块一份（Level 1） | "这个模块依赖谁、被谁依赖" | 能力名称级 | 声明 imports inventory > deduct_stock |
+| `inter-module-contracts.md` | 全局一份（Level 0） | "对接时输入/输出是什么格式" | 字段级 + 协议级 | 定义 deduct_stock 请求体格式、返回结构和错误码 |
 
 **约束**：不写单个模块的内部接口；不在 module-manifest 已声明的能力关系之外另造接口。
 
@@ -267,9 +279,8 @@ project-charter/
 **请求结构**：
 ```json
 {
-  "device_id": "string (必填, IED 唯一标识)",
-  "timestamp": "uint64 (毫秒时间戳)",
-  "values": ["float64 (采样值数组)"]
+  "order_id": "string (必填, 订单唯一标识)",
+  "items": ["array (扣减条目, 每项含 sku_id 与数量)"]
 }
 ```
 
@@ -347,21 +358,19 @@ version: 0.1.0                   # 语义化版本，用户手动 bump
 last_updated: 2026-03-10         # 工具自动更新
 author: team-architecture        # 文档负责人
 status: active                   # active | deprecated | archived
-depends_on:                      # 依赖声明，精确版本锁定
-  - doc: stakeholders.md
-    module: project-charter
-    version: "0.1.0"
 ---
 ```
 
 **各核心字段的定位**：
 
-- `doc_type` 标识文档角色，决定该文档应包含哪些章节，取值包括 `business_context`、`technical_framework`、`technical_constraints`、`global_policies`、`inter_module_contract`、`stakeholders` 等
+- `doc_type` 标识文档角色，决定该文档应包含哪些章节，取值包括 `business_context`、`technical_framework`、`non_functional_constraints`、`global_policies`、`inter_module_contract`、`stakeholders` 等
 - `level: top` 标记其为顶层文档，禁止反向依赖更低层级
 - `version` 配合 `depends_on` 实现版本一致性管理（见 §3.5.7）
 - `status` 管理文档生命周期，`deprecated` 标识过时文档，`archived` 标识归档文档，避免僵尸文档堆积
 
 > 完整的字段定义、必填规则和 doc_type 完整取值列表见 §3.5.2 元数据块规范。
+
+**doc_type 与文件名的关系**：`doc_type` 是注册表（§3.6）中的类型标识，用下划线命名（如 `business_context`）；文件名是约定的标准文件名，用连字符命名（如 `business-context.md`）。基础类型一一对应，frontmatter 中只写 `doc_type`；复合类型例外——文件名带模块/功能名前缀（见 §3.7.3）。
 
 ### 3.2 模块层：模块架构设计
 
@@ -375,7 +384,7 @@ module-name/
 ├── architecture.md           # 模块架构设计
 ├── domain-model.md           # 领域模型
 ├── integration.md            # 外部集成（可选）
-├── features/                # 功能集
+├── features/                 # 功能集
 │   ├── feature-a/
 │   │   ├── feature-design.md       # 功能设计 (What)
 │   │   ├── decision-log.md         # 决策溯源 (Why，左翼)
@@ -400,21 +409,23 @@ module-name/
 
 ```markdown
 ## 模块概述
-IEC 61850接入网关模块，负责实现电力设备的标准通信接入。
+订单模块，负责订单的创建、查询与状态流转。
 
 ## 核心能力
-- SV采样值接收与解析
-- GOOSE报文收发
-- MMS远程控制
+- 订单创建与校验
+- 订单状态流转（待支付 / 已支付 / 已取消）
+- 订单查询
 
 ## 模块接口
 ### 对外接口
-- `receive_sv_data(stream_id, dataset)`: 接收SV采样值
-- `send_goose(destination, goid, datset)`: 发送GOOSE报文
+- `create_order(user_id, items)`: 创建订单
+- `cancel_order(order_id)`: 取消订单
 
 ### 对内接口
-- 与时序数据库模块交互：存储采集数据
-- 与告警模块交互：上报异常事件
+- 订单服务 → 库存服务：调用 deduct_stock 扣减库存
+- 订单服务 → 支付服务：发起支付请求
+
+> 与其他模块的交互不在此定义：能力级依赖在 `module-manifest.md` 的 imports 声明，字段级契约在 `inter-module-contracts.md` 定义。
 ```
 
 ##### domain-model.md — 领域模型
@@ -426,25 +437,27 @@ IEC 61850接入网关模块，负责实现电力设备的标准通信接入。
 ```markdown
 ## 领域模型定义
 
-### MMXU - 测量单元
+### Order - 订单
 **类型**：聚合根
 **属性**：
-- AnIn1: 电压值 (float)
-- AnIn2: 电流值 (float)
-- Hz: 频率值 (float)
+- order_id: 订单编号 (string)
+- user_id: 下单用户 (string)
+- total_amount: 订单金额 (float)
+- status: 订单状态 (enum: pending_payment / paid / cancelled)
 
 **行为**：
-- 超限告警：当电压/电流超过阈值时触发告警
-- 数据同步：支持IEEE 1588协议同步
+- 创建订单：校验商品库存与价格
+- 超时取消：超过支付时限自动取消并释放库存
 
-### CSWI - 开关控制
+### Payment - 支付
 **类型**：实体
 **属性**：
-- Pos$stVal: 开关位置状态 (boolean)
-- Pos$ctlVal: 开关控制命令 (boolean)
+- payment_id: 支付流水号 (string)
+- amount: 支付金额 (float)
+- status: 支付状态 (enum: pending / success / failed)
 
 **约束**：
-- 遥控操作必须通过双重身份认证
+- 支付回调 [MUST] 幂等处理，重复回调不产生重复扣款
 ```
 
 **编写要点**：
@@ -485,8 +498,8 @@ IEC 61850接入网关模块，负责实现电力设备的标准通信接入。
 
 | 能力名称 | 类型 | 描述 | 稳定性 |
 |---------|------|------|--------|
-| receive_sv_data | interface | 接收SV采样值 | stable |
-| send_goose | interface | 发送GOOSE报文 | stable |
+| create_order | interface | 创建订单 | stable |
+| cancel_order | interface | 取消订单 | stable |
 
 ## Imports
 
@@ -494,15 +507,16 @@ IEC 61850接入网关模块，负责实现电力设备的标准通信接入。
 
 | 来源模块 | 能力名称 | 用途 |
 |---------|---------|------|
-| data-storage | store_timeseries | 存储采样数据 |
-| alert | raise_alert | 上报异常事件 |
+| inventory | deduct_stock | 扣减库存 |
+| payment | create_payment | 发起支付 |
+| notification | notify_user | 发送订单状态通知 |
 ```
 
 **工具链能力**：
 - 自动收集所有模块的 exports → imports，生成全局依赖图
 - 检测循环依赖、扇入/扇出异常、层级越界
 - 当被依赖模块删除或修改 exports 条目时，第一时间标记所有 import 方
-- `imports` 声明替代了跨模块场景下 `depends_on` 的手动维护（`depends_on` 保留给模块内部文档级使用）
+- `imports`（能力依赖）与 `depends_on`（文档依赖）是两个独立维度，互不替代：跨模块的**文档引用**（如 `architecture.md` 引用 `global-policies.md`）仍需在 `depends_on` 中声明
 
 #### 3.2.3 子模块机制
 
@@ -526,7 +540,7 @@ module-name/
 ├── domain-model.md               # 父模块领域模型
 ├── features/                     # 父模块功能集
 └── sub-modules/
-    └── sv-receiver/              # 子模块：SV接收
+    └── order-core/               # 子模块：订单状态机核心
         ├── architecture.md       # 子模块架构
         ├── domain-model.md       # 子模块领域模型
         └── features/
@@ -535,9 +549,10 @@ module-name/
 
 ##### 契约关系
 
-- 子模块**继承**父模块的模块间契约约束
+- 子模块**继承**父模块的模块间契约：子模块的 imports/exports 视为父模块能力的一部分，遵循父模块声明的契约
 - 子模块间的接口约定记录在**父模块**的架构文档中
-- 子模块对外暴露的能力通过父模块接口呈现，避免外部模块直接依赖子模块细节
+- 子模块对外暴露的能力通过父模块接口呈现，避免外部模块直接依赖子模块细节；如需独立暴露能力，可维护自己的 `module-manifest.md`（可选）
+- 子模块文档的 `module` 字段填 `<父模块名>/<子模块名>`（如 `order/order-core`），目录位于 `module-<父模块名>/sub-modules/<子模块名>/`
 - 子模块可以继续嵌套子模块，形成递归结构（通常最多 2~3 层为宜）
 
 ### 3.3 功能层：功能规格设计
@@ -547,7 +562,7 @@ module-name/
 #### 3.3.1 文档结构
 
 ```
-features/voltage-protection/
+features/order-timeout-cancel/
 ├── feature-design.md       # 功能设计 (What)
 ├── decision-log.md         # 决策溯源 (Why，左翼)
 ├── unit-tests.md           # 单元测试 (右翼—代码正确性)
@@ -556,7 +571,7 @@ features/voltage-protection/
 
 #### 3.3.2 各文档基本结构
 
-以下逐份说明每份文档的核心定位与推荐章节结构。
+以下逐份说明每份文档的核心定位与推荐章节结构。各模板为节省篇幅省略了文档开头的 `#` 标题行——实际文档应以 `#` 标题开头（见 §3.5.1），模板中的标题层级即正文应保持的层级。
 
 ##### feature-design.md — 功能设计 (What)
 
@@ -565,25 +580,25 @@ features/voltage-protection/
 **约束**：不写实现代码；不在此处记录设计决策理由——决策理由归 decision-log.md。
 
 ```markdown
-## 功能：电压异常跳闸保护
+## 功能：订单超时自动取消
 
 ### 功能描述
-当逆变器交流侧A相电压超过设定阈值时，系统在4ms内发出跳闸指令。
+订单创建后超过 30 分钟仍未支付时，系统自动取消订单并释放库存。
 
 ### 触发条件
-- 电压值 > 1.1 * 额定电压（持续时间 > 10ms）
-- 电压值 < 0.9 * 额定电压（持续时间 > 10ms）
+- 订单状态为「待支付」且创建时间超过 30 分钟
+- 订单状态为「待支付」且用户主动取消
 
 ### 处理流程
-1. SV模块接收采样值
-2. 保护逻辑计算电压偏差
-3. 判断是否超过阈值
-4. 生成GOOSE跳闸报文
-5. 发送至智能终端
+1. 定时任务扫描超时订单
+2. 校验订单状态仍为「待支付」
+3. 标记订单为「已取消」
+4. 调用库存服务释放库存
+5. 通知用户订单已取消
 
 ### 边界约束
-- 延迟 [MUST] ≤ 4ms
-- 报文重传次数 = 3
+- 扫描周期 [MUST] ≤ 5 分钟
+- 取消与释放库存 [MUST] 原子执行（同一事务）
 ```
 
 ##### decision-log.md — 决策溯源 (Why，左翼)
@@ -593,26 +608,26 @@ features/voltage-protection/
 **约束**：不写会议纪要或讨论过程，只记录结论和理由；不在此处定义功能行为——功能行为归 feature-design.md。
 
 ```markdown
-## 决策：选择GOOSE而非MMS传输跳闸信号
+## 决策：支付回调采用异步消息而非同步 RPC
 
 **业务Why**：
-- GOOSE满足≤4ms的硬性延迟要求
-- 符合IEC 61850标准对快速保护的要求
+- 支付网关响应慢且不稳定，同步等待会阻塞下单主链路
+- 异步化保证下单接口 P99 响应时间达标（≤ 300ms）
 
 **技术Why**：
-- GOOSE基于以太网组播，无需IP路由处理
-- 直接在数据链路层传输，减少协议栈开销
-- 支持报文重传机制，确保可靠性
+- 消息队列可削峰填谷，回调高峰不压垮订单服务
+- 回调失败可自动重试，无需人工介入
+- 消息持久化，服务重启后不丢失回调
 
 **替代方案分析**：
 | 方案 | 优点 | 缺点 | 评估结果 |
 |-----|-----|-----|---------|
-| MMS方案 | 标准协议 | 延迟10-50ms | 不推荐 |
-| 自定义UDP | 低延迟 | 缺乏互操作性 | 不推荐 |
-| GOOSE方案 | 低延迟+标准 | 依赖特定硬件 | 推荐 |
+| 同步 RPC | 实现简单、结果立即可知 | 支付网关故障时阻塞下单 | 不推荐 |
+| 定时轮询 | 无额外依赖 | 延迟高、实时性差 | 不推荐 |
+| 异步消息 | 解耦、可重试、削峰 | 引入消息中间件、复杂度高 | 推荐 |
 
 ### 最终决策
-选择GOOSE作为跳闸信号传输协议。
+支付回调采用异步消息（消息队列）处理。
 ```
 
 ##### unit-tests.md — 单元测试 (右翼—代码正确性)
@@ -629,7 +644,7 @@ features/voltage-protection/
 ### [测试场景名称]
 
 #### Given 前置条件
-[描述输入状态、前置数据或 mock 行为]
+[描述输入状态、前置数据（可含 mock 的行为约定，但不写 mock 的具体配置与框架调用）]
 
 #### When 触发动作
 [调用哪个函数、传入什么参数]
@@ -647,15 +662,15 @@ features/voltage-protection/
 
 ```gherkin
 # language: zh-CN
-功能: 电压异常跳闸保护
-  作为 电网调度员
-  我希望 系统在电压异常时快速跳闸
-  以便 保护设备安全
+功能: 订单超时自动取消
+  作为 用户
+  我希望 超时未支付的订单自动取消
+  以便 释放库存、避免占用
 
-  场景: 电压过阈值触发跳闸
-    假设 A相电压为额定电压的120%
-    当 保护装置进行故障检测
-    那么 系统在4ms内发出GOOSE跳闸报文
+  场景: 超时订单被自动取消
+    假设 订单创建已超过 30 分钟且状态为「待支付」
+    当 定时任务执行
+    那么 订单状态变为「已取消」且库存恢复
 ```
 
 > 完整的 Gherkin 语法规范和文件组织方式见 §3.5.8 验收测试规范。
@@ -674,19 +689,19 @@ feature-design.md (What) ──→ 定义功能的行为规格
          └──→ acceptance-tests.md (业务验证) ──→ 验证行为是否满足预期
 ```
 
+> 说明：图中箭头表示**逻辑关联方向**（决策与测试均围绕功能设计展开），并非依赖声明；文档间的依赖关系以 §3.6.3 注册表为准。
+
+> 术语约定：下文及结语中的「Spec」指本体系中的规格化文档（`feature-design.md`、`unit-tests.md` 等全部文档类型，见 §3.6）。
+
 **左翼驱动右翼**：
-- 决策日志中的约束条件（如"延迟 [MUST] ≤ 4ms"）应直接体现在单元测试的断言中
+- 功能设计（`feature-design.md`）中的边界约束（如"扫描周期 [MUST] ≤ 5 分钟"）应直接体现在单元测试的用例中
 - 功能设计中的业务规则应被验收测试的场景完整覆盖
-- 右翼测试失败时，向左翼追溯决策依据：测试与 Spec 不符多属实现缺陷，修代码；Spec 约束本身不成立则修 改Spec，必要时同时修改决策日志
+- 右翼测试失败时，向左翼追溯决策依据：测试与 Spec 不符多属实现缺陷，修代码；Spec 约束本身不成立则修改 Spec，必要时在决策日志中**追加**一条新的决策记录——既有决策记录不可修改，以保持决策可追溯
 
 **双轨验证**：
 - 单元测试关注**代码正确性**（"代码写对了吗？"）
 - 验收测试关注**业务符合性**（"做的是用户要的吗？"）
 - 二者互补，不可相互替代
-    
-    **When**: 保护装置监测到电压在正常范围
-    
-    **Then**: 不应生成跳闸指令
 
 ### 3.4 文档目录结构设计
 
@@ -696,31 +711,32 @@ feature-design.md (What) ──→ 定义功能的行为规格
 project-docs/
 ├── business-context.md               # Level 0：业务背景
 ├── technical-framework.md            # Level 0：技术框架
-├── technical-constraints.md          # Level 0：技术约束
+├── non-functional-constraints.md     # Level 0：非功能性约束
 ├── global-policies.md                # Level 0：全局策略
 ├── inter-module-contracts.md         # Level 0：模块间契约
 ├── stakeholders.md                   # Level 0：干系人分析（可选）
-├── module-iec61850/                 # Level 1：模块1 — IEC 61850接入
+├── module-order/                     # Level 1：模块1 — 订单
 │   ├── module-manifest.md            # 模块清单：exports/imports
 │   ├── architecture.md               # 模块架构设计
 │   ├── domain-model.md               # 领域模型
 │   ├── integration.md                # 外部集成（可选）
 │   ├── features/                     # Level 2：功能集
-│   │   ├── voltage-protection/
+│   │   ├── order-timeout-cancel/
 │   │   │   ├── feature-design.md     # 功能设计 (What)
 │   │   │   ├── decision-log.md       # 决策溯源 (Why，左翼)
 │   │   │   ├── unit-tests.md         # 单元测试 (右翼)
 │   │   │   └── acceptance-tests.md   # 验收测试 (BDD)
-│   │   └── switch-control/
+│   │   └── order-refund/
 │   │       └── ...
 │   └── sub-modules/
-│       └── sv-receiver/
+│       └── order-core/
 │           ├── module-manifest.md    # 子模块清单（可选）
 │           ├── architecture.md
 │           ├── domain-model.md
 │           └── features/
 │               └── ...
-├── module-data-storage/             # 模块2：数据存储
+├── module-data-storage/              # 模块2：数据存储
+│   ├── module-manifest.md
 │   ├── architecture.md
 │   ├── domain-model.md
 │   ├── integration.md
@@ -729,7 +745,9 @@ project-docs/
 └── README.md                         # 使用说明
 ```
 
-#### 3.4.2 渐进式披露原则（让AI学会阅读）
+**目录命名规则**：模块目录统一为 `module-<模块名>/`（模块名用 kebab-case，如 `module-order`）；子模块位于父模块的 `sub-modules/<子模块名>/`；顶层文档直接平铺在文档根目录，不建子目录。
+
+#### 3.4.2 渐进式披露原则（为 AI 提供渐进加载路径）
 
 **顶层加载**：
 - 开始项目工作时，首先阅读项目宪章以获取全局上下文
@@ -756,6 +774,7 @@ project-docs/
 ## 二级标题：章节标题
 ### 三级标题：子章节标题
 #### 四级标题：内容区块标题
+##### 五级标题：细分条目标题（内容层级过深时可用）
 ```
 
 #### 3.5.2 元数据块规范
@@ -764,10 +783,10 @@ project-docs/
 
 ```
 ---
-# 不可变层 — 由工具链自动管理，用户在 UI 中只读查看
+# 元数据层（frontmatter）— 结构化字段，供人与工具解析；各字段维护者见下方字段表
 doc_type: feature_design         # 文档类型，见 §3.6 文档类型注册表
-module: iec61850                 # 所属模块名
-feature: voltage-protection      # 所属功能名（仅 Level 2 需要）
+module: order                     # 所属模块名（子模块填 父模块名/子模块名，如 order/order-core）
+feature: order-timeout-cancel    # 所属功能名（仅 Level 2 需要）
 level: feature                   # 层级：top | module | feature
 version: 1.0.0                   # 语义化版本，用户手动 bump
 last_updated: 2024-03-10         # 工具自动更新
@@ -775,20 +794,18 @@ author: team-architecture        # 文档负责人
 status: active                   # active | deprecated | archived（缺省 active）
 deprecated_at:                   # 废弃日期（status=deprecated 时必填）
 deprecated_reason:               # 废弃原因（status=deprecated 时必填）
-superseded_by:                   # 替代文档（可选）
+superseded_by:                   # 替代文档（废弃且存在替代时必填）
   - doc: feature-design-v2.md
-    module: iec61850
+    module: order
 archived_at:                     # 归档日期（status=archived 时必填）
-contains:                        # 复合类型声明的子类型（见 §3.7）
-  - feature_design
-  - decision_log
+# contains 仅复合类型文档需要（见 §3.7），基础类型不声明
 depends_on:                      # 依赖声明，精确版本锁定
   - doc: domain-model.md
-    module: iec61850
+    module: order
     version: "1.0.0"
-  - doc: global-policies.md
-    module: project-charter
-    version: "2.0.0"
+  - doc: architecture.md
+    module: order
+    version: "1.2.0"
 ---
 
 # 可变层 — 用户自由编辑的 Markdown 内容
@@ -810,49 +827,51 @@ depends_on:                      # 依赖声明，精确版本锁定
 | `status` | ✅ | 用户手动 | `active`（默认）、`deprecated`、`archived` |
 | `deprecated_at` | 条件 | 用户手动 | 仅 `status=deprecated` 时需要，填写 ISO 8601 日期 |
 | `deprecated_reason` | 条件 | 用户手动 | 仅 `status=deprecated` 时需要，简述废弃原因 |
-| `superseded_by` | 可选 | 用户手动 | 替代文档的引用列表 |
+| `superseded_by` | 条件 | 用户手动 | 替代文档的引用列表（废弃且存在替代文档时必填，无替代可省略） |
 | `archived_at` | 条件 | 用户手动 | 仅 `status=archived` 时需要，填写 ISO 8601 日期 |
 | `contains` | 条件 | 创建时设定 | 仅复合类型需要（见 §3.7），声明合并的子类型列表 |
 | `depends_on` | 条件 | 用户+工具 | 声明依赖的其他文档（见 §3.5.7），工具在保存时重新推导，用户确认版本号 |
 
+**维护分工**：frontmatter 并非全部由工具自动管理——`last_updated` 由工具在保存时更新、`depends_on` 的结构由工具推导（版本号由用户确认），其余字段（`version`、`status` 及废弃/归档相关字段）由用户手动维护。字段表中「维护者」一列为此分工的权威说明。
+
 #### 3.5.3 内容引用规范
 
-以下是为保障人和AI都能准确理解而设计的引用格式。
+以下是为保障人和AI都能准确理解而设计的引用格式。所有引用统一采用「文件名 + 章节」格式，按引用目标是否在同一模块区分写法：
 
-**文件名引用**：
+**同模块引用**（本模块内的文档：同目录直接写文件名，位于子目录时写相对路径）：
+```markdown
+模块接口说明见 `module-manifest.md` §"Imports"。
+功能行为定义见 `features/order-timeout-cancel/feature-design.md` §"边界约束"。
+```
+
+**跨模块引用**（引用其他模块或顶层文档：路径基准为**文档根目录**——顶层文档在根目录直接写文件名，模块文档写 `module-<模块名>/...` 相对路径；同模块引用则以**模块根目录**为基准）：
+```markdown
+异常场景处理策略详见 `global-policies.md` §"降级与容错"。
+对外数据格式见 `module-order/architecture.md` §"模块接口"。
+```
+
+**纯文件名引用**（不指向具体章节，用于指出文档整体）：
 ```markdown
 详细接口约束见 `inter-module-contracts.md`。
 ```
 
-**章节引用**：
-```markdown
-参考 `inter-module-contracts.md` §"数据上报接口"。
-```
-
-**跨模块引用**：
-```markdown
-异常场景处理策略详见 `global-policies.md` §"降级与容错"。
-```
-
-> 规范的引用格式让 AI 能够快速定位被引用的上下文，是构建文档间可追溯链接的基础。
+> 统一的引用格式让 AI 能够快速定位被引用的上下文，是构建文档间可追溯链接的基础；正文引用应与 `depends_on` 中的依赖声明保持一致。
 
 #### 3.5.4 图表与代码块规范
 
-**代码块**：针对常见场景，推荐以下代码块使用 JSON 展示：
+**代码块**：接口示例、配置示例等**结构化数据一律使用 JSON 代码块**，保证跨模型解析一致：
 
 ```json
 {
-  "protocol": "GOOSE",
-  "constraints": {
-    "max_latency_ms": 4,
-    "retransmit_count": 3
-  }
+  "order_id": "20240310-0001",
+  "status": "pending_payment",
+  "expires_at": "2024-03-10T12:30:00Z"
 }
 ```
 
-> markdown 标准的代码块支持跨模型渲染一致性，所有模型均能正确解析。
+> JSON 是主流模型解析最稳定的代码块格式，所有模型均能正确解析。
 
-**Mermaid 流程图备选方案**：对于复杂流程，建议同时提供简化文字描述，不同模型对 Mermaid 的渲染支持存在差异。
+**Mermaid 流程图（可选）**：允许用于复杂流程；但不同模型对 Mermaid 的渲染支持存在差异，使用时应**同时附一段简化的文字流程描述**作为兜底，保证不支持 Mermaid 的读者/模型仍能理解。
 
 #### 3.5.5 约束标记规范
 
@@ -860,10 +879,10 @@ depends_on:                      # 依赖声明，精确版本锁定
 
 - `[MUST]`：绝对必须遵守的规则，违反会导致系统不可接受或功能异常
 - `[SHOULD]`：强烈建议遵守的规则，特定场景下经评估偏离后可豁免
-- `[MAY]`：可选的规则，由模块或功能团队自主决定
+- `[MAY]`：允许但不强制的事项，是否采用由模块或功能团队自主决定
 
 ```markdown
-- 超时 [MUST] ≤ 4ms
+- 下单接口 P99 响应时间 [MUST] ≤ 300ms
 - [SHOULD] 实现指数退避重试
 - 开发者 [MAY] 选择使用同步或异步方式实现
 ```
@@ -872,7 +891,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 - **对开发者**：[MUST] 是代码评审的红线，违反直接打回；[SHOULD] 是需要 justify 的规则
 - **对 AI**：约束标记是生成代码时的硬性边界条件，AI 应将其翻译为代码中的断言/配置/校验逻辑
 - **对评审者**：约束标记让评审者有据可依，减少"这是必须的还是可选的"这类争议
-- **对测试**：[MUST] 约束应在单元测试中有对应的断言覆盖
+- **对测试**：[MUST] 约束应在单元测试中有对应的用例覆盖（语言无关的 GWT 用例即可，不要求具体代码断言）
 
 #### 3.5.6 单元测试规范
 
@@ -893,29 +912,32 @@ depends_on:                      # 依赖声明，精确版本锁定
 
 #### 3.5.7 版本依赖管理
 
-**depends_on 声明格式**：
+**depends_on 声明格式**（以下以 `architecture.md` 依赖顶层文档为例）：
 
 ```yaml
 depends_on:
-  - doc: domain-model.md
-    module: iec61850
-    version: "1.0.0"
   - doc: global-policies.md
     module: project-charter
     version: "2.0.0"
+  - doc: non-functional-constraints.md
+    module: project-charter
+    version: "1.3.0"
 ```
 
 **版本一致性守则**：
 
-- 每次**修改**文档时执行版本 bump：patch（文档修正）、minor（内容增减）、major（重大重写）
-- 被依赖的文档版本变化可能导致依赖方版本更新
+- 每次**修改**文档时执行版本 bump，bump 级别判定标准：
+  - `patch`：修正错别字、澄清措辞，内容含义不变
+  - `minor`：增加/删除章节、补充约束或测试场景，向后兼容
+  - `major`：重写文档主体、变更核心定义或约束，不向后兼容
+- 被依赖文档发生 `minor` 及以上版本变化时，依赖方应评估是否需要同步更新自身 `depends_on` 并 bump；仅 `patch` 变化不强制
 - `depends_on` 中引用被依赖文档时使用精确版本号
 
 **校验规则**：
 
 | 场景 | 允许？ | 说明 |
 |------|--------|------|
-| 依赖一个不存在的模块 | ❌ 禁止 | 工具应在保存时校验模块名是否存在 |
+| 依赖不存在的文档（`doc` + `module` 组合不存在） | ❌ 禁止 | 工具应在保存时校验 doc 与 module 组合是否存在 |
 | 依赖版本号不满足语义化版本规范 | ⚠️ 警告 | 推荐遵循 major.minor.patch 格式 |
 | 低层级文档依赖高层级文档 | ✅ 允许 | feature 依赖 module，module 依赖 top |
 | 高层级文档反向依赖低层级文档 | ❌ 禁止 | top 不应依赖 module 或 feature |
@@ -923,11 +945,13 @@ depends_on:
 
 #### 3.5.8 验收测试规范
 
-验收测试文档以 Gherkin 格式编写：
+验收测试文档以 Gherkin 格式编写。
+
+**文件组织**：每个功能目录下**一份** `acceptance-tests.md`，所有场景写入同一文件（文件名与 `doc_type` 一一对应，见 §3.6.3）；场景数量过多时可适当精简场景描述粒度，不建议拆分文件名。
 
 ```gherkin
 # language: zh-CN
-功能: 电压异常跳闸保护
+功能: 订单超时自动取消
   作为 <角色>
   我希望 <功能目标>
   以便 <业务价值>
@@ -940,7 +964,7 @@ depends_on:
 
 ### 3.6 文档类型注册表
 
-本节完整枚举本体系定义的 16 种文档类型（含 3 种复合类型），明确每种类型的责任、层级归属、版本策略和依赖规则。
+本节完整枚举本体系定义的 17 种文档类型（14 种基础类型 + 3 种复合类型），明确每种类型的责任、层级归属、版本策略和依赖规则。
 
 #### 3.6.1 Level 0：项目宪章
 
@@ -948,7 +972,7 @@ depends_on:
 | ---- | ------------------------ | ------------------------- | ---- | ---------------------- | ------------- | ---------------- | ---- |
 | T-01 | `business_context`       | business-context.md       | ✅ 必选 | 项目为什么存在：业务背景、动因、目标用户   | 业务方向调整时 bump  | (无，顶层入口)         | 1st  |
 | T-02 | `technical_framework`    | technical-framework.md    | ✅ 必选 | 技术选型全局约定：语言、框架、中间件     | 技术栈变更时 bump   | T-01             | 2nd  |
-| T-03 | `technical_constraints`  | technical-constraints.md  | ✅ 必选 | 不可突破的底线：性能指标、合规要求、硬件限制 | 约束新增/修改时 bump | T-01, T-02       | 3rd  |
+| T-03 | `non_functional_constraints`  | non-functional-constraints.md  | ✅ 必选 | 不可突破的底线：性能指标、合规要求、硬件限制 | 约束新增/修改时 bump | T-01, T-02       | 3rd  |
 | T-04 | `global_policies`        | global-policies.md        | ✅ 必选 | 跨模块全局策略：认证、可观测性、数据一致性  | 全局策略变化时 bump  | T-01, T-02, T-03 | 4th  |
 | T-05 | `inter_module_contract`  | inter-module-contracts.md | 推荐   | 模块间接口规范：请求/响应格式、共享事件、数据结构 | 接口变更时 bump    | T-04, T-02       | 5th  |
 | T-06 | `stakeholders`           | stakeholders.md           | 可选   | 干系人分析：角色、关注点、决策权       | 干系人变动时 bump   | T-01             | 6th  |
@@ -974,11 +998,19 @@ depends_on:
 #### 3.6.4 依赖关系说明
 
 ```
-依赖方向（由上至下为正向依赖）：
-业务背景 → 技术框架 → 技术约束 → 全局策略 → 模块间契约 → 架构设计 → 领域模型 → 功能设计 → 决策日志 → 测试
-                     │           │            │
-                     └── 约束指导策略 ──┘            └── 策略约束模块设计 ──┘
+依赖方向（自上而下为正向依赖）：
+业务背景 → 技术框架 → 非功能性约束 → 全局策略 → 模块间契约 → 架构设计 → 领域模型 → 功能设计
+                                                                          ├─→ 决策日志
+                                                                          └─→ 单元测试 / 验收测试
 ```
+
+**约束关系**（非依赖链，是跨层指导关系）：
+
+- 非功能性约束 指导 全局策略：全局策略不得突破 `non-functional-constraints.md` 的约束底线
+- 全局策略 约束 模块设计：`architecture.md` / `domain-model.md` 须遵守 `global-policies.md` 的全局约定
+- 功能设计 定义约束，决策日志 记录理由，单元测试 / 验收测试 验证实现
+
+> 说明：本图表示**主依赖链**（图中相邻项互为直接依赖）；每类文档的完整「可依赖目标」以 §3.6.1~§3.6.3 注册表为准（例如 `unit_test` 仅依赖 `feature_design`，`acceptance_test` 依赖 `feature_design` 与 `decision_log`）。
 
 #### 3.6.5 复合类型（精简模式）
 
@@ -986,8 +1018,8 @@ depends_on:
 
 | 编号   | doc_type          | 层级      | contains | 对应的基础类型                                                                                                                                  |
 | ---- | ----------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| T-C1 | `charter`         | Top     | 6 种      | `business_context`, `technical_framework`, `technical_constraints`, `global_policies`, `inter_module_contract`, 可选 `stakeholders` |
-| T-C2 | `module_design`   | Module  | 3+1 种    | `architecture`, `domain_model`, `module_manifest`（必选）, `integration`（可选） |
+| T-C1 | `charter`         | Top     | 5+1 种    | `business_context`, `technical_framework`, `non_functional_constraints`, `global_policies`（必选）；`inter_module_contract`（推荐）、`stakeholders`（可选） |
+| T-C2 | `module_design`   | Module  | 3+1 种    | `architecture`, `domain_model`, `module_manifest`（必选）、`integration`（可选） |
 | T-C3 | `feature_package` | Feature | 4 种      | `feature_design`, `decision_log`, `unit_test`, `acceptance_test`                                                                         |
 
 **复合类型的 frontmatter 示例：**
@@ -1000,7 +1032,7 @@ level: top
 contains:
   - business_context
   - technical_framework
-  - technical_constraints
+  - non_functional_constraints
   - global_policies
   - inter_module_contract
   # stakeholders 可选，不在列表即视为省略
@@ -1022,7 +1054,7 @@ status: active
 
 **合并规则：**
 - 各独立文件的 YAML frontmatter 按 §3.5.2 合并为一份 frontmatter（`contains` 列出所有合并的类型）
-- 各文件的正文内容按层级结构拼接，保持原有章节标题
+- 各文件的正文按层级拼接：合并后的复合文档以 `#` 标题开头（如 `# 项目宪章`），每个源文档对应一个 `##` 章节（如 `## 业务背景`），源文档内的原有 `##` 标题顺延为 `###`，避免多文档标题冲突
 - 合并后原文件是否删除为团队自决（推荐保留 1-2 个版本周期后清理）
 
 **合并示例：**
@@ -1031,12 +1063,12 @@ status: active
 合并示例：6 个顶层文件 → 1 个 charter.md
 ══════════════════════════════════════════════════
 
-  business-context.md           ─┐
-  technical-framework.md        ─┤
-  technical-constraints.md      ─┼──→  charter.md
-  global-policies.md            ─┤      ├── ## 业务背景
-  inter-module-contracts.md     ─┤      ├── ## 技术框架
-  stakeholders.md               ─┘      └── ## ...
+  business-context.md            ─┐
+  technical-framework.md         ─┤
+  non-functional-constraints.md  ─┼──→  charter.md
+  global-policies.md             ─┤      ├── ## 业务背景
+  inter-module-contracts.md      ─┤      ├── ## 技术框架
+  stakeholders.md                ─┘      └── ## ...
 ```
 
 #### 3.7.2 拆分操作
@@ -1047,6 +1079,7 @@ status: active
 - `contains` 中的每个子类型对应一个独立的文件
 - 文件名为子类型对应的标准文件名（见 §3.6 注册表）
 - 各文件继承原复合文档的 `module`、`level`、`author`，版本号初始化为 `0.1.0`
+- 拆分完成后，原复合文档建议删除，或标记为 `deprecated`（`superseded_by` 指向拆分产物），避免同一内容两份并存
 
 **拆分示例：**
 
@@ -1054,12 +1087,12 @@ status: active
 拆分示例：1 个 charter.md → 6 个独立文件
 ══════════════════════════════════════════════════
 
-  charter.md                    ─┬──→  business-context.md
-    ├── ## 业务背景              ├──→  technical-framework.md
-    ├── ## 技术框架              ├──→  technical-constraints.md
-    ├── ## 技术约束              ├──→  global-policies.md
-    ├── ## 全局策略              ├──→  inter-module-contracts.md
-    ├── ## 模块间契约            └──→  stakeholders.md
+  charter.md                     ─┬──→  business-context.md
+    ├── ## 业务背景               ├──→  technical-framework.md
+    ├── ## 技术框架               ├──→  non-functional-constraints.md
+    ├── ## 非功能性约束           ├──→  global-policies.md
+    ├── ## 全局策略               ├──→  inter-module-contracts.md
+    ├── ## 模块间契约             └──→  stakeholders.md
     └── ## 干系人
 ```
 
@@ -1068,9 +1101,9 @@ status: active
 拆分和合并互为逆操作，同一组文档可在两个模式之间来回切换而**不丢失信息**。
 
 **典型演化路径：**
-1. 项目启动：使用精简模式（3 个复合文件：charter.md + module-design.md + feature-package.md）
-2. 功能增多：charter.md → 拆分为 6 个独立顶层文件
-3. 团队扩大：module-design.md → 拆分为独立的 architecture.md + domain-model.md + ...
+1. 项目启动：使用精简模式——顶层 1 份 `charter.md`；每个模块 1 份 `<模块名>-module-design.md`（如 `order-module-design.md`）；每个功能 1 份 `<功能名>-feature-package.md`（如 `order-timeout-cancel-feature-package.md`）
+2. 功能增多：`charter.md` → 拆分为独立顶层文件（不含可选 stakeholders 时为 5 份，含时为 6 份）
+3. 团队扩大：`<模块名>-module-design.md` → 拆分为独立的 architecture.md + domain-model.md + module-manifest.md（+ integration.md）
 
 ### 3.8 生命周期管理规范
 
@@ -1082,11 +1115,15 @@ status: active
 状态机：
 ══════════════════════════════════════════════════
 
-              废弃                      归档
+              废弃                        归档
   ┌─────────┐  ──────────→  ┌─────────┐  ──────────→  ┌─────────┐
   │  Active  │              │ Deprec. │              │  Arch.   │
   │  活跃    │              │  废弃   │              │  归档    │
   └─────────┘              └─────────┘              └─────────┘
+
+回退路径（图中未画箭头；两种回退均为人工操作，改回 `active` 后按 §3.5.2 清理废弃/归档相关字段）：
+- Deprec. → Active：撤销废弃（重新评估后确认仍适用）
+- Arch. → Active：恢复为活跃（恢复前须审查内容是否需要更新）
 ```
 
 | 状态 | frontmatter 值 | 含义 | 触发条件 |
@@ -1105,7 +1142,7 @@ status: active
 **deprecated（废弃）**
 - 文档内容已过时，不再代表项目当前设计
 - 新读者应避免直接引用该文档；已有依赖方需评估是否迁移
-- 设置废弃状态时，必须声明废弃原因（`deprecated_reason`）和替代文档（`superseded_by`）
+- 设置废弃状态时，必须声明废弃原因（`deprecated_reason`）；**存在替代文档时必须填写 `superseded_by`**，无替代文档时可省略
 
 **archived（归档）**
 - 文档仅作历史追溯用，不再参与日常的依赖检查和版本通知
@@ -1117,7 +1154,7 @@ status: active
 废弃一份文档应遵循以下步骤：
 
 1. **确认废弃** — 确认文档内容确实不再适用，并确定替代文档（如有）
-2. **更新 frontmatter** — 将 `status` 改为 `deprecated`，填写 `deprecated_at`、`deprecated_reason`、`superseded_by`
+2. **更新 frontmatter** — 将 `status` 改为 `deprecated`，填写 `deprecated_at`、`deprecated_reason`（存在替代文档时填写 `superseded_by`）
 3. **通知依赖方** — 联系所有直接引用本文档的团队或模块负责人，告知废弃原因和替代方案
 4. **依赖方响应** — 依赖方审查变更后，可选择：
    a) 更新自身的 `depends_on` 指向替代文档
