@@ -5,12 +5,9 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 # 最高优先级：
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**使用以下 MCP 专用工具：
-- `mcp__spec_mcp_tools__read_doc`
-- `mcp__spec_mcp_tools__add_section`
-- `mcp__spec_mcp_tools__update_section`
 - `mcp__spec_mcp_tools__spec_read`
 - `mcp__spec_mcp_tools__spec_write`
-
+- `mcp__spec_mcp_tools__read_doc`
 ---
 # spec-start — 开启新议题
 
@@ -43,7 +40,7 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 
 ### Step 3：生成 session_spec_id
 
-按格式 `{日期}-{topic-kebab}` 生成，例如 `20260618-cert-auth`。
+按格式 `{当天日期}-{topic-kebab}` 生成，例如 `20260618-cert-auth`。
 
 向用户提议议题名称，等待确认。
 
