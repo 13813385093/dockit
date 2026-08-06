@@ -7,10 +7,10 @@ description: 按标签分解待提交变更，生成规范化的 git 提交
 
 在本次 Skill 执行过程中，所有 git 操作一律使用 `bash` 工具执行。
 
-允许调用的 MCP 工具（**只读用途，不得写入**）：
-- `mcp__spec_mcp_tools__doc_structure` — 获取项目文档结构，辅助变更分类
-- `mcp__spec_mcp_tools__read_doc` — 读取设计文档内容，辅助理解 diff 上下文
-- `mcp__spec_mcp_tools__spec_read` — 读取活跃议题上下文，辅助生成 commit message
+允许调用的共享 CLI（**只读用途，不得写入**）：
+- `python skills/scripts/cli.py doc structure` — 获取项目文档结构，辅助变更分类
+- `python skills/scripts/cli.py doc read <path>` — 读取设计文档内容，辅助理解 diff 上下文
+- `python skills/scripts/cli.py spec read` — 读取活跃议题上下文，辅助生成 commit message
 ---
 
 # spec-smart-git — 智能分解与提交
@@ -133,9 +133,9 @@ git status --porcelain
 
 ### Step 1-3：读取上下文并分类
 
-AI 先调 `mcp__spec_mcp_tools__doc_structure()` 获取项目文档结构，映射出变更文件可能关联的设计文档。
+AI 先运行 `python skills/scripts/cli.py doc structure` 获取项目文档结构，映射出变更文件可能关联的设计文档。
 
-对于每个变更文件，AI 读取其完整 diff（`git diff --staged -- <file>` 或 `git diff -- <file>`），同时**按需调 `mcp__spec_mcp_tools__read_doc()` 读取关联的设计文档**，综合判断属于哪个类型标签。
+对于每个变更文件，AI 读取其完整 diff（`git diff --staged -- <file>` 或 `git diff -- <file>`），同时**按需运行 `python skills/scripts/cli.py doc read <path>` 读取关联的设计文档**，综合判断属于哪个类型标签。
 
 **标签体系**（精简版 Conventional Commits）：
 
@@ -281,7 +281,7 @@ git commit -m "feat: xxx
 - <具体改动2>
 ```
 
-**利用议题上下文**：AI 可调 `mcp__spec_mcp_tools__spec_read()` 尝试读取活跃议题（无活跃议题时静默跳过），有议题时将议题描述中的背景信息融入 commit message body，让信息更有依据。
+**利用议题上下文**：AI 可运行 `python skills/scripts/cli.py spec read` 尝试读取活跃议题（无活跃议题时静默跳过），有议题时将议题描述中的背景信息融入 commit message body，让信息更有依据。
 
 **staged 文件处理**：
 

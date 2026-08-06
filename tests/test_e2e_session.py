@@ -10,7 +10,7 @@ import json
 from conftest import make_md, make_index
 
 
-def test_full_session_lifecycle(tmp_project, mcp_env):
+def test_full_session_lifecycle(tmp_project, cli_env):
     """完整的"开议题→决议→暂停→写文档→关闭→归档"链路"""
 
     # ── 准备：创建项目文档和索引 ──
@@ -37,9 +37,9 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
         "pending_decisions": [],
         "next_steps": [],
     }, ensure_ascii=False)
-    result1 = mcp_env.spec_write(create_data)
+    result1 = cli_env.spec_write(create_data)
     assert "✅" in result1, f"spec_write (创建) failed: {result1}"
-    assert mcp_env._current_session_id == "e2e-001"
+    assert json.loads(result1)["data"]["session_spec_id"] == "e2e-001"
     spec_file = tmp_project / "SessionSpec" / "active" / "e2e-001.spec.json"
     assert spec_file.exists()
 
@@ -59,13 +59,13 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
         "next_steps": [],
         "related_doc_types": [],
     }, ensure_ascii=False)
-    result2 = mcp_env.spec_write(update_data)
+    result2 = cli_env.spec_write(update_data)
     assert "✅" in result2, f"spec_write (更新) failed: {result2}"
 
     # ═══════════════════════════════════
     # Step 3: spec_read — 验证决议已写入
     # ═══════════════════════════════════
-    result3 = mcp_env.spec_read()
+    result3 = cli_env.spec_read()
     spec = json.loads(result3)
     assert spec["session_spec_id"] == "e2e-001"
     assert len(spec["resolutions"]) == 1
@@ -75,7 +75,7 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
     # Step 4: read_doc → update_section
     # ═══════════════════════════════════
     # 4a. 读取文档，获取 section reference
-    result4 = json.loads(mcp_env.read_doc("business-context.md"))
+    result4 = json.loads(cli_env.read_doc("business-context.md"))
     assert result4["success"] is True
     sections = result4["data"]["sections"]
     ref = None
@@ -87,7 +87,7 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
 
     # 4b. 更新段落内容
     new_content = "- 辅助个人投资者做出理智交易决策\n- 提供量价技术分析信号\n- 降低量化交易门槛"
-    result4b = json.loads(mcp_env.update_section(ref, new_content))
+    result4b = json.loads(cli_env.update_section(ref, new_content))
     assert result4b["success"] is True
 
     # 4c. 验证文件已更新
@@ -113,7 +113,7 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
         "next_steps": [],
         "related_doc_types": [],
     }, ensure_ascii=False)
-    result5 = mcp_env.spec_write(close_data)
+    result5 = cli_env.spec_write(close_data)
     assert "✅" in result5, f"spec_write (关闭) failed: {result5}"
 
     # 磁盘文件状态已更新
@@ -122,7 +122,7 @@ def test_full_session_lifecycle(tmp_project, mcp_env):
     assert spec["closed_reason"] == "验证完成"
 
     # Step 6: spec_archive
-    result6 = mcp_env.spec_archive()
+    result6 = cli_env.spec_archive()
     assert "✅" in result6, f"spec_archive failed: {result6}"
     assert not spec_file.exists()  # 已移至 archive
     archive_file = tmp_project / "SessionSpec" / "archive" / "e2e-001.spec.json"

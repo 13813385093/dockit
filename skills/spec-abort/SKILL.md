@@ -4,10 +4,16 @@ description: 作废当前议题，非正常终止时使用
 ---
 # 最高优先级：
 
-在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**使用以下 MCP 专用工具：
-- `mcp__spec_mcp_tools__spec_write`
-- `mcp__spec_mcp_tools__spec_write`
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）：
 
+```bash
+cd <项目根目录>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python skills/scripts/cli.py spec read
+python skills/scripts/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
+python skills/scripts/cli.py spec archive
+```
+
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败；纯文本输出（spec read）以「错误:」开头即失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
 ---
 
 # spec-abort — 作废当前议题
@@ -33,7 +39,7 @@ description: 作废当前议题，非正常终止时使用
 
 ### Step 2：读取当前议题
 
-调 `spec_read()` 获取完整的议题数据。
+调 `python skills/scripts/cli.py spec read` 获取完整的议题数据。
 
 ### Step 3：修改为作废状态
 
@@ -44,10 +50,10 @@ description: 作废当前议题，非正常终止时使用
 
 ### Step 4：写入并归档
 
-1. 调 `spec_write(spec_json)` 保存作废状态
-2. 调 `spec_archive()` 归档
+1. 调 `python skills/scripts/cli.py spec write --json '<spec_json>'` 保存作废状态
+2. 调 `python skills/scripts/cli.py spec archive` 归档
 
 ### 成功后
 
-- MCP 标记为 abandoned，移至 SessionSpec/archive/
-- 下次 `spec_status()` 返回「没有活跃议题」
+- 议题被标记为 abandoned，移至 SessionSpec/archive/
+- 下次 `python skills/scripts/cli.py spec status` 返回「没有活跃议题」

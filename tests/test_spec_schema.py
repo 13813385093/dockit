@@ -7,7 +7,7 @@
 """
 
 import pytest
-from spec_mcp_tools.spec_schema import (
+from spec_schema import (
     validate,
     render_summary,
     get_schema_metadata,

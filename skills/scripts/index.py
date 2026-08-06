@@ -1,6 +1,6 @@
 """Index manager — manages .doc-kit/index.json metadata cache.
 
-Minimal version extracted from app/engine, only includes what mcp_server uses.
+Minimal version extracted from app/engine, used by the skills CLI.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict

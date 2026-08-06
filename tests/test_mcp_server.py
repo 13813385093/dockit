@@ -22,33 +22,33 @@ class TestSafeJoin:
     """safe_join(root: Path, sub_path: str) -> Path | None"""
 
     def test_normal_join(self):
-        from spec_mcp_tools.server import safe_join
+        from docmodel import safe_join
         root = Path.cwd()
         result = safe_join(root, "tests/conftest.py")
         assert result is not None
         assert result.exists()
 
     def test_traversal_blocked(self):
-        from spec_mcp_tools.server import safe_join
+        from docmodel import safe_join
         root = Path.cwd()
         result = safe_join(root, "../etc/passwd")
         assert result is None
 
     def test_deep_traversal_blocked(self):
-        from spec_mcp_tools.server import safe_join
+        from docmodel import safe_join
         root = Path.cwd()
         result = safe_join(root, "docs/../../etc/passwd")
         assert result is None
 
     def test_same_directory(self):
-        from spec_mcp_tools.server import safe_join
+        from docmodel import safe_join
         root = Path.cwd()
         result = safe_join(root, ".")
         assert result is not None
         assert result == root.resolve()
 
     def test_subdirectory(self):
-        from spec_mcp_tools.server import safe_join
+        from docmodel import safe_join
         root = Path.cwd()
         result = safe_join(root, "tests")
         assert result is not None
@@ -63,7 +63,7 @@ class TestSimplifyDependsOn:
     """_simplify_depends_on(depends_on: list[dict]) -> list[str]"""
 
     def test_dict_items(self):
-        from spec_mcp_tools.server import _simplify_depends_on
+        from docmodel import _simplify_depends_on
         deps = [
             {"doc": "a.md", "module": "m1", "version": "1.0"},
             {"doc": "b.md", "module": "m2", "version": "2.0"},
@@ -72,11 +72,11 @@ class TestSimplifyDependsOn:
         assert result == ["a.md", "b.md"]
 
     def test_empty_list(self):
-        from spec_mcp_tools.server import _simplify_depends_on
+        from docmodel import _simplify_depends_on
         assert _simplify_depends_on([]) == []
 
     def test_missing_doc_key(self):
-        from spec_mcp_tools.server import _simplify_depends_on
+        from docmodel import _simplify_depends_on
         deps = [{"module": "m1"}, {"doc": "b.md"}]
         result = _simplify_depends_on(deps)
         assert result == ["b.md"]
@@ -90,7 +90,7 @@ class TestGenerateSpecId:
     """_generate_spec_id(topic: str) -> str"""
 
     def test_basic_topic(self):
-        from spec_mcp_tools.server import _generate_spec_id
+        from cli import _generate_spec_id
         sid = _generate_spec_id("tech-ref")
         # 格式: {YYYYMMDD}-{topic}
         parts = sid.split("-", 1)
@@ -99,7 +99,7 @@ class TestGenerateSpecId:
         assert parts[1] == "tech-ref"
 
     def test_special_chars_replaced(self):
-        from spec_mcp_tools.server import _generate_spec_id
+        from cli import _generate_spec_id
         sid = _generate_spec_id("Feature/Design v2!")
         parts = sid.split("-", 1)
         assert "/" not in parts[1]
@@ -114,7 +114,7 @@ class TestDocMeta:
     """DocMeta dataclass + to_dict()"""
 
     def test_to_dict(self):
-        from spec_mcp_tools.server import DocMeta
+        from docmodel import DocMeta
         meta = DocMeta(doc_type="arch", module="core", level="top",
                        version="1.0", status="active", mtime="2026-01-01")
         d = meta.to_dict()
@@ -134,7 +134,7 @@ class TestDocNode:
     """DocNode dataclass + to_dict()"""
 
     def test_to_dict(self):
-        from spec_mcp_tools.server import DocMeta, DocNode
+        from docmodel import DocMeta, DocNode
         meta = DocMeta("arch", "core", "top", "1.0", "active", "")
         node = DocNode(path="p.md", name="p.md", meta=meta,
                        section=["H1", "H2"], depends_on=["a.md"])
@@ -153,7 +153,7 @@ class TestDocContent:
 
     @pytest.fixture
     def content(self):
-        from spec_mcp_tools.server import DocMeta, DocContent
+        from docmodel import DocMeta, DocContent
         meta = DocMeta("test", "m", "top", "1.0", "active", "")
         body = "# Title\n\n## H1\ncontent1\n\n### H2\ncontent2\n\n## H3\ncontent3"
         return DocContent.from_body("doc.md", meta, body)
@@ -245,13 +245,13 @@ class TestParseSections:
     """_parse_sections(body: str, file_path: str) -> list[Section]"""
 
     def test_empty_body(self):
-        from spec_mcp_tools.server import _parse_sections
+        from docmodel import _parse_sections
         result = _parse_sections("", "doc.md")
         assert len(result) == 1
         assert result[0].level == 0
 
     def test_basic_headings(self):
-        from spec_mcp_tools.server import _parse_sections
+        from docmodel import _parse_sections
         body = "## A\na-content\n\n## B\nb-content"
         result = _parse_sections(body, "doc.md")
         assert len(result) == 2
@@ -262,7 +262,7 @@ class TestParseSections:
 
     def test_nested_exclusive_content(self):
         """父段落不包含子段落内容"""
-        from spec_mcp_tools.server import _parse_sections
+        from docmodel import _parse_sections
         body = "## Parent\nparent-only\n\n### Child\nchild-only\n"
         result = _parse_sections(body, "doc.md")
         assert len(result) == 2
@@ -273,7 +273,7 @@ class TestParseSections:
         assert "child-only" in result[1].content
 
     def test_reference_chain(self):
-        from spec_mcp_tools.server import _parse_sections
+        from docmodel import _parse_sections
         body = "## L1\nt1\n### L2\nt2\n#### L3\nt3"
         result = _parse_sections(body, "f.md")
         assert result[0].reference == "f.md#L1"
@@ -282,7 +282,7 @@ class TestParseSections:
 
     def test_sibling_reset(self):
         """同级别标题后 reference 链正确重置，B 不应包含 A 的前缀"""
-        from spec_mcp_tools.server import _parse_sections
+        from docmodel import _parse_sections
         body = "## A\na\n### A1\na1\n## B\nb"
         result = _parse_sections(body, "f.md")
         assert result[0].reference == "f.md#A"      # A
@@ -291,7 +291,7 @@ class TestParseSections:
 
     def test_empty_content_preserved(self):
         """无独立内容的段落 content = \"\""""
-        from spec_mcp_tools.server import _parse_sections
+        from docmodel import _parse_sections
         body = "## H1\n### H2\nh2-only\n"
         result = _parse_sections(body, "f.md")
         assert result[0].heading == "H1"
@@ -308,7 +308,7 @@ class TestDocStructure:
 
     @pytest.fixture
     def structure(self):
-        from spec_mcp_tools.server import DocMeta, DocNode, DocStructure
+        from docmodel import DocMeta, DocNode, DocStructure
         # 模拟 DocStructure，直接构造 doc_map
         import types
         ds = object.__new__(DocStructure)
@@ -338,7 +338,7 @@ class TestDocStructure:
         assert len(results) == 2
 
     def test_get_dependency_chain_simple(self, structure):
-        from spec_mcp_tools.server import DocMeta, DocNode
+        from docmodel import DocMeta, DocNode
         meta = DocMeta("arch", "core", "top", "1.0", "active", "")
         structure.doc_map["ProjectSpec/e.md"] = DocNode(
             "ProjectSpec/e.md", "e.md", meta, [], ["ProjectSpec/a.md", "ProjectSpec/b.md"])
@@ -352,7 +352,7 @@ class TestDocStructure:
 
     def test_get_dependency_chain_dedup(self, structure):
         """共享依赖不应重复"""
-        from spec_mcp_tools.server import DocMeta, DocNode
+        from docmodel import DocMeta, DocNode
         meta = DocMeta("arch", "core", "top", "1.0", "active", "")
         # e -> a, b; f -> a (共享 a)
         structure.doc_map["ProjectSpec/e.md"] = DocNode("ProjectSpec/e.md", "e.md", meta, [], ["ProjectSpec/a.md"])

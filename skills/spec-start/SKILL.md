@@ -4,10 +4,21 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 ---
 # 最高优先级：
 
-在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**使用以下 MCP 专用工具：
-- `mcp__spec_mcp_tools__spec_read`
-- `mcp__spec_mcp_tools__spec_write`
-- `mcp__spec_mcp_tools__read_doc`
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）：
+
+```bash
+cd <项目根目录>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python skills/scripts/cli.py spec status
+python skills/scripts/cli.py spec read
+python skills/scripts/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
+python skills/scripts/cli.py spec schema
+python skills/scripts/cli.py doc structure
+python skills/scripts/cli.py doc read <path>
+python skills/scripts/cli.py doc update-section <reference> --content '<正文>'
+python skills/scripts/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+```
+
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败；纯文本输出（spec status / spec read / spec schema）以「错误:」开头即失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
 ---
 # spec-start — 开启新议题
 
@@ -23,11 +34,11 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 
 ### Step 0：确认当前状态
 
-调 `spec_status()` 确认。如果返回「当前有活跃议题」，则引导用户先处理已有议题。
+调 `python skills/scripts/cli.py spec status` 确认。如果返回「当前有活跃议题」，则引导用户先处理已有议题。
 
 ### Step 1：获取数据模板
 
-调 `spec_schema()` 了解 SpecStruct 的字段定义（类型、允许值、约束），为组装初始数据做准备。
+调 `python skills/scripts/cli.py spec schema` 了解 SpecStruct 的字段定义（类型、允许值、约束），为组装初始数据做准备。
 
 ### Step 2：提取议题信息
 
@@ -46,13 +57,13 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 
 ### Step 4：组装初始 spec 并写入
 
-按 spec_schema() 的结构组装完整的 spec JSON，调 `spec_write(spec_json)`。
+按 spec schema 输出的结构组装完整的 spec JSON，调 `python skills/scripts/cli.py spec write --json '<spec_json>'`。
 
 > 注意：`project`、`created_at`、`related_doc_types` 等字段由服务端自动填充，无需传入。
 
 ### 创建后的引导
 
-议题创建完成后，调 `doc_structure()` 查看当前项目的文档结构。
+议题创建完成后，调 `python skills/scripts/cli.py doc structure` 查看当前项目的文档结构。
 每个文档节点带有 `level` 字段（top / module / feature），可作为引导用户的参考：
 
 | scenario | 建议优先关注的文档层级 |
@@ -62,8 +73,8 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 | feature-dev（功能设计）  | `feature` |
 
 根据文档结构引导用户选择要填写的文档方向。
-后续在 spec-pause 或 spec-close 阶段再通过 `read_doc()` / `update_section()` / `add_section()` 完成具体写入。
+后续在 spec-pause 或 spec-close 阶段再通过 `doc read` / `doc update-section` / `doc add-section` 完成具体写入。
 
 ## 成功后的状态
 
-进入 `active`。`spec_write()` 返回的摘要包含当前决议、待定决议和后续计划（全空）。
+进入 `active`。`spec write` 返回的摘要包含当前决议、待定决议和后续计划（全空）。

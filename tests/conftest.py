@@ -1,9 +1,17 @@
-"""pytest conftest — spec_mcp_tools 测试基础设施。"""
+"""pytest conftest — skills CLI 测试基础设施。
+
+将 skills/scripts/ 加入 sys.path，使测试可以直接 import spec_schema / docmodel / cli。
+"""
 import json
 import sys
 from pathlib import Path
 
 import pytest
+
+REPO = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = REPO / "skills" / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 # ── 文件系统辅助函数 ──
@@ -52,6 +60,25 @@ def make_spec(project: Path, sid: str, data: dict | None = None) -> Path:
     return spec_path
 
 
+def valid_spec(**overrides) -> dict:
+    """构造一份合法的完整 spec dict。"""
+    spec = {
+        "session_spec_id": "test-001",
+        "project": "test-project",
+        "scenario": "tech-ref",
+        "related_doc_types": ["architecture"],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "resolutions": [],
+        "pending_decisions": [],
+        "next_steps": [],
+        "status": "active",
+        "closed_at": None,
+        "closed_reason": None,
+    }
+    spec.update(overrides)
+    return spec
+
+
 # ── pytest fixtures ──
 
 @pytest.fixture
@@ -64,13 +91,32 @@ def tmp_project(tmp_path) -> Path:
 
 
 @pytest.fixture
-def mcp_env(tmp_project):
-    """初始化 MCP 全局状态指向临时项目，测试后恢复。"""
-    import spec_mcp_tools.server as mcp
-    old_root = mcp._project_root
-    old_session = mcp._current_session_id
-    mcp._project_root = tmp_project
-    mcp._current_session_id = None
-    yield mcp
-    mcp._project_root = old_root
-    mcp._current_session_id = old_session
+def active_spec(tmp_project) -> Path:
+    """在临时项目中创建一个活跃议题，返回 spec 文件路径。"""
+    return make_spec(tmp_project, "test-001")
+
+
+@pytest.fixture
+def cli_env(tmp_project):
+    """CLI 命令门面：将 cli.py 的 cmd_* 函数绑定到临时项目。
+
+    方法名与原 MCP 工具一致（spec_write / spec_read / spec_archive /
+    read_doc / update_section / add_section / doc_structure），
+    使集成测试的调用方式不变。
+    """
+    from types import SimpleNamespace
+
+    import cli  # noqa: F401
+
+    root = tmp_project
+    return SimpleNamespace(
+        _root=root,
+        spec_write=lambda spec_json: cli.cmd_spec_write(root, spec_json),
+        spec_read=lambda: cli.cmd_spec_read(root),
+        spec_archive=lambda: cli.cmd_spec_archive(root),
+        read_doc=lambda path: cli.cmd_doc_read(root, path),
+        update_section=lambda ref, content: cli.cmd_doc_update_section(root, ref, content),
+        add_section=lambda ref, heading, content="", level="sibling": cli.cmd_doc_add_section(
+            root, ref, heading, content, level),
+        doc_structure=lambda: cli.cmd_doc_structure(root),
+    )
