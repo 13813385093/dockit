@@ -4,16 +4,29 @@ module: $module
 feature: $feature
 level: feature
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
 contains:
   - feature_design
   - decision_log
   - unit_test
-  - acceptance_test
-depends_on: []
+  - acceptance_test           # 4 种均必选（见 §3.6.5）
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
----
+
+# $feature — 功能包
+
+<!-- 
+精简模式复合文档：以下每个 ## 章节对应一个基础类型文档（见 contains 列表与 §3.6.5）。
+约束 ID 在整个文档内唯一（见 §3.5.5）；本文件为精简模式单文件，拆分时各章节成为独立文档（见 §3.7）。
+-->
 
 ## 功能设计
 
@@ -46,9 +59,9 @@ depends_on: []
 
 #### 边界约束
 
-| 约束 | 约束级别 | 目标值 | 说明 |
-|------|---------|-------|------|
-| <!-- 约束描述 --> | [MUST]/[SHOULD] | <!-- 目标值 --> | <!-- 说明 --> |
+| 约束 ID | 约束 | 约束级别 | 目标值 | 说明 |
+|---------|------|---------|-------|------|
+| C-101 | <!-- 约束描述 --> | [MUST]/[SHOULD] | <!-- 目标值 --> | <!-- 说明 --> |
 
 ---
 
@@ -61,6 +74,8 @@ depends_on: []
 **日期**：$now
 **决策者**：<!-- 决策人 -->
 **状态**：已批准 / 待定 / 已废弃
+
+<!-- 纪律（见 §3.3.3）：既有决策记录不可修改；如结论变化，追加一条新决策记录而非改写旧记录。 -->
 
 ##### 问题描述
 
@@ -92,22 +107,19 @@ depends_on: []
 
 #### 测试用例：<!-- 用例名称 -->
 
-**前置条件** (Given)：
+覆盖约束: [引用的约束 ID，如 C-101；无则省略]
+
+##### Given 前置条件
+
 - <!-- 前置条件 -->
 
-**触发条件** (When)：
+##### When 触发动作
+
 - <!-- 触发动作 -->
 
-**预期结果** (Then)：
-- <!-- 预期结果 -->
+##### Then 预期结果
 
-```python
-def test_<!-- 用例名称 -->():
-    # Given:
-    # When:
-    # Then:
-    assert
-```
+- <!-- 预期结果 -->
 
 ---
 

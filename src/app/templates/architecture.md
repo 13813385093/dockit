@@ -3,9 +3,16 @@ doc_type: architecture
 module: $module
 level: module
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 # 架构设计
 
@@ -50,19 +57,42 @@ depends_on: []
 
 ---
 
-## 对外接口
+## 模块接口
+
+<!-- 
+本模块的能力级接口清单。分工：
+- 能力存在性声明归 module-manifest.md（import/export 配对）
+- 字段级契约（请求/响应结构、错误码）归 inter-module-contracts.md
+本文档只列接口清单与约束，不重复字段细节（见 §3.2.2）。
+-->
+
+### 对外接口
 
 <!-- 
 本模块提供给其他模块调用的接口。
 正例：
   receive_sv_data(stream_id, dataset) → (status, parsed_data)
     功能：接收SV采样值
-    约束：延迟 [MUST] ≤ 1ms
+    约束：[MUST] C-101 延迟 ≤ 1ms
+约束按 §3.5.5 编号：[MUST] 用 C-、[SHOULD] 用 S-，文档内唯一。
 -->
 
 | 接口名称         | 签名               | 功能说明        | 约束          |
 | ------------ | ---------------- | ----------- | ----------- |
-| <!-- 接口名 --> | <!-- 入参 → 出参 --> | <!-- 说明 --> | <!-- 约束 --> |
+| <!-- 接口名 --> | <!-- 入参 → 出参 --> | <!-- 说明 --> | [MUST] C-1xx <!-- 约束 --> |
+
+### 对内接口
+
+<!-- 
+模块内组件之间的接口约定。
+正例：
+  协议适配层 → 业务逻辑层：on_sv_sample(sample)
+  业务逻辑层 → 数据持久层：save_sample(sample)
+-->
+
+| 接口名称 | 调用方 | 被调方 | 签名 | 说明 |
+|---------|-------|-------|------|------|
+| <!-- 接口名 --> | <!-- 组件 --> | <!-- 组件 --> | `<!-- 入参 → 出参 -->` | <!-- 说明 --> |
 
 ---
 
@@ -70,6 +100,7 @@ depends_on: []
 
 <!-- 
 描述模块内或与其他模块协作的关键业务流程。
+注意：Mermaid 流程图需同时附一段文字流程描述作为兜底（见 §3.5.4）。
 正例：
   1. SV 模块接收采样值
   2. 保护逻辑计算电压偏差

@@ -3,9 +3,16 @@ doc_type: business_context
 module: project-charter
 level: top
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 顶层入口文档，无文档依赖；引用其他文档需在此声明（见 §3.5.7）
 ---
 
 # 业务背景
@@ -32,8 +39,7 @@ depends_on: []
   - 调度指令可靠下发
   - 提升电网对分布式能源消纳能力
 -->
-- [MUST] 
-- [SHOULD] 
+- 
 
 ## 目标用户
 
@@ -50,3 +56,22 @@ depends_on: []
 （如决策权、参与方式、信息需求等），
 请补充到 stakeholders.md 文件中。
 -->
+
+## 业务范围
+
+<!-- 
+界定项目的边界：做什么、不做什么，避免范围蔓延。
+正例：
+  本期覆盖分布式光伏接入与监测，不含储能调度与需量管理。
+-->
+- 
+
+## 关键术语表
+
+<!-- 
+统一项目内使用的领域术语，供人机共同理解。
+格式：| 术语 | 定义 |
+-->
+| 术语 | 定义 |
+|------|------|
+| <!-- 术语 --> | <!-- 定义 --> |

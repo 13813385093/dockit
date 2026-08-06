@@ -55,12 +55,13 @@ def create_minimal_structure(project_docs: Path, project_name: str, now: str) ->
 
 
 def create_full_structure(project_docs: Path, project_name: str, now: str) -> list[Path]:
-    """创建完整模式骨架：6 个顶层文件直接放在 ProjectSpec/ 根。"""
+    """创建完整模式骨架：7 个顶层文件直接放在 ProjectSpec/ 根。"""
     project_docs.mkdir(parents=True, exist_ok=True)
     files = [
         "business-context.md", "technical-framework.md",
-        "technical-constraints.md", "global-policies.md",
+        "non-functional-constraints.md", "global-policies.md",
         "inter-module-contracts.md", "stakeholders.md",
+        "release-policy.md",
     ]
     created = []
     for fname in files:

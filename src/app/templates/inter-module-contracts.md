@@ -3,74 +3,85 @@ doc_type: inter_module_contract
 module: project-charter
 level: top
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 顶层入口文档，无文档依赖；引用其他文档需在此声明（见 §3.5.7）
 ---
 
 # 模块间契约
 
 <!-- 
-模块间接口契约定义各模块之间的 API 边界、事件协议和共享数据结构。
+模块间接口契约定义各模块之间的 API 边界、事件协议和共享数据结构，精确到字段级——
+这是 AI 生成代码和人工评审的唯一事实依据。
+与 module-manifest.md 的分工：module-manifest 声明能力「是否存在、由谁提供」，
+本文档定义能力「长什么样、出错怎么办」；同一能力在两份文档中的名称必须保持一致。
 全局架构模式、安全策略等跨模块设计决策请参考 global-policies.md。
-每个模块的 architecture.md 应引用本文件中的接口定义。
-依赖方向规则：模块间不直接依赖，契约统一上提到顶层管理。
 -->
 
-## 模块边界概览
+## 模块间接口定义
 
-<!-- 
-列出所有模块及其核心职责。
-正例：
-  模块A (iec61850)：IEC 61850 协议接入，负责 SV/GOOSE/MMS 通信
-  模块B (data-storage)：时序数据存储与查询
--->
+### [接口名称]
 
-| 模块 | 职责 | 依赖的外部模块 |
-|------|------|---------------|
-| <!-- 模块名 --> | <!-- 职责描述 --> | <!-- 依赖的模块 --> |
+**提供方**：[模块名]  **消费方**：[模块名列表]
+**通信方式**：同步 RPC / 异步消息 / 事件广播
+**数据格式**：JSON / Protobuf / 自定义二进制
 
-## 同步接口定义
+<!-- 请求/响应结构精确到字段级，字段标注类型与必填（见 §3.1.2）。 -->
 
-<!-- 
-模块间的同步调用接口（REST/gRPC/函数调用）。
-正例：
-  receive_sv_data(stream_id, dataset) → (status, parsed_data)
-    提供方：iec61850    消费方：protection
-    约束：延迟 [MUST] ≤ 1ms
--->
+**请求结构**：
+```json
+{
+  "order_id": "string (必填, 订单唯一标识)",
+  "items": ["array (扣减条目, 每项含 sku_id 与数量)"]
+}
+```
 
-| 接口名称 | 提供方 | 消费方 | 签名 | 约束 |
-|---------|-------|-------|------|------|
-| <!-- 接口名 --> | <!-- 模块 --> | <!-- 模块 --> | `<!-- 入参 → 出参 -->` | <!-- 延迟/可靠性 --> |
+**响应结构**：
+```json
+{
+  "success": "boolean",
+  "error_code": "int (0=成功, 1=超时, 2=格式错误)",
+  "error_msg": "string"
+}
+```
 
-## 异步消息与事件
+**约束**：
+- [MUST] C-101 超时 ≤ 500ms
+- [SHOULD] S-101 实现指数退避重试，最多 3 次
 
-<!-- 
-模块间的异步消息和事件定义。
-正例：
-  事件：VoltageThresholdExceeded
-    发布方：protection    订阅方：alarm, logging
-    载荷：{ voltage, threshold, timestamp }
--->
+## 共享事件定义
 
-| 事件/消息 | 类型 | 发布方 | 订阅方 | 载荷说明 | 投递保证 |
-|----------|------|--------|--------|---------|---------|
-| <!-- 事件名 --> | event/command | <!-- 模块 --> | <!-- 模块 --> | <!-- 数据结构 --> | at-least-once/exactly-once |
+### [事件名称]
+
+**发布方**：[模块名]
+**订阅方**：[模块名列表]
+**触发条件**：[什么场景下发这个事件]
+
+**Payload**：
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "uint64",
+  "payload": { ... }
+}
+```
 
 ## 共享数据结构
 
-<!-- 
-跨模块共享的核心数据结构定义，确保各模块对同一数据的理解一致。
-正例：
-  SVSample {
-    stream_id: string,
-    voltage: float,
-    current: float,
-    timestamp: uint64
-  }
--->
+### [结构名称]
 
-| 数据结构        | 定义                  | 使用方           |
-| ----------- | ------------------- | ------------- |
-| <!-- 名称 --> | ```<!-- 结构定义 -->``` | <!-- 模块列表 --> |
+**定义归属**：[负责维护此结构的模块]
+**使用范围**：[哪些模块使用]
+
+| 字段     | 类型     | 必填 | 说明                         |
+|----------|----------|------|------------------------------|
+| id       | string   | ✅   | 全局唯一标识                 |
+| name     | string   | ✅   | 显示名称                     |
+| status   | enum     | ✅   | active / inactive / archived |

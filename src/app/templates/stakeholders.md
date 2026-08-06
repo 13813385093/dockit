@@ -3,14 +3,26 @@ doc_type: stakeholders
 module: project-charter
 level: top
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 顶层入口文档，无文档依赖；引用其他文档需在此声明（见 §3.5.7）
 ---
 
 # 干系人分析
 
-## 干系人总览
+<!-- 
+识别项目关键干系人及其利益关切，指导需求优先级和沟通策略（见 §3.1.2）。
+本文件为可选：画像模糊或无直接定义的干系人不记录在案。
+-->
+
+## 角色定义
 
 <!-- 
 列出项目的所有关键干系人及其核心信息。

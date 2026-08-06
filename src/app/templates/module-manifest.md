@@ -3,15 +3,24 @@ doc_type: module_manifest
 module: $module
 level: module
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 
 # 模块清单
 
 <!-- 
 模块清单声明本模块对外提供（exports）和依赖（imports）的能力。
+核心不变式：**import 必须配对 export**——每条 imports 必须能在来源模块的 exports 中找到对应条目（见 §3.2.2）。
+能力名称应与 inter-module-contracts.md 中的接口一一对应（能力存在性归本文档，字段级契约归 inter-module-contracts.md）。
 工具据此检测循环依赖和调用链异常。
 -->
 
@@ -44,4 +53,4 @@ depends_on: []
 
 | 来源模块 | 能力名称 | 签名 | 用途 | 约束 |
 |---------|---------|------|------|------|
-| <!-- 模块 --> | <!-- 能力 --> | <!-- 签名 --> | <!-- 用途说明 --> | <!-- 延迟/可靠性 --> |
+| <!-- 模块 --> | <!-- 能力 --> | <!-- 签名 --> | <!-- 用途说明 --> | [MUST] C-1xx <!-- 延迟/可靠性 --> |

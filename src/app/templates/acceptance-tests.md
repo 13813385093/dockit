@@ -4,14 +4,26 @@ module: $module
 feature: $feature
 level: feature
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+implemented_in:                  # 实现位置，工具校验路径存在性（见 §3.5.9）
+  - path: <测试源码目录>
+    lang: <语言>
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 
 # 验收测试
 
-<!-- 每一个 $feature 对应一组验收测试场景。 -->
+<!-- 每一个 $feature 对应一组验收测试场景（BDD/Gherkin 格式，见 §3.5.8）。
+文件组织（§3.5.8）：所有场景写入同一份 acceptance-tests.md，不建议按场景拆分文件；
+场景数量过多时适当精简描述粒度。 -->
 
 ## $feature
 

@@ -3,15 +3,23 @@ doc_type: integration
 module: $module
 level: module
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 # 外部集成
 
 <!-- 
 本文档描述本模块与外部系统（第三方服务、硬件设备、遗留系统等）的集成细节。
-模块间的内部接口定义请参考 inter-module-contracts.md。
+约束（见 §3.2.2）：不写项目内部模块之间的接口约定（归 module-manifest.md 和 inter-module-contracts.md）；
+不重复 architecture.md 中已定义的模块内部组件关系。
 -->
 
 ## 外部系统概览
@@ -21,11 +29,12 @@ depends_on: []
 正例：
   SCADA 调度系统：位于控制中心，通过 IEC 104 协议通信
   逆变器设备：位于光伏场站，通过 Modbus TCP 通信
+约束按 §3.5.5 编号：[MUST] 用 C-、[SHOULD] 用 S-，文档内唯一。
 -->
 
 | 外部系统 | 用途 | 通信方向 | 关键约束 |
 |---------|------|---------|---------|
-| <!-- 系统名 --> | <!-- 用途说明 --> | 读/写/双向 | <!-- 延迟/可靠性 --> |
+| <!-- 系统名 --> | <!-- 用途说明 --> | 读/写/双向 | [MUST] C-1xx <!-- 延迟/可靠性 --> |
 
 ---
 

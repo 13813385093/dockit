@@ -4,20 +4,34 @@ module: $module
 feature: $feature
 level: feature
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+implemented_in:                  # 实现位置，工具校验路径存在性（见 §3.5.9）
+  - path: <测试源码目录>
+    lang: <语言>
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 
 # 单元测试
 
-<!-- 每一个 $feature 对应一组单元测试用例。 -->
+<!-- 每一个 $feature 对应一组单元测试用例（GWT 结构，语言无关、纯描述性，见 §3.5.6）。
+不写 mock 细节或框架调用——那些归源码测试文件（见 §3.3.2）。
+「覆盖约束」行声明本用例验证的约束 ID；门禁 G4 据此机械校验每个编号的 [MUST] 约束至少被一个场景引用（见 §3.9.3）。 -->
 
 ## $feature
 
 ### 测试用例：<!-- 用例名称 -->
 
-**前置条件** (Given)：
+覆盖约束: [引用的约束 ID，如 C-101；无则省略]
+
+#### Given 前置条件
 
 <!-- 
 描述测试的初始状态和数据准备。
@@ -28,7 +42,7 @@ depends_on: []
 - <!-- 前置条件1 -->
 - <!-- 前置条件2 -->
 
-**触发条件** (When)：
+#### When 触发动作
 
 <!-- 
 描述测试的触发动作。
@@ -38,7 +52,7 @@ depends_on: []
 
 - <!-- 触发动作 -->
 
-**预期结果** (Then)：
+#### Then 预期结果
 
 <!-- 
 描述测试的断言或预期输出。
@@ -49,32 +63,6 @@ depends_on: []
 
 - <!-- 预期结果1 -->
 - <!-- 预期结果2 -->
-
-#### 测试代码
-
-<!-- 
-使用 Given-When-Then 结构编写伪代码，语言无关，具体实现时转换为目标语言语法。
-正例：
-  // Given: 模拟电压异常场景
-  sv_data = create_sv_data(voltage: 1.2 * RATED_VOLTAGE)
-  
-  // When: 保护装置监测到异常
-  result = protection_monitor.process(sv_data)
-  
-  // Then: 验证 GOOSE 报文生成
-  assert result.goose_command.pos_ctl_val == false
-  assert result.latency <= 0.004  // ≤4ms
--->
-
-```pseudo
-// <用例名称>
-// Given:
-//   
-// When:
-//   
-// Then:
-//   assert 
-```
 
 ---
 

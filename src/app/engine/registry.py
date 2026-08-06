@@ -6,15 +6,16 @@ from typing import Optional
 
 import yaml
 
-# Built-in default registry with all 17 document types
+# Built-in default registry with all 18 document types
 DEFAULT_TYPES = [
     # Level 0 - Top
     {"doc_type": "business_context", "level": "top", "template": "business-context.md", "description": "业务背景"},
     {"doc_type": "technical_framework", "level": "top", "template": "technical-framework.md", "description": "技术框架"},
-    {"doc_type": "technical_constraints", "level": "top", "template": "technical-constraints.md", "description": "技术约束"},
+    {"doc_type": "non_functional_constraints", "level": "top", "template": "non-functional-constraints.md", "description": "非功能性约束"},
     {"doc_type": "global_policies", "level": "top", "template": "global-policies.md", "description": "全局策略"},
     {"doc_type": "inter_module_contract", "level": "top", "template": "inter-module-contracts.md", "description": "模块间接口契约"},
     {"doc_type": "stakeholders", "level": "top", "template": "stakeholders.md", "description": "干系人分析"},
+    {"doc_type": "release_policy", "level": "top", "template": "release-policy.md", "description": "发布策略"},
     # Level 0 - Composite
     {"doc_type": "charter", "level": "top", "template": "charter.md", "description": "项目宪章（复合类型）"},
     # Level 1 - Module

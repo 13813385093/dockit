@@ -192,13 +192,13 @@
 
 ```markdown
 ## 性能约束
-- 下单接口 P99 响应时间 [MUST] ≤ 300ms
-- 系统 [MUST] 支持多可用区部署，任一可用区故障不影响下单
+- [MUST] C-101 下单接口 P99 响应时间 ≤ 300ms
+- [MUST] C-102 系统支持多可用区部署，任一可用区故障不影响下单
 
 ## 安全约束
 
 ## 编码规范
-- 代码 [MUST] 遵循团队编码规范（ESLint 规则集）
+- 代码 [MUST] C-103 遵循团队编码规范（ESLint 规则集）
 
 ## 平台兼容性
 
@@ -234,17 +234,17 @@
 [全局统一的做法或规范]
 
 ### 各模块必须遵守的规则
-- [MUST] [规则1]
-- [SHOULD] [规则2]
+- [MUST] C-101 [规则1]
+- [SHOULD] S-101 [规则2]
 
 ### 为何需要统一
-[不统一会出什么问题，帮助新成员理解 trade-off]
+[不统一会出什么问题，帮助新成员理解权衡]
 ```
 
 **编写要点**：
 - 每个策略独立一个章节，命名清晰易懂（如"认证方式"、"日志规范"、"错误码体系"）
 - 使用 [MUST]/[SHOULD] 标记规则的强制程度
-- 为每个策略说明"为何需要统一"——帮助新成员理解背后的 trade-off
+- 为每个策略说明"为何需要统一"——帮助新成员理解背后的权衡
 - 模块在自身设计中**引用**全局策略中的定义，避免重复
 - 全局策略随项目演进持续更新，是**活文档**
 
@@ -297,8 +297,8 @@
 ```
 
 **约束**：
-- 超时 [MUST] ≤ 500ms
-- [SHOULD] 实现指数退避重试，最多 3 次
+- [MUST] C-101 超时 ≤ 500ms
+- [SHOULD] S-101 实现指数退避重试，最多 3 次
 
 ## 共享事件定义
 
@@ -379,7 +379,7 @@
 doc_type: business_context       # 文档类型，取自类型注册表（见 §3.6）
 module: project-charter          # 所属模块，顶层文档固定为 project-charter
 level: top                       # 层级：top | module | feature
-version: 0.1.0                   # 语义化版本，用户手动 bump
+version: 0.1.0                   # 语义化版本，用户手动递增
 last_updated: 2026-03-10         # 工具自动更新
 author: team-architecture        # 文档负责人
 status: active                   # active | deprecated | archived
@@ -395,7 +395,7 @@ status: active                   # active | deprecated | archived
 
 > 完整的字段定义、必填规则和 doc_type 完整取值列表见 §3.5.2 元数据块规范。
 
-**doc_type 与文件名的关系**：`doc_type` 是注册表（§3.6）中的类型标识，用下划线命名（如 `business_context`）；文件名是约定的标准文件名，用连字符命名（如 `business-context.md`）。基础类型一一对应，frontmatter 中只写 `doc_type`；复合类型例外——文件名带模块/功能名前缀（见 §3.7.3）。
+**doc_type 与文件名的关系**：`doc_type` 是注册表（§3.6）中的类型标识，用下划线命名（如 `business_context`）；文件名是约定的标准文件名，用连字符命名（如 `business-context.md`）。基础类型一一对应，frontmatter 中只写 `doc_type`；复合类型例外——文件名带模块/功能名前缀（见 §3.6.5）。
 
 ### 3.2 模块层：模块架构设计
 
@@ -482,7 +482,7 @@ module-name/
 - status: 支付状态 (enum: pending / success / failed)
 
 **约束**：
-- 支付回调 [MUST] 幂等处理，重复回调不产生重复扣款
+- [MUST] C-101 支付回调幂等处理，重复回调不产生重复扣款
 ```
 
 **编写要点**：
@@ -661,8 +661,8 @@ features/order-timeout-cancel/
 5. 通知用户订单已取消
 
 ### 边界约束
-- 扫描周期 [MUST] ≤ 5 分钟
-- 取消与释放库存 [MUST] 原子执行（同一事务）
+- [MUST] C-101 扫描周期 ≤ 5 分钟
+- [MUST] C-102 取消与释放库存原子执行（同一事务）
 ```
 
 ##### decision-log.md — 决策溯源 (Why，左翼)
@@ -758,7 +758,7 @@ feature-design.md (What) ──→ 定义功能的行为规格
 > 术语约定：下文及结语中的「Spec」指本体系中的规格化文档（`feature-design.md`、`unit-tests.md` 等全部文档类型，见 §3.6）。
 
 **左翼驱动右翼**：
-- 功能设计（`feature-design.md`）中的边界约束（如"扫描周期 [MUST] ≤ 5 分钟"）应直接体现在单元测试的用例中
+- 功能设计（`feature-design.md`）中的边界约束（如"[MUST] C-101 扫描周期 ≤ 5 分钟"）应直接体现在单元测试的用例中
 - 功能设计中的业务规则应被验收测试的场景完整覆盖
 - 右翼测试失败时，向左翼追溯决策依据：测试与 Spec 不符多属实现缺陷，修代码；Spec 约束本身不成立则修改 Spec，必要时在决策日志中**追加**一条新的决策记录——既有决策记录不可修改，以保持决策可追溯
 
@@ -853,7 +853,7 @@ doc_type: feature_design         # 文档类型，见 §3.6 文档类型注册�
 module: order                     # 所属模块名（子模块填 父模块名/子模块名，如 order/order-core）
 feature: order-timeout-cancel    # 所属功能名（仅 Level 2 需要）
 level: feature                   # 层级：top | module | feature
-version: 1.0.0                   # 语义化版本，用户手动 bump
+version: 1.0.0                   # 语义化版本，用户手动递增
 last_updated: 2024-03-10         # 工具自动更新
 author: team-architecture        # 文档负责人
 status: active                   # active | deprecated | archived（缺省 active）
@@ -890,7 +890,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 | `module` | ✅ | 创建时设定 | 所属模块的名称，顶层文档填 `project-charter` |
 | `feature` | 条件 | 创建时设定 | 仅 Level 2 文档需要，填功能目录名 |
 | `level` | ✅ | 创建时设定 | 层级标识：`top` / `module` / `feature`，用于依赖方向校验 |
-| `version` | ✅ | 用户手动 | 语义化版本 `major.minor.patch`，初始值 `0.1.0`，用户通过 `[+1]` 按钮 bump |
+| `version` | ✅ | 用户手动 | 语义化版本 `major.minor.patch`，初始值 `0.1.0`，用户通过 `[+1]` 按钮递增版本号 |
 | `last_updated` | ✅ | 工具自动 | ISO 8601 日期 `YYYY-MM-DD`，工具在保存时自动更新 |
 | `author` | ✅ | 创建时设定 | 文档负责人（团队角色或人名），用于变更通知路由 |
 | `status` | ✅ | 用户手动 | `active`（默认）、`deprecated`、`archived` |
@@ -898,7 +898,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 | `deprecated_reason` | 条件 | 用户手动 | 仅 `status=deprecated` 时需要，简述废弃原因 |
 | `superseded_by` | 条件 | 用户手动 | 替代文档的引用列表（废弃且存在替代文档时必填，无替代可省略） |
 | `archived_at` | 条件 | 用户手动 | 仅 `status=archived` 时需要，填写 ISO 8601 日期 |
-| `contains` | 条件 | 创建时设定 | 仅复合类型需要（见 §3.7），声明合并的子类型列表 |
+| `contains` | 条件 | 创建时设定 | 仅复合类型需要（见 §3.7），声明包含的子类型列表 |
 | `implemented_in` | 条件 | 用户+工具 | 仅 Level 2 功能/测试文档需要（见 §3.5.9），声明实现位置；工具校验路径存在性 |
 | `depends_on` | 条件 | 用户+工具 | 声明依赖的其他文档（见 §3.5.7），工具在保存时重新推导，用户确认版本号 |
 
@@ -952,16 +952,16 @@ depends_on:                      # 依赖声明，精确版本锁定
 - `[MAY]`：允许但不强制的事项，是否采用由模块或功能团队自主决定
 
 ```markdown
-- 下单接口 P99 响应时间 [MUST] ≤ 300ms
-- [SHOULD] 实现指数退避重试
+- [MUST] C-100 下单接口 P99 响应时间 ≤ 300ms
+- [SHOULD] S-100 实现指数退避重试
 - 开发者 [MAY] 选择使用同步或异步方式实现
 ```
 
 **约束 ID（追踪机制）**：为支持「[MUST] 约束 → 测试用例」的机械覆盖校验（见 §3.9.3 门禁 G4），约束需携带唯一标识：
 
-- `[MUST]` **必须**编号（如 `C-101`）；`[SHOULD]` 可选编号（建议编，如 `S-101`）；`[MAY]` 不编号
+- ID 前缀与约束级别一一对应：`C-`（Constraint，必须级）用于 `[MUST]`，`S-`（Should，建议级）用于 `[SHOULD]`，`[MAY]` 不编号；`[MUST]` **必须**编号（如 `C-101`），`[SHOULD]` 可选编号（建议编，如 `S-101`）
 - ID 在所属文档内唯一；跨文档引用用完整形式 `feature-design@<功能名>:C-101`
-- ID 绑定约束条目而非内容：修改约束内容保留 ID（配合版本 bump），删除约束则 ID 废弃不复用
+- ID 绑定约束条目而非内容：修改约束内容保留 ID（配合版本号递增），删除约束则 ID 废弃不复用
 
 ```markdown
 - [MUST] C-101 扫描周期 ≤ 5 分钟
@@ -970,7 +970,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 ```
 
 **约束级别的意义**：
-- **对开发者**：[MUST] 是代码评审的红线，违反直接打回；[SHOULD] 是需要 justify 的规则
+- **对开发者**：[MUST] 是代码评审的红线，违反直接打回；[SHOULD] 是偏离时须说明理由的规则
 - **对 AI**：约束标记是生成代码时的硬性边界条件，AI 应将其翻译为代码中的断言/配置/校验逻辑
 - **对评审者**：约束标记让评审者有据可依，减少"这是必须的还是可选的"这类争议
 - **对测试**：[MUST] 约束应在单元测试中有对应的用例覆盖（语言无关的 GWT 用例即可，不要求具体代码断言）
@@ -1012,11 +1012,11 @@ depends_on:
 
 **版本一致性守则**：
 
-- 每次**修改**文档时执行版本 bump，bump 级别判定标准：
+- 每次**修改**文档时执行版本号递增，递增级别判定标准：
   - `patch`：修正错别字、澄清措辞，内容含义不变
   - `minor`：增加/删除章节、补充约束或测试场景，向后兼容
   - `major`：重写文档主体、变更核心定义或约束，不向后兼容
-- 被依赖文档发生 `minor` 及以上版本变化时，依赖方应评估是否需要同步更新自身 `depends_on` 并 bump；仅 `patch` 变化不强制
+- 被依赖文档发生 `minor` 及以上版本变化时，依赖方应评估是否需要同步更新自身 `depends_on` 并递增版本号；仅 `patch` 变化不强制
 - `depends_on` 中引用被依赖文档时使用精确版本号
 
 **校验规则**：
@@ -1048,19 +1048,9 @@ depends_on:
     那么 <预期结果>
 ```
 
-#### 3.5.9 实现映射规范（Spec ↔ 代码）
+#### 3.5.9 实现映射规范（Spec → 代码）
 
-**定位**：建立 Spec 与源码之间的**映射**与**一致性校验**。§3.5.3 的内容引用规范解决文档之间的引用；当引用跨越文档域进入代码域——AI 读完 `feature-design.md` 需要知道代码在哪、变更代码后需要知道影响哪份 Spec——就需要实现映射。它是 AI 独立完成开发、测试、评审、发布的基础设施，也是「文档更新滞后于代码变更」的检测器。
-
-**单向声明为主**：实现映射只要求**文档侧**声明实现位置（`implemented_in`），不要求代码侧任何反向标注。代码是 Spec 的派生制品——让代码文件维护指向 Spec 的注释，既违背「Spec 即资产」的单一权威原则，也会随开发推进迅速腐坏（注释过期比没有更危险）。反向溯源由结构性映射免费获得（见下）。
-
-**结构性映射**：当代码目录与文档目录同构时，代码 → 文档的反向导航是天然的：
-
-- 源码按 `src/<模块名>/features/<功能名>/` 组织，目录名与文档目录 `module-<模块名>/features/<功能名>/` 保持一致（kebab-case）
-- 每个功能足够小：目录内文件数量少、职责单一，目录 = 功能，映射无歧义
-- 模块/功能边界与文档体系一致：禁止跨功能共享文件、禁止一个功能目录容纳多个功能
-
-满足结构性映射时，工具可**自动推导**代码 → 文档的反向索引（trace-map，派生制品），无需任何人工声明。
+实现映射声明 Spec 文档对应的实现位置（`implemented_in`），供 AI 定位实现、校验文档与实现的一致性。映射方向为单向：仅由文档侧指向代码侧，代码侧不做任何反向标注。
 
 **映射载体**：
 
@@ -1085,10 +1075,9 @@ implemented_in:
 **校验规则**：
 
 - `implemented_in` 声明的路径必须真实存在，否则告警（Spec 声明了实现但代码缺失）
-- 目录契约违反（目录名与功能名不一致、跨功能共享文件）→ 告警
-- 可选：基于 git 历史，功能目录发生变更时提醒核对对应 Spec 版本
+- 可选：基于 git 历史，`implemented_in` 指向的路径发生变更时提醒核对对应 Spec 版本
 
-> 与 `depends_on` 的分工：`depends_on` 是文档域内部的依赖（文档↔文档），实现映射是跨域链接（文档↔代码），两维正交、缺一不可——前者保证文档自洽，后者保证文档与实现一致。
+> 与 `depends_on` 的分工：`depends_on` 是文档域内部的依赖（文档↔文档），实现映射是跨域链接（文档→代码），两维正交、缺一不可——前者保证文档自洽，后者保证文档与实现一致。
 
 ### 3.6 文档类型注册表
 
@@ -1098,31 +1087,31 @@ implemented_in:
 
 | 编号   | doc_type                 | 文件名                       | 必选？  | 责任                     | 版本策略          | 可依赖目标            | 编写顺序 |
 | ---- | ------------------------ | ------------------------- | ---- | ---------------------- | ------------- | ---------------- | ---- |
-| T-01 | `business_context`       | business-context.md       | ✅ 必选 | 项目为什么存在：业务背景、动因、目标用户   | 业务方向调整时 bump  | (无，顶层入口)         | 1st  |
-| T-02 | `technical_framework`    | technical-framework.md    | ✅ 必选 | 技术选型全局约定：语言、框架、中间件     | 技术栈变更时 bump   | T-01             | 2nd  |
-| T-03 | `non_functional_constraints`  | non-functional-constraints.md  | ✅ 必选 | 不可突破的底线：性能指标、合规要求、硬件限制 | 约束新增/修改时 bump | T-01, T-02       | 3rd  |
-| T-04 | `global_policies`        | global-policies.md        | ✅ 必选 | 跨模块全局策略：认证、可观测性、数据一致性  | 全局策略变化时 bump  | T-01, T-02, T-03 | 4th  |
-| T-05 | `inter_module_contract`  | inter-module-contracts.md | 推荐   | 模块间接口规范：请求/响应格式、共享事件、数据结构 | 接口变更时 bump    | T-04, T-02       | 5th  |
-| T-06 | `stakeholders`           | stakeholders.md           | 可选   | 干系人分析：角色、关注点、决策权       | 干系人变动时 bump   | T-01             | 6th  |
-| T-15 | `release_policy`         | release-policy.md         | 推荐   | 发布域权威定义：门禁、流水线、发布号、回滚策略（见 §3.9） | 门禁/流程变更时 bump | T-01, T-02, T-03, T-05 | 15th |
+| T-01 | `business_context`       | business-context.md       | ✅ 必选 | 项目为什么存在：业务背景、动因、目标用户   | 业务方向调整时递增  | (无，顶层入口)         | 1st  |
+| T-02 | `technical_framework`    | technical-framework.md    | ✅ 必选 | 技术选型全局约定：语言、框架、中间件     | 技术栈变更时递增   | T-01             | 2nd  |
+| T-03 | `non_functional_constraints`  | non-functional-constraints.md  | ✅ 必选 | 不可突破的底线：性能指标、合规要求、硬件限制 | 约束新增/修改时递增 | T-01, T-02       | 3rd  |
+| T-04 | `global_policies`        | global-policies.md        | ✅ 必选 | 跨模块全局策略：认证、可观测性、数据一致性  | 全局策略变化时递增  | T-01, T-02, T-03 | 4th  |
+| T-05 | `inter_module_contract`  | inter-module-contracts.md | 推荐   | 模块间接口规范：请求/响应格式、共享事件、数据结构 | 接口变更时递增    | T-04, T-02       | 5th  |
+| T-06 | `stakeholders`           | stakeholders.md           | 可选   | 干系人分析：角色、关注点、决策权       | 干系人变动时递增   | T-01             | 6th  |
+| T-15 | `release_policy`         | release-policy.md         | 推荐   | 发布域权威定义：门禁、流水线、发布号、回滚策略（见 §3.9） | 门禁/流程变更时递增 | T-01, T-02, T-03, T-05 | 15th |
 
 #### 3.6.2 Level 1：模块层
 
 | 编号   | doc_type          | 文件名                | 必选？  | 责任                        | 版本策略                     | 可依赖目标                 | 编写顺序 |
 | ---- | ----------------- | ------------------ | ---- | ------------------------- | ------------------------ | --------------------- | ---- |
-| T-07 | `architecture`    | architecture.md    | ✅ 必选 | 模块组件划分、职责、组件间关系、关键流程      | 架构调整时 bump               | T-01~T-06             | 7th  |
-| T-08 | `domain_model`    | domain-model.md    | ✅ 必选 | 领域实体、值对象、聚合根及其关系约束         | 领域模型变更时 bump             | T-07                  | 8th  |
-| T-09 | `integration`     | integration.md     | 可选   | 外部系统依赖：协议、数据流、降级策略         | 外部集成变更时 bump             | T-07                  | 9th  |
-| T-10 | `module_manifest` | module-manifest.md | ✅ 必选 | 模块对外能力（exports）与能力依赖（imports）声明，import/export 须配对 | exports/imports 变更时 bump | T-07, T-08 | 10th |
+| T-07 | `architecture`    | architecture.md    | ✅ 必选 | 模块组件划分、职责、组件间关系、关键流程      | 架构调整时递增               | T-01~T-06             | 7th  |
+| T-08 | `domain_model`    | domain-model.md    | ✅ 必选 | 领域实体、值对象、聚合根及其关系约束         | 领域模型变更时递增             | T-07                  | 8th  |
+| T-09 | `integration`     | integration.md     | 可选   | 外部系统依赖：协议、数据流、降级策略         | 外部集成变更时递增             | T-07                  | 9th  |
+| T-10 | `module_manifest` | module-manifest.md | ✅ 必选 | 模块对外能力（exports）与能力依赖（imports）声明，import/export 须配对 | exports/imports 变更时递增 | T-07, T-08 | 10th |
 
 #### 3.6.3 Level 2：功能层
 
 | 编号   | doc_type          | 文件名                | 必选？  | 责任                        | 版本策略                     | 可依赖目标                 | 编写顺序 |
 | ---- | ----------------- | ------------------ | ---- | ------------------------- | ------------------------ | --------------------- | ---- |
-| T-11 | `feature_design`  | feature-design.md   | ✅ 必选 | 功能行为规格：触发条件、流程、约束  | 功能规格变更时 bump   | T-07, T-08       | 11th |
-| T-12 | `decision_log`    | decision-log.md     | ✅ 必选 | 关键设计决策：背景、方案对比、选型理由 | 决策变更时 bump     | T-11              | 12th |
-| T-13 | `unit_test`       | unit-tests.md       | ✅ 必选 | 单元级别的代码正确性验证         | 测试用例变更时 bump   | T-11              | 13th |
-| T-14 | `acceptance_test` | acceptance-tests.md | ✅ 必选 | BDD 验收场景：业务行为验证       | 验收场景变更时 bump   | T-11, T-12       | 14th |
+| T-11 | `feature_design`  | feature-design.md   | ✅ 必选 | 功能行为规格：触发条件、流程、约束  | 功能规格变更时递增   | T-07, T-08       | 11th |
+| T-12 | `decision_log`    | decision-log.md     | ✅ 必选 | 关键设计决策：背景、方案对比、选型理由 | 决策变更时递增     | T-11              | 12th |
+| T-13 | `unit_test`       | unit-tests.md       | ✅ 必选 | 单元级别的代码正确性验证         | 测试用例变更时递增   | T-11              | 13th |
+| T-14 | `acceptance_test` | acceptance-tests.md | ✅ 必选 | BDD 验收场景：业务行为验证       | 验收场景变更时递增   | T-11, T-12       | 14th |
 
 #### 3.6.4 依赖关系说明
 
@@ -1143,13 +1132,13 @@ implemented_in:
 
 #### 3.6.5 复合类型（精简模式）
 
-本体系定义了 3 种复合类型，用于小型项目或项目初期的**精简模式**。复合类型允许将多个基础类型合并到一个文件中，保留完整的表达深度，同时减少文件数量。
+本体系定义了 3 种复合类型，用于小型项目或项目初期的**精简模式**。复合类型允许将多个基础类型组合到一个文件中，保留完整的表达深度，同时减少文件数量。
 
-| 编号   | doc_type          | 层级      | contains | 对应的基础类型                                                                                                                                  |
-| ---- | ----------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| T-C1 | `charter`         | Top     | 5+1 种    | `business_context`, `technical_framework`, `non_functional_constraints`, `global_policies`（必选）；`inter_module_contract`（推荐）、`stakeholders`（可选） |
-| T-C2 | `module_design`   | Module  | 3+1 种    | `architecture`, `domain_model`, `module_manifest`（必选）、`integration`（可选） |
-| T-C3 | `feature_package` | Feature | 4 种      | `feature_design`, `decision_log`, `unit_test`, `acceptance_test`                                                                         |
+| 编号   | doc_type          | 文件名                       | 层级      | contains | 对应的基础类型                                                                                                                                  |
+| ---- | ----------------- | ------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| T-C1 | `charter`         | `charter.md`               | Top     | 5+1 种    | `business_context`, `technical_framework`, `non_functional_constraints`, `global_policies`（必选）；`inter_module_contract`（推荐）、`stakeholders`（可选） |
+| T-C2 | `module_design`   | `<模块名>-module-design.md` | Module  | 3+1 种    | `architecture`, `domain_model`, `module_manifest`（必选）、`integration`（可选） |
+| T-C3 | `feature_package` | `<功能名>-feature-package.md` | Feature | 4 种      | `feature_design`, `decision_log`, `unit_test`, `acceptance_test`                                                                         |
 
 **复合类型的 frontmatter 示例：**
 
@@ -1173,34 +1162,11 @@ status: active
 # 项目宪章
 ```
 
-### 3.7 文档拆分与合并操作
+### 3.7 文档拆分与演化
 
-为支持从精简模式到完整模式的平滑演进，本体系定义了文档的拆分与合并操作。
+项目文档体系通常从精简模式起步，随规模扩大自然演进到完整模式；这一演进通过文档**拆分**完成——将复合类型文档拆分为多个独立的基础类型文档。
 
-#### 3.7.1 合并操作
-
-将多个基础类型文档合并为一个复合类型文档。
-
-**合并规则：**
-- 各独立文件的 YAML frontmatter 按 §3.5.2 合并为一份 frontmatter（`contains` 列出所有合并的类型）
-- 各文件的正文按层级拼接：合并后的复合文档以 `#` 标题开头（如 `# 项目宪章`），每个源文档对应一个 `##` 章节（如 `## 业务背景`），源文档内的原有 `##` 标题顺延为 `###`，避免多文档标题冲突
-- 合并后原文件是否删除为团队自决（推荐保留 1-2 个版本周期后清理）
-
-**合并示例：**
-
-```
-合并示例：6 个顶层文件 → 1 个 charter.md
-══════════════════════════════════════════════════
-
-  business-context.md            ─┐
-  technical-framework.md         ─┤
-  non-functional-constraints.md  ─┼──→  charter.md
-  global-policies.md             ─┤      ├── ## 业务背景
-  inter-module-contracts.md      ─┤      ├── ## 技术框架
-  stakeholders.md                ─┘      └── ## ...
-```
-
-#### 3.7.2 拆分操作
+#### 3.7.1 拆分操作
 
 将一个复合类型文档拆分为多个独立的基础类型文档。
 
@@ -1225,11 +1191,8 @@ status: active
     └── ## 干系人
 ```
 
-#### 3.7.3 可逆性与演化路径
+#### 3.7.2 典型演化路径
 
-拆分和合并互为逆操作，同一组文档可在两个模式之间来回切换而**不丢失信息**。
-
-**典型演化路径：**
 1. 项目启动：使用精简模式——顶层 1 份 `charter.md`；每个模块 1 份 `<模块名>-module-design.md`（如 `order-module-design.md`）；每个功能 1 份 `<功能名>-feature-package.md`（如 `order-timeout-cancel-feature-package.md`）
 2. 功能增多：`charter.md` → 拆分为独立顶层文件（不含可选 stakeholders 时为 5 份，含时为 6 份）
 3. 团队扩大：`<模块名>-module-design.md` → 拆分为独立的 architecture.md + domain-model.md + module-manifest.md（+ integration.md）
@@ -1332,13 +1295,13 @@ draft（草稿）→ in-review（评审中）→ ready（门禁通过）→ rele
 | G3 契约闭合 | imports ↔ exports 配对、契约无悬空接口 | §3.2.2 |
 | G4 约束覆盖 | 每个编号的 [MUST] 约束（`C-101` 等）在 unit-tests.md 中有对应场景引用 | §3.5.5、§3.5.6 |
 | G5 测试全绿 | unit-tests + acceptance-tests 执行通过 | §3.3.3 |
-| G6 实现映射 | `implemented_in` 声明的实现真实存在、目录契约一致 | §3.5.9 |
+| G6 实现映射 | `implemented_in` 声明的实现路径真实存在 | §3.5.9 |
 
 #### 3.9.4 发布流水线（Release Pipeline）
 
 ```
 Spec 变更提交
-  → P0 变更检测：diff 定位变更文档，自动建议版本 bump，识别发布单元
+  → P0 变更检测：diff 定位变更文档，自动建议版本号递增，识别发布单元
   → P1 静态门禁：G1 / G2 / G3 / G4 / G6（不执行代码）
   → P2 动态门禁：G5（执行测试；AI 生成/修复测试）
   → P3 制品生成：生成 release-manifest、变更日志、部署配置快照
@@ -1366,7 +1329,7 @@ Spec 变更提交
 
 ### 从规范到纪律
 
-当前体系中，版本 bump、依赖声明、状态管理仍需人工完成。真正的挑战在于将这些操作嵌入日常工程流程——在 PR 评审中校验版本一致性，在 CI 中检测依赖漂移，在变更前自动分析影响范围。当文档维护成为工程纪律而非额外负担，体系的价值才能完全释放。
+当前体系中，版本号递增、依赖声明、状态管理仍需人工完成。真正的挑战在于将这些操作嵌入日常工程流程——在 PR 评审中校验版本一致性，在 CI 中检测依赖漂移，在变更前自动分析影响范围。当文档维护成为工程纪律而非额外负担，体系的价值才能完全释放。
 
 ### 从被动参考到主动辅助
 

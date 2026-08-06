@@ -20,9 +20,10 @@ SCENARIO_DOC_TYPES = {
     ],
     "tech-ref": [
         "technical_framework",
-        "technical_constraints",
+        "non_functional_constraints",
         "global_policies",
         "inter_module_contract",
+        "release_policy",
         "architecture",
         "domain_model",
         "module_manifest",

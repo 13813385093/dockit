@@ -3,9 +3,16 @@ doc_type: domain_model
 module: $module
 level: module
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 # 领域模型
 
@@ -15,7 +22,8 @@ depends_on: []
 **类型**：聚合根 / 实体 / 值对象 / 领域服务
 **属性**：字段名: 字段类型 (约束)
 **行为**：核心业务逻辑方法
-**约束**：业务规则（用 MUST/SHOULD 标记）
+**约束**：业务规则（用 [MUST]/[SHOULD] 标记并编号，见 §3.5.5）
+约束：不写数据库表结构或 ORM 映射；不在此处描述模块接口（见 §3.2.2）。
 -->
 
 ## 聚合根
@@ -47,7 +55,7 @@ depends_on: []
 - <!-- 业务行为描述 -->
 
 **约束**：
-- [MUST] <!-- 业务规则 -->
+- [MUST] C-1xx <!-- 业务规则 -->
 
 ---
 
@@ -78,7 +86,7 @@ depends_on: []
 - <!-- 业务行为描述 -->
 
 **约束**：
-- [MUST] <!-- 业务规则 -->
+- [MUST] C-1xx <!-- 业务规则 -->
 
 ---
 
@@ -111,10 +119,10 @@ depends_on: []
 <!-- 
 跨实体的全局业务规则。
 正例：
-  [MUST] 遥控操作必须通过双重身份认证
-  [MUST] 电压采样值不得超过额定值的 120%
+  [MUST] C-1xx 遥控操作必须通过双重身份认证
+  [MUST] C-1xx 电压采样值不得超过额定值的 120%
 -->
 
-| 规则 | 约束级别 | 涉及实体 |
-|------|---------|---------|
-| <!-- 规则描述 --> | [MUST]/[SHOULD] | <!-- 相关实体 --> |
+| 约束 ID | 规则 | 约束级别 | 涉及实体 |
+|---------|------|---------|---------|
+| C-1xx | <!-- 规则描述 --> | [MUST]/[SHOULD] | <!-- 相关实体 --> |

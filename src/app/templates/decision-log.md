@@ -4,14 +4,23 @@ module: $module
 feature: $feature
 level: feature
 version: 0.1.0
-last_updated: $now
+last_updated: $now            # 生成时由工具替换为 ISO 8601 日期
+author: $author               # 文档负责人（团队角色或人名）
 status: active
-depends_on: []
+deprecated_at:                   # 废弃日期（status=deprecated 时必填）
+deprecated_reason:               # 废弃原因（status=deprecated 时必填）
+superseded_by:                   # 替代文档列表（废弃且存在替代时必填）
+  - doc: <替代文档>
+    module: <所属模块>
+archived_at:                     # 归档日期（status=archived 时必填）
+depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 ---
 
 # 设计决策
 
-<!-- 每一个 $feature 对应一组设计决策记录。 -->
+<!-- 每一个 $feature 对应一组设计决策记录。
+纪律（见 §3.3.3）：既有决策记录不可修改；如结论变化，追加一条新决策记录而非改写旧记录。
+不写会议纪要或讨论过程，只记录结论和理由；功能行为定义归 feature-design.md（见 §3.3.2）。 -->
 
 ## $feature
 

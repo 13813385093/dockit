@@ -125,7 +125,7 @@ git diff <锚点>..HEAD -- <路径>
 调 `doc_structure()` 获取所有文档路径和 section 标题。
 
 根据变更文件的路径语义和用户描述中的关注点，匹配相关文档：
-- 如 `auth.py` → 匹配 `architecture.md` 中「认证」相关段落、`technical-constraints.md` 中「安全」相关段落
+- 如 `auth.py` → 匹配 `architecture.md` 中「认证」相关段落、`non-functional-constraints.md` 中「安全」相关段落
 - 如用户描述提到「接口变更」→ 匹配 `inter-module-contracts.md`
 - 对匹配到的文档调 `read_doc(path)` 获取完整内容
 
@@ -150,7 +150,7 @@ AI 基于 diff 文本和设计文档，做 best-effort 扫描，标注"可能存
 
 关联设计文档:
   - architecture.md → §认证流程、§token 生命周期
-  - technical-constraints.md → §安全约束
+  - non-functional-constraints.md → §安全约束
 
 🔍 AI 标注的热点区域（仅供参考，需人工确认）:
   ① token.py:14-18 — 过期时间从 30min→60min，
