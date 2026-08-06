@@ -5,18 +5,18 @@ Stdlib-only command line interface for skills. Each subcommand mirrors the
 behaviour of the former MCP tools with identical validation logic.
 
 用法:
-    python skills/scripts/cli.py [--root <项目目录>] spec status
-    python skills/scripts/cli.py [--root <项目目录>] spec read
-    python skills/scripts/cli.py [--root <项目目录>] spec write --json '<spec_json>'   # 或从 stdin 读入
-    python skills/scripts/cli.py [--root <项目目录>] spec archive
-    python skills/scripts/cli.py [--root <项目目录>] spec schema
-    python skills/scripts/cli.py [--root <项目目录>] doc structure
-    python skills/scripts/cli.py [--root <项目目录>] doc read <path>
-    python skills/scripts/cli.py [--root <项目目录>] doc update-section <reference> --content '<text>'
-    python skills/scripts/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
-    python skills/scripts/cli.py [--root <项目目录>] review anchor-get
-    python skills/scripts/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>]
-    python skills/scripts/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
+    python .doc-kit/cli/cli.py [--root <项目目录>] spec status
+    python .doc-kit/cli/cli.py [--root <项目目录>] spec read
+    python .doc-kit/cli/cli.py [--root <项目目录>] spec write --json '<spec_json>'   # 或从 stdin 读入
+    python .doc-kit/cli/cli.py [--root <项目目录>] spec archive
+    python .doc-kit/cli/cli.py [--root <项目目录>] spec schema
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc structure
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc read <path>
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc update-section <reference> --content '<text>'
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
+    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get
+    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>]
+    python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
 
 项目目录解析优先级: --root > DOC_KIT_PROJECT_ROOT 环境变量 > 从 cwd 向上查找
 （含 .doc-kit/ 或 SessionSpec/ 的最近祖先目录）。
@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -621,6 +622,49 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  deploy 子命令（自举：把本 CLI 包部署到项目固定路径）
+# ═══════════════════════════════════════════════════════════════
+
+CLI_PACKAGE_FILES = [
+    "__init__.py",
+    "cli.py",
+    "docmodel.py",
+    "frontmatter.py",
+    "index.py",
+    "spec_schema.py",
+]
+"""部署时复制的文件清单（本目录下的 .py 源文件）。"""
+
+
+def cmd_deploy(target: str | None = None) -> str:
+    """把本 CLI 包（cli.py 同目录的源文件）复制到项目固定路径。
+
+    默认目标：<当前目录>/.doc-kit/cli/（不要求项目已初始化，新项目也能自举）。
+    部署后统一调用：python .doc-kit/cli/cli.py <group> <command> ...
+    """
+    src_dir = Path(__file__).resolve().parent
+    if target:
+        dst_dir = Path(target).resolve()
+    else:
+        dst_dir = Path.cwd().resolve() / ".doc-kit" / "cli"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    for name in CLI_PACKAGE_FILES:
+        src = src_dir / name
+        if not src.exists():
+            continue
+        shutil.copy2(src, dst_dir / name)
+        copied.append(name)
+    if not copied:
+        return _fail(f"cli.py 同目录下未找到任何源文件（{src_dir}），无法部署。")
+    rel = dst_dir.relative_to(Path.cwd().resolve()) if dst_dir.is_relative_to(Path.cwd().resolve()) else dst_dir
+    return _ok(
+        message=f"✅ CLI 已部署到 {rel}（{len(copied)} 个文件）。\n\n后续统一调用：python {rel.as_posix()}/cli.py <group> <command> ...",
+        data={"target": str(dst_dir), "files": copied},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
 #  输出辅助
 # ═══════════════════════════════════════════════════════════════
 
@@ -693,7 +737,10 @@ def build_parser() -> argparse.ArgumentParser:
     doc_add_p.add_argument("--content", default="", help="正文内容")
     doc_add_p.add_argument("--level", default="sibling", choices=["sibling", "child"], help="同级或子级插入")
 
-    # ── review ──
+    # ── deploy（顶层子命令，不依赖项目根）──
+    deploy_p = sub.add_parser("deploy", help="自举：把本 CLI 包复制到项目固定路径")
+    deploy_p.add_argument("--target", help="部署目标目录（默认 <当前目录>/.doc-kit/cli）")
+
     review = sub.add_parser("review", help="代码评审锚点与报告")
     review_sub = review.add_subparsers(dest="command", required=True)
     review_sub.add_parser("anchor-get", help="获取评审锚点")
@@ -710,6 +757,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # deploy 不依赖项目根，最先处理（目标项目可能尚未初始化）
+    if args.group == "deploy":
+        _emit(cmd_deploy(args.target))
 
     try:
         project_root = find_project_root(getattr(args, "root", None))

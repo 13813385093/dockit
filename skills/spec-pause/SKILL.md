@@ -4,17 +4,24 @@ description: 保存当前议题进度，提取决议并写入文档，不改变�
 ---
 # 最高优先级：
 
-在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）：
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
+
+**CLI 定位（按优先级，执行前先确认）**：
+1. 项目内已部署：`<项目根>/.doc-kit/cli/cli.py`
+2. 项目内 skill 目录：`<项目根>/skills/scripts/cli.py`
+3. 全局 skills 目录：`$REASONIX_HOME/skills/`（Windows 默认 `%APPDATA%\reasonix`，macOS/Linux `~/.reasonix`）下任意 `*/scripts/cli.py`（可用 `find` 在 workspace 与上述目录中搜索）
+
+**首次自举**：若 1 不存在，先运行 `python <定位到的 cli.py> deploy`，将 CLI 部署到 `<项目根>/.doc-kit/cli/`。部署后一律从项目根调用：
 
 ```bash
-cd <项目根目录>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
-python skills/scripts/cli.py spec read
-python skills/scripts/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
-python skills/scripts/cli.py spec schema
-python skills/scripts/cli.py doc structure
-python skills/scripts/cli.py doc read <path>
-python skills/scripts/cli.py doc update-section <reference> --content '<正文>'
-python skills/scripts/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python .doc-kit/cli/cli.py spec read
+python .doc-kit/cli/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
+python .doc-kit/cli/cli.py spec schema
+python .doc-kit/cli/cli.py doc structure
+python .doc-kit/cli/cli.py doc read <path>
+python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
+python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败；纯文本输出（spec read / spec schema）以「错误:」开头即失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
@@ -72,9 +79,9 @@ AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确
 
 对每条已确认的决议，按以下流程动态决定写入位置：
 
-1. 调 `python skills/scripts/cli.py doc structure` 查看当前 ProjectSpec/ 下所有文档及其 section 结构
+1. 调 `python .doc-kit/cli/cli.py doc structure` 查看当前 ProjectSpec/ 下所有文档及其 section 结构
 2. 根据决议内容和文档的 `level`（top/module/feature）判断适合的文档
-3. 调 `python skills/scripts/cli.py doc read <path>` 查看目标文档当前内容
+3. 调 `python .doc-kit/cli/cli.py doc read <path>` 查看目标文档当前内容
 4. 判断是更新已有 section（`doc update-section <reference> --content '<正文>'`）还是新增 section（`doc add-section <reference> '<标题>' --content '<正文>'`）
 5. 汇总所有待写入操作，形成清单
 
@@ -107,7 +114,7 @@ AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确
 
 ### Step 5：组装完整 spec
 
-调 `python skills/scripts/cli.py spec read` 获取当前议题的完整数据，然后根据 Step 1 的提取结果修改内存中的 spec：
+调 `python .doc-kit/cli/cli.py spec read` 获取当前议题的完整数据，然后根据 Step 1 的提取结果修改内存中的 spec：
 
 | 变更操作 | 做法 |
 |---------|------|
@@ -117,13 +124,13 @@ AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确
 | 新增后续计划 | `spec["next_steps"].append(...)` |
 | 删除后续计划 | `spec["next_steps"].remove(...)` 或 list comprehension |
 
-> 调用 `python skills/scripts/cli.py spec schema` 可以获取各字段的详细约束（如 `detail` 最小 150 字）。
+> 调用 `python .doc-kit/cli/cli.py spec schema` 可以获取各字段的详细约束（如 `detail` 最小 150 字）。
 
 ### Step 6：调用工具
 
 用户确认后：
 
-1. **先**调 `python skills/scripts/cli.py spec write --json '<spec_json>'` — 将完整 spec 写回（全量替换模式，保存决议/待定/计划到 SessionSpec/）
+1. **先**调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` — 将完整 spec 写回（全量替换模式，保存决议/待定/计划到 SessionSpec/）
 2. **后**按用户确认的写入清单，逐条调 `doc update-section` 或 `doc add-section` 写入文档（写入 ProjectSpec/）
 
 > **写入时机**：spec write 调用后才写入文档，确保会议纪要已安全保存。

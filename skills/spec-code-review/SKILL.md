@@ -4,17 +4,24 @@ description: 独立代码评审，从 git 变更出发比对设计文档，记�
 ---
 # 最高优先级：
 
-在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）：
+在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
+
+**CLI 定位（按优先级，执行前先确认）**：
+1. 项目内已部署：`<项目根>/.doc-kit/cli/cli.py`
+2. 项目内 skill 目录：`<项目根>/skills/scripts/cli.py`
+3. 全局 skills 目录：`$REASONIX_HOME/skills/`（Windows 默认 `%APPDATA%\reasonix`，macOS/Linux `~/.reasonix`）下任意 `*/scripts/cli.py`（可用 `find` 在 workspace 与上述目录中搜索）
+
+**首次自举**：若 1 不存在，先运行 `python <定位到的 cli.py> deploy`，将 CLI 部署到 `<项目根>/.doc-kit/cli/`。部署后一律从项目根调用：
 
 ```bash
-cd <项目根目录>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
-python skills/scripts/cli.py doc structure
-python skills/scripts/cli.py doc read <path>
-python skills/scripts/cli.py doc update-section <reference> --content '<正文>'
-python skills/scripts/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
-python skills/scripts/cli.py review anchor-get
-python skills/scripts/cli.py review anchor-set <commit_hash> [--session <sid>]
-python skills/scripts/cli.py review report-write --content '<report_markdown>'   # 或 --file <path> / stdin
+cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python .doc-kit/cli/cli.py doc structure
+python .doc-kit/cli/cli.py doc read <path>
+python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
+python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+python .doc-kit/cli/cli.py review anchor-get
+python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>]
+python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'   # 或 --file <path> / stdin
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。git 相关操作（git log / diff / rev-parse）一律使用 `bash` 工具执行。
@@ -85,7 +92,7 @@ git --version >nul 2>&1 && git rev-parse --git-dir >nul 2>&1
 
 ### Step 1-2：获取评审锚点
 
-调 `python skills/scripts/cli.py review anchor-get` 获取上次评审的 commit hash。
+调 `python .doc-kit/cli/cli.py review anchor-get` 获取上次评审的 commit hash。
 
 两种情况：
 
@@ -129,12 +136,12 @@ git diff <锚点>..HEAD -- <路径>
 
 ### Step 1-4：读取相关设计文档
 
-调 `python skills/scripts/cli.py doc structure` 获取所有文档路径和 section 标题。
+调 `python .doc-kit/cli/cli.py doc structure` 获取所有文档路径和 section 标题。
 
 根据变更文件的路径语义和用户描述中的关注点，匹配相关文档：
 - 如 `auth.py` → 匹配 `architecture.md` 中「认证」相关段落、`non-functional-constraints.md` 中「安全」相关段落
 - 如用户描述提到「接口变更」→ 匹配 `inter-module-contracts.md`
-- 对匹配到的文档运行 `python skills/scripts/cli.py doc read <path>` 获取完整内容
+- 对匹配到的文档运行 `python .doc-kit/cli/cli.py doc read <path>` 获取完整内容
 
 > 匹配规则是启发式的 — 按文件名、section 标题、用户描述三者之间的语义关联，不做精确映射。
 
@@ -239,7 +246,7 @@ C. **误报** — 代码与文档一致，AI 判断有误
 git rev-parse HEAD
 ```
 
-调 `python skills/scripts/cli.py review anchor-set <commit_hash> [--session <sid>]` 保存锚点。
+调 `python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>]` 保存锚点。
 
 ### Step 4-2：汇总输出
 
@@ -310,7 +317,7 @@ AI 标注的 N 个潜在偏差区域：
 
 ### Step 4-3：写入评审报告
 
-将 Step 4-2 生成的 Markdown 报告运行 `python skills/scripts/cli.py review report-write --content '<report_markdown>'` 写入 `ReviewSpec/`。
+将 Step 4-2 生成的 Markdown 报告运行 `python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'` 写入 `ReviewSpec/`。
 
 > 文件自动命名为 `code-review-{YYYYMMDD-HHMMSS}.md`。
 > CLI 校验必填段落（`# ` 标题、`## 基本信息`、`## 评审热点`），

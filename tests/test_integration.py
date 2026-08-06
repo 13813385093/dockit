@@ -318,3 +318,24 @@ class TestSpecArchive:
         assert "✅" in result
         archive_file = tmp_project / "SessionSpec" / "archive" / "abandoned-session.spec.json"
         assert archive_file.exists()
+
+
+class TestDeploy:
+    """cli.py deploy 子命令 — 自举部署到项目固定路径"""
+
+    def test_deploy_copies_package(self, tmp_project):
+        """deploy 应把 CLI 包复制到指定目标目录"""
+        import cli
+        target = tmp_project / ".doc-kit" / "cli"
+        result = json.loads(cli.cmd_deploy(str(target)))
+        assert result["success"] is True
+        for name in ("cli.py", "docmodel.py", "frontmatter.py", "index.py", "spec_schema.py", "__init__.py"):
+            assert (target / name).exists(), f"缺少 {name}"
+
+    def test_deploy_without_target_defaults_to_cwd(self, tmp_path, monkeypatch):
+        """未指定 target 时默认部署到 <cwd>/.doc-kit/cli"""
+        import cli
+        monkeypatch.chdir(tmp_path)
+        result = json.loads(cli.cmd_deploy())
+        assert result["success"] is True
+        assert (tmp_path / ".doc-kit" / "cli" / "cli.py").exists()

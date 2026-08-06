@@ -3,7 +3,7 @@ doc-kit SpecStruct — 统一的 Schema 定义与校验。
 
 本文件是 SpecStruct 的**唯一权威来源**。
 MCP Server 通过 `validate(spec)` 校验写入数据。
-`get_schema_metadata()` 通过共享 CLI（`python skills/scripts/cli.py spec schema`）暴露给 Skills。"""
+`get_schema_metadata()` 通过共享 CLI（`python .doc-kit/cli/cli.py spec schema`）暴露给 Skills。"""
 
 from typing import Any
 
@@ -226,7 +226,7 @@ def validate(spec: dict) -> list[str]:
 def get_schema_metadata() -> dict:
     """从 SPEC_SCHEMA 生成 LLM 友好的字段定义。
 
-    Skills 运行 `python skills/scripts/cli.py spec schema` 获取此结构，了解各字段的类型、约束和允许值。
+    Skills 运行 `python .doc-kit/cli/cli.py spec schema` 获取此结构，了解各字段的类型、约束和允许值。
     是字段定义的**唯一公开来源**，skill 中不应硬编码任何 JSON 模板。
     """
     result = {}
