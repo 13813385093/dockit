@@ -22,7 +22,8 @@ class TestReadDoc:
                 "---\ndoc_type: test\n---\n# A\n\n## Section\ncontent-a")
         result = json.loads(cli_env.read_doc("a.md"))
         assert result["success"] is True
-        assert result["data"]["path"] == "a.md"
+        # path 带 ProjectSpec/ 前缀，与 doc_structure 的 doc_map key 一致
+        assert result["data"]["path"] == "ProjectSpec/a.md"
         sections = result["data"]["sections"]
         assert any(s["heading"] == "Section" and "content-a" in s["content"] for s in sections)
 
@@ -318,24 +319,3 @@ class TestSpecArchive:
         assert "✅" in result
         archive_file = tmp_project / "SessionSpec" / "archive" / "abandoned-session.spec.json"
         assert archive_file.exists()
-
-
-class TestDeploy:
-    """cli.py deploy 子命令 — 自举部署到项目固定路径"""
-
-    def test_deploy_copies_package(self, tmp_project):
-        """deploy 应把 CLI 包复制到指定目标目录"""
-        import cli
-        target = tmp_project / ".doc-kit" / "cli"
-        result = json.loads(cli.cmd_deploy(str(target)))
-        assert result["success"] is True
-        for name in ("cli.py", "docmodel.py", "frontmatter.py", "index.py", "spec_schema.py", "__init__.py"):
-            assert (target / name).exists(), f"缺少 {name}"
-
-    def test_deploy_without_target_defaults_to_cwd(self, tmp_path, monkeypatch):
-        """未指定 target 时默认部署到 <cwd>/.doc-kit/cli"""
-        import cli
-        monkeypatch.chdir(tmp_path)
-        result = json.loads(cli.cmd_deploy())
-        assert result["success"] is True
-        assert (tmp_path / ".doc-kit" / "cli" / "cli.py").exists()

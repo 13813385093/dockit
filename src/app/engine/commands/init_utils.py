@@ -17,6 +17,26 @@ def _get_builtin_templates_dir() -> Path:
 BUILTIN_TEMPLATES_DIR = _get_builtin_templates_dir()
 
 
+def _get_cli_source_dir() -> Path:
+    """返回工具链 CLI 源码目录（skills/scripts）。
+
+    开发态 = 仓库根 skills/scripts；打包态 = 随包分发的 skills/scripts。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "skills" / "scripts"
+    return Path(__file__).resolve().parents[4] / "skills" / "scripts"
+
+
+def _get_skills_source_dir() -> Path:
+    """返回随包分发的 skills 目录（spec-*/SKILL.md）。
+
+    开发态 = 仓库根 skills；打包态 = _MEIPASS/skills。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "skills"
+    return Path(__file__).resolve().parents[4] / "skills"
+
+
 def get_project_name(project_root: Path) -> str:
     """从 config.yaml 或目录名获取项目名称。"""
     config_path = project_root / ".doc-kit" / "config.yaml"
@@ -139,6 +159,49 @@ def copy_templates(project_root: Path):
         shutil.copy2(src_path, dst_path)
 
 
+def copy_cli(project_root: Path) -> list[str]:
+    """把工具链 CLI 安装到 .doc-kit/cli/（与 copy_templates 同构）。
+
+    doc-kit 的 CLI 与 skills 是一套整体工具链：项目初始化时把 CLI 落到
+    项目内固定路径，skills 之后统一调用 `<项目根>/.doc-kit/cli/cli.py`。
+    返回复制成功的文件名列表。
+    """
+    kit_dir = project_root / ".doc-kit"
+    cli_dir = kit_dir / "cli"
+    cli_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    src_dir = _get_cli_source_dir()
+    for src_path in sorted(src_dir.glob("*.py")):
+        dst_path = cli_dir / src_path.name
+        shutil.copy2(src_path, dst_path)
+        copied.append(src_path.name)
+    return copied
+
+
+def copy_skills(project_root: Path) -> list[str]:
+    """把 skills 本体（spec-*/SKILL.md）复制到 .doc-kit/skills/。
+
+    大多数 AI agent 不识别 .doc-kit/ 目录，此副本供人工后续搬运到
+    agent 的 skills 目录（如 ~/.reasonix/skills/）。SKILL.md 内的调用
+    路径统一为 `<项目根>/.doc-kit/cli/cli.py`，搬运后依然指向本项目 CLI。
+    返回复制成功的 skill 目录名列表。
+    """
+    kit_dir = project_root / ".doc-kit"
+    dst_root = kit_dir / "skills"
+    dst_root.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    src_root = _get_skills_source_dir()
+    for skill_dir in sorted(src_root.glob("spec-*")):
+        md = skill_dir / "SKILL.md"
+        if not md.exists():
+            continue
+        dst = dst_root / skill_dir.name
+        dst.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(md, dst / "SKILL.md")
+        copied.append(skill_dir.name)
+    return copied
+
+
 def init_project(
     project_root: Path,
     project_name: str | None = None,
@@ -165,6 +228,8 @@ def init_project(
     create_config(project_root, name, profile)
     create_registry(project_root)
     copy_templates(project_root)
+    copy_cli(project_root)
+    copy_skills(project_root)
     build_index(project_docs, project_root, created)
 
     return name

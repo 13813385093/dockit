@@ -12,6 +12,8 @@ REPO = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO / "skills" / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 
 
 # ── 文件系统辅助函数 ──

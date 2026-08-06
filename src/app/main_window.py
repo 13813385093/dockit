@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.app.icon_utils import get_icon, set_button_icon
+from src.app.meta_store import AppMeta
 from src.app.style_utils import load_stylesheet
 from src.app.doc_tree import DocTreePanel
 from src.app.dashboard import DashboardPanel
@@ -61,9 +62,12 @@ class MainWindow(QMainWindow):
         self._current_project_path: str | None = None  # 当前项目路径，用于菜单✓标记
         self._current_doc_rel: str | None = None  # 当前打开的文档相对路径
 
-        # 最近项目列表持久化
-        self._settings = QSettings("doc-kit", "doc-kit-ui")
-        self._recent_projects: list[str] = self._settings.value("recent_projects", [], type=list)
+        # 最近项目列表持久化（exe 同级 .meta/，替代注册表）
+        self._meta = AppMeta()
+        self._migrate_legacy_settings()
+        self._recent_projects: list[str] = list(
+            self._meta.get("projects", "recent_projects", []) or []
+        )
         self._recent_project_actions: dict[str, QWidgetAction] = {}  # 用于动态更新菜单
 
         self._setup_ui()
@@ -78,7 +82,7 @@ class MainWindow(QMainWindow):
         self._shortcut_global_search.activated.connect(self._on_global_search)
 
         # 自动打开上次的项目
-        last_project = self._settings.value("last_project", None)
+        last_project = self._meta.get("projects", "last_project")
         if last_project:
             last_path = Path(last_project)
             if last_path.exists():
@@ -285,9 +289,27 @@ class MainWindow(QMainWindow):
 
         self._recent_btn.setMenu(menu)
 
+    def _migrate_legacy_settings(self):
+        """一次性迁移：把注册表 QSettings 中的旧项目记录导入 .meta/projects.json。"""
+        if self._meta.get("projects", "migrated_from_registry", False):
+            return
+        legacy = QSettings("doc-kit", "doc-kit-ui")
+        recent = legacy.value("recent_projects", None)
+        last = legacy.value("last_project", None)
+        changed = False
+        if recent:
+            self._meta.set("projects", "recent_projects", list(recent))
+            changed = True
+        if last:
+            self._meta.set("projects", "last_project", str(last))
+            changed = True
+        self._meta.set("projects", "migrated_from_registry", True)
+        if changed:
+            print(f"已从注册表迁移项目记录到 {self._meta.meta_dir / 'projects.json'}")
+
     def _save_recent_projects(self):
         """持久化最近项目列表。"""
-        self._settings.setValue("recent_projects", self._recent_projects)
+        self._meta.set("projects", "recent_projects", self._recent_projects)
 
     def _push_recent_project(self, project_root: Path):
         """将项目推入最近列表首位（去重，上限 MAX_RECENT）。"""
@@ -392,7 +414,7 @@ class MainWindow(QMainWindow):
             return
 
         self._push_recent_project(project_root)
-        self._settings.setValue("last_project", str(project_root.resolve()))
+        self._meta.set("projects", "last_project", str(project_root.resolve()))
 
         self._project_root = project_root
         self._current_project_path = str(project_root.resolve())

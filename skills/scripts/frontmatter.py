@@ -153,3 +153,20 @@ def dump(meta: dict, body: str) -> str:
             lines.append(f"{key}: {v}" if v else f"{key}:")
     yaml_text = "\n".join(lines)
     return f"---\n{yaml_text}\n---\n\n{body}"
+
+
+class FrontmatterParser:
+    """Parse and write YAML frontmatter from/to Markdown files（类 API）。
+
+    包装模块级 parse() / dump()，与原有 FrontmatterParser 类接口保持一致。
+    """
+
+    @staticmethod
+    def parse(text: str) -> tuple[dict, str]:
+        """Parse frontmatter from Markdown text. Returns (meta_dict, body_string)."""
+        return parse(text)
+
+    @staticmethod
+    def dump(meta: dict, body: str) -> str:
+        """Assemble meta dict + body back into a full Markdown file."""
+        return dump(meta, body)

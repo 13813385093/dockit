@@ -21,16 +21,21 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 def extract_commands() -> dict[str, set[str]]:
     """从 cli.py 的 argparse 定义提取 {group: set(command)}。"""
+    import argparse
+
     import cli  # noqa: E402
 
     parser = cli.build_parser()
-    group_parsers = parser._subparsers.choices  # type: ignore[attr-defined]
+    sub_actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    if not sub_actions:
+        return {}
+    group_parsers = sub_actions[0].choices  # type: ignore[attr-defined]
     result: dict[str, set[str]] = {}
     for gname, gparser in group_parsers.items():
-        sub = getattr(gparser, "_subparsers", None)
+        inner = [a for a in gparser._actions if isinstance(a, argparse._SubParsersAction)]  # type: ignore[attr-defined]
         cmds: set[str] = set()
-        if sub is not None:
-            cmds.update(sub.choices.keys())  # type: ignore[attr-defined]
+        if inner:
+            cmds.update(inner[0].choices.keys())  # type: ignore[attr-defined]
         result[gname] = cmds
     return result
 

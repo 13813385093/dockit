@@ -15,6 +15,7 @@ a = Analysis(
         (str(app_root / 'resources' / 'icons'), 'src/app/resources/icons'),
         (str(app_root / 'resources' / 'styles'), 'src/app/resources/styles'),
         (str(app_root / 'templates'), 'src/app/templates'),
+        (str(app_root.parent.parent / 'skills'), 'skills'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -25,7 +26,6 @@ a = Analysis(
         'qt_material',
         'yaml',
         'markdown',
-        'mcp',
     ],
     hookspath=[],
     hooksconfig={},
