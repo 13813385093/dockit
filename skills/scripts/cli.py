@@ -874,6 +874,24 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  文本参数处理
+# ═══════════════════════════════════════════════════════════════
+
+
+def _unescape_text(text: str) -> str:
+    """将命令行文本参数中的字面转义序列还原为真实字符。
+
+    Shell 单引号参数中的 `\\n` 会保持字面两字符到达脚本（如 AI 生成的多行
+    正文），此处统一还原为换行，避免 `\\n` 作为字符串原样写入文件；
+    `\\\\n` 则保留为字面 `\\n`（反斜杠逃生通道）。真实换行符与不含 `\\n`
+    的文本原样返回。
+    """
+    if "\\n" not in text:
+        return text
+    return re.sub(r"\\\\n|\\n", lambda m: "\\n" if m.group(0) == "\\\\n" else "\n", text)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  输出辅助
 # ═══════════════════════════════════════════════════════════════
 
@@ -995,9 +1013,9 @@ def main(argv: list[str] | None = None) -> None:
             elif args.command == "read":
                 _emit(cmd_doc_read(project_root, args.path))
             elif args.command == "update-section":
-                _emit(cmd_doc_update_section(project_root, args.reference, args.content))
+                _emit(cmd_doc_update_section(project_root, args.reference, _unescape_text(args.content)))
             elif args.command == "add-section":
-                _emit(cmd_doc_add_section(project_root, args.reference, args.heading, args.content, args.level))
+                _emit(cmd_doc_add_section(project_root, args.reference, args.heading, _unescape_text(args.content), args.level))
             elif args.command == "new":
                 _emit(cmd_doc_new(project_root, args.doc_type, args.module, args.feature, args.author))
             elif args.command == "remove-section":
@@ -1009,10 +1027,14 @@ def main(argv: list[str] | None = None) -> None:
                 _emit(cmd_review_anchor_set(project_root, args.commit_hash, args.session))
             elif args.command == "report-write":
                 content = args.content
+                from_file = False
                 if content is None and args.file:
                     content = Path(args.file).read_text(encoding="utf-8")
+                    from_file = True
                 if content is None:
                     content = _read_stdin()
+                if not from_file:
+                    content = _unescape_text(content)
                 _emit(cmd_review_report_write(project_root, content))
     except Exception as e:  # 未预期的运行时错误：输出到 stderr 便于调试
         print(f"错误: {e}", file=sys.stderr)

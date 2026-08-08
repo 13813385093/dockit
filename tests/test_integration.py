@@ -153,14 +153,14 @@ class TestUpdateSection:
         assert (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8") == original
 
     def test_update_writes_frontmatter(self, tmp_project, cli_env):
-        """写入后 frontmatter 应完整保留"""
+        """写入后 frontmatter 应完整保留（版本号为三段式 1.0.0）"""
         make_md(tmp_project, "ProjectSpec/doc.md",
-                "---\ndoc_type: arch\nmodule: core\nversion: 1.0\n---\n# Doc\n\n## X\nold")
+                "---\ndoc_type: arch\nmodule: core\nversion: 1.0.0\n---\n# Doc\n\n## X\nold")
         cli_env.update_section("doc.md#X", "new")
         content = (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8")
         assert "doc_type: arch" in content
         assert "module: core" in content
-        assert "version: 1.0" in content
+        assert "version: 1.0.0" in content
 
 
 class TestAddSection:

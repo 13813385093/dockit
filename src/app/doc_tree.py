@@ -23,9 +23,11 @@ from src.app.engine.validation import parse_module_path
 # 树节点角色常量（存储在 Qt.UserRole + 1）
 _NODE_FILE = "file"
 _NODE_MODULE = "module"
-_NODE_TOP_FOLDER = "top_folder"
+_NODE_PROJECT_SPEC = "project_spec"
 _NODE_FEATURES_FOLDER = "features_folder"
 _NODE_FEATURE = "feature"
+_NODE_EXT_DIR = "ext_dir"
+_NODE_EXT_FILE = "ext_file"
 
 
 class DocTreePanel(QWidget):
@@ -73,8 +75,10 @@ class DocTreePanel(QWidget):
         layout.addWidget(self.tree)
 
     def _refresh_tree(self):
-        """刷新文档树 — 重新加载。"""
+        """刷新文档树 — 重新扫描 ProjectSpec 同步 index，再重建树。"""
         if self._project_root and self._index:
+            self._index.rebuild(self._project_root / "ProjectSpec")
+            self._index.save()
             self.load_project(self._project_root, self._index)
 
     def _collapse_all(self):
@@ -98,14 +102,26 @@ class DocTreePanel(QWidget):
         for e in entries:
             modules.setdefault(e.module, []).append(e)
 
-        # 顶层文档
-        if "project-charter" in modules:
-            charter_item = QTreeWidgetItem(self.tree, ["顶层文档"])
-            charter_item.setIcon(0, get_icon("folder"))
-            charter_item.setFlags(charter_item.flags() & ~Qt.ItemIsSelectable)
-            charter_item.setData(0, Qt.UserRole + 1, _NODE_TOP_FOLDER)
-            for e in modules["project-charter"]:
-                self._add_file_item(charter_item, e)
+        # 顶层文件夹：ProjectSpec/（与磁盘目录层级一致，容纳全部文档）
+        ps_item = QTreeWidgetItem(self.tree, ["ProjectSpec"])
+        ps_item.setIcon(0, get_icon("folder"))
+        ps_item.setFlags(ps_item.flags() & ~Qt.ItemIsSelectable)
+        ps_item.setData(0, Qt.UserRole + 1, _NODE_PROJECT_SPEC)
+        ps_item.setExpanded(True)
+
+        # 顶层文档（frontmatter module=project-charter，磁盘上无此目录层级）
+        # 直接平铺在 ProjectSpec 文件夹下。
+        for e in modules.get("project-charter", []):
+            self._add_file_item(ps_item, e)
+
+        # 外部目录（SessionSpec/ ReviewSpec/）：镜像磁盘结构，仅展示
+        for ext_name in ("SessionSpec", "ReviewSpec"):
+            ext_item = QTreeWidgetItem(self.tree, [ext_name])
+            ext_item.setIcon(0, get_icon("folder"))
+            ext_item.setFlags(ext_item.flags() & ~Qt.ItemIsSelectable)
+            ext_item.setData(0, Qt.UserRole + 1, _NODE_EXT_DIR)
+            ext_item.setExpanded(True)
+            self._mirror_disk_dir(ext_item, project_root / ext_name)
 
         # 模块节点
         for mod_name in sorted(modules.keys()):
@@ -116,21 +132,22 @@ class DocTreePanel(QWidget):
             if "." in mod_name:
                 main_module, sub_path = parse_module_path(mod_name)
                 sub_name = sub_path.split("/")[-1] if sub_path else mod_name
-                # 查找或创建父模块节点
+                # 查找或创建父模块节点（在 ProjectSpec 文件夹下）
                 parent_item = None
-                for i in range(self.tree.topLevelItemCount()):
-                    if self.tree.topLevelItem(i).text(0) == main_module:
-                        parent_item = self.tree.topLevelItem(i)
+                for i in range(ps_item.childCount()):
+                    child = ps_item.child(i)
+                    if child.text(0) == main_module:
+                        parent_item = child
                         break
                 if parent_item is None:
-                    parent_item = QTreeWidgetItem(self.tree, [main_module])
+                    parent_item = QTreeWidgetItem(ps_item, [main_module])
                     parent_item.setIcon(0, get_icon("grid"))
                     parent_item.setFlags(parent_item.flags() & ~Qt.ItemIsSelectable)
                     parent_item.setData(0, Qt.UserRole + 1, _NODE_MODULE)
                     parent_item.setData(0, Qt.UserRole + 2, main_module)
                 mod_item = QTreeWidgetItem(parent_item, [sub_name])
             else:
-                mod_item = QTreeWidgetItem(self.tree, [item_text])
+                mod_item = QTreeWidgetItem(ps_item, [item_text])
             mod_item.setIcon(0, get_icon("grid"))
             mod_item.setFlags(mod_item.flags() & ~Qt.ItemIsSelectable)
             mod_item.setData(0, Qt.UserRole + 1, _NODE_MODULE)
@@ -177,6 +194,24 @@ class DocTreePanel(QWidget):
 
             self.tree.expandItem(mod_item)
 
+    def _mirror_disk_dir(self, parent_item: QTreeWidgetItem, disk_dir: Path):
+        """将磁盘目录结构镜像到树节点下（SessionSpec/ReviewSpec 等，仅展示）。"""
+        if not disk_dir.exists():
+            return
+        for child in sorted(disk_dir.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+            if child.is_dir():
+                dir_item = QTreeWidgetItem(parent_item, [child.name])
+                dir_item.setIcon(0, get_icon("folder"))
+                dir_item.setFlags(dir_item.flags() & ~Qt.ItemIsSelectable)
+                dir_item.setData(0, Qt.UserRole + 1, _NODE_EXT_DIR)
+                self._mirror_disk_dir(dir_item, child)
+            else:
+                rel = str(child.relative_to(self._project_root)).replace("\\", "/")
+                item = QTreeWidgetItem(parent_item, [child.name])
+                item.setIcon(0, get_icon("file"))
+                item.setData(0, Qt.UserRole, rel)
+                item.setData(0, Qt.UserRole + 1, _NODE_EXT_FILE)
+
     def _add_file_item(self, parent: QTreeWidgetItem, entry):
         """在树节点下添加一个文档文件项。"""
         if self._registry:
@@ -202,18 +237,28 @@ class DocTreePanel(QWidget):
             item.setIcon(0, get_icon("file"))
 
     def _on_item_clicked(self, item, column):
-        """单击展开/收起文件夹，单击文件打开文档。"""
+        """单击展开/收起文件夹；单击文档/外部文件打开。"""
+        node_type = item.data(0, Qt.UserRole + 1)
         path = item.data(0, Qt.UserRole)
-        if path:
+        if node_type in (_NODE_FILE, _NODE_EXT_FILE) and path:
             self.document_selected.emit(path)
         else:
-            # 文件夹/模块节点 → 切换展开/收起
+            # 文件夹/模块/外部目录节点 → 切换展开/收起
             item.setExpanded(not item.isExpanded())
 
     def _on_context_menu(self, pos):
         """右键菜单 — 根据节点类型动态显示。"""
         item = self.tree.itemAt(pos)
         if not item:
+            # 树空白区域右键 → 提供顶层文档/模块新建入口
+            menu = QMenu(self)
+            new_doc = menu.addAction(" 新建顶层文档...")
+            new_doc.setIcon(get_icon("file"))
+            new_doc.triggered.connect(lambda: self._on_new_doc(preset_level="top"))
+            new_mod = menu.addAction(" 新建模块...")
+            new_mod.setIcon(get_icon("module"))
+            new_mod.triggered.connect(lambda: self._on_new_module(disable_sub_check=True))
+            menu.exec(self.tree.mapToGlobal(pos))
             return
 
         context_path = item.data(0, Qt.UserRole)
@@ -224,8 +269,14 @@ class DocTreePanel(QWidget):
         is_file_node = (node_type == _NODE_FILE)
         is_module_node = (node_type == _NODE_MODULE)
         is_feature_node = (node_type == _NODE_FEATURE)
-        is_top_folder = (node_type == _NODE_TOP_FOLDER)
+        is_project_spec = (node_type == _NODE_PROJECT_SPEC)
         is_features_folder = (node_type == _NODE_FEATURES_FOLDER)
+        is_ext_dir = (node_type == _NODE_EXT_DIR)
+        is_ext_file = (node_type == _NODE_EXT_FILE)
+
+        if is_ext_dir:
+            # 外部目录（SessionSpec/ReviewSpec）无操作
+            return
 
         # 提取模块/功能名（从存储的数据取，避免 text 推断）
         module_name = (
@@ -242,15 +293,10 @@ class DocTreePanel(QWidget):
         menu = QMenu(self)
 
         # ── 新建文档 ──
-        if is_top_folder:
-            new_doc = menu.addAction(" 新建文档...")
+        if is_project_spec:
+            new_doc = menu.addAction(" 新建顶层文档...")
             new_doc.setIcon(get_icon("file"))
-            new_doc.triggered.connect(
-                lambda: self._on_new_doc(preset_level="top"))
-
-            new_feat = menu.addAction(" 新建功能")
-            new_feat.setIcon(get_icon("plus"))
-            new_feat.setEnabled(False)
+            new_doc.triggered.connect(lambda: self._on_new_doc(preset_level="top"))
             new_mod = menu.addAction(" 新建模块...")
             new_mod.setIcon(get_icon("module"))
             new_mod.triggered.connect(lambda: self._on_new_module(disable_sub_check=True))
@@ -316,6 +362,16 @@ class DocTreePanel(QWidget):
                 delete.triggered.connect(lambda: self._delete_feature(item))
 
             menu.addSeparator()
+
+        # ── 外部目录文件（SessionSpec/ReviewSpec 等） ──
+        if is_ext_file:
+            full_path = self._project_root / path
+            explorer_act = menu.addAction(" 在资源管理中显示")
+            explorer_act.setIcon(get_icon("folder"))
+            explorer_act.triggered.connect(lambda: self._show_in_explorer(full_path))
+            copy_act = menu.addAction(" 复制绝对路径")
+            copy_act.setIcon(get_icon("copy"))
+            copy_act.triggered.connect(lambda: self._copy_path(full_path))
 
         # ── 文件操作 ──
         if is_file_node:

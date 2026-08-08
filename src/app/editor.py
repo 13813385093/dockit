@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser,
     QGroupBox, QToolButton, QSizePolicy, QMenu, QAbstractItemView,
     QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QFrame,
+    QStackedWidget,
 )
 
 import markdown
@@ -475,8 +476,8 @@ class DocEditor(QWidget):
         self._registry: Registry | None = None
         self._meta: dict = {}
         self._body: str = ""
+        self._has_fm = False  # 当前文件是否有 frontmatter
         self._fm_visible = False
-        self._scrolling_lock = False
         self._search_visible = False
 
         layout = QVBoxLayout(self)
@@ -495,6 +496,15 @@ class DocEditor(QWidget):
         self._fm_toggle.setToolTip("展开 Frontmatter")
         self._fm_toggle.toggled.connect(self._toggle_frontmatter)
         header_layout.addWidget(self._fm_toggle)
+
+        # 编辑态 / 浏览态切换按钮
+        self._view_toggle = QToolButton()
+        self._view_toggle.setCheckable(True)
+        self._view_toggle.setChecked(True)  # 默认编辑态
+        self._view_toggle.setProperty("class", "toolbar-btn")
+        self._view_toggle.toggled.connect(self._on_view_toggled)
+        self._sync_view_button()
+        header_layout.addWidget(self._view_toggle)
         layout.addLayout(header_layout)
 
         # frontmatter 区域（默认隐藏）
@@ -527,19 +537,16 @@ class DocEditor(QWidget):
         self._search_bar.setVisible(False)
         layout.addWidget(self._search_bar)
 
-        # 正文：Markdown 分屏编辑 + 预览（2:1）
-        body_splitter = QSplitter(Qt.Horizontal)
-        body_splitter.setObjectName("body_splitter")
+        # 正文：编辑态 / 浏览态切换（同一视图区，QStackedWidget）
         self._body_edit = QPlainTextEdit()
         self._body_edit.setPlaceholderText("在此编辑文档正文...")
         self._body_edit.textChanged.connect(self._update_preview)
         self._preview = QTextBrowser()
         self._preview.setOpenExternalLinks(True)
-        body_splitter.addWidget(self._body_edit)
-        body_splitter.addWidget(self._preview)
-        self._body_ratio_2_1(body_splitter)
-        self._setup_scroll_sync()
-        layout.addWidget(body_splitter, 1)
+        self._body_stack = QStackedWidget()
+        self._body_stack.addWidget(self._body_edit)
+        self._body_stack.addWidget(self._preview)
+        layout.addWidget(self._body_stack, 1)
 
         # ── 语法高亮 ──
         self._highlighter = MarkdownHighlighter(self._body_edit.document())
@@ -771,35 +778,24 @@ class DocEditor(QWidget):
     def save(self):
         self._on_save()
 
-    def _body_ratio_2_1(self, splitter: QSplitter):
-        total = 660
-        splitter.setSizes([int(total * 2 / 3), int(total / 3)])
+    def _on_view_toggled(self, edit_mode: bool):
+        """编辑态 / 浏览态切换。"""
+        self._body_stack.setCurrentWidget(self._body_edit if edit_mode else self._preview)
+        if not edit_mode:
+            self._update_preview()  # 进入浏览前刷新预览
+        self._sync_view_button()
 
-    def _setup_scroll_sync(self):
-        edit_scroll = self._body_edit.verticalScrollBar()
-        preview_scroll = self._preview.verticalScrollBar()
-        edit_scroll.valueChanged.connect(self._on_edit_scrolled)
-        preview_scroll.valueChanged.connect(self._on_preview_scrolled)
-
-    def _on_edit_scrolled(self, value: int):
-        if self._scrolling_lock:
-            return
-        self._scrolling_lock = True
-        edit_scroll = self._body_edit.verticalScrollBar()
-        preview_scroll = self._preview.verticalScrollBar()
-        ratio = value / max(1, edit_scroll.maximum())
-        preview_scroll.setValue(int(ratio * preview_scroll.maximum()))
-        self._scrolling_lock = False
-
-    def _on_preview_scrolled(self, value: int):
-        if self._scrolling_lock:
-            return
-        self._scrolling_lock = True
-        edit_scroll = self._body_edit.verticalScrollBar()
-        preview_scroll = self._preview.verticalScrollBar()
-        ratio = value / max(1, preview_scroll.maximum())
-        edit_scroll.setValue(int(ratio * edit_scroll.maximum()))
-        self._scrolling_lock = False
+    def _sync_view_button(self):
+        """切换按钮文案随当前模式变化（编辑态显示“浏览”，浏览态显示“编辑”）。"""
+        edit_mode = self._view_toggle.isChecked()
+        if edit_mode:
+            self._view_toggle.setText(" 浏览")
+            self._view_toggle.setIcon(get_icon("file-text"))
+            self._view_toggle.setToolTip("切换到浏览模式")
+        else:
+            self._view_toggle.setText(" 编辑")
+            self._view_toggle.setIcon(get_icon("edit"))
+            self._view_toggle.setToolTip("切换到编辑模式")
 
     def _toggle_frontmatter(self, visible: bool):
         self._fm_container.setVisible(visible)
@@ -848,11 +844,24 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
 
         try:
             self._meta, self._body = FrontmatterParser.read_file(full_path)
-        except Exception as e:
-            QMessageBox.warning(self, "解析错误", f"无法解析文件: {e}")
-            return
+            self._has_fm = True
+        except Exception:
+            # 无 frontmatter 的纯 Markdown：仍可打开编辑正文，Frontmatter 功能禁用
+            try:
+                self._body = full_path.read_text(encoding="utf-8")
+            except OSError as e:
+                QMessageBox.warning(self, "读取错误", f"无法读取文件: {e}")
+                return
+            self._meta = {}
+            self._has_fm = False
 
         self._title.setText(rel_path)
+
+        # 无 frontmatter 时禁用 Frontmatter 展开按钮并收起该区域
+        self._fm_toggle.setEnabled(self._has_fm)
+        self._fm_toggle.setChecked(False)
+        self._fm_container.setVisible(False)
+        self._fm_visible = False
 
         self._fm_table._doc_type.setText(str(self._meta.get("doc_type", "")))
         self._fm_table._module.setText(str(self._meta.get("module", "")))
@@ -869,6 +878,8 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         self._body_edit.setPlainText(self._body)
         self._update_preview()
         self._set_editable(True)
+        # 打开新文档时默认回到编辑态
+        self._view_toggle.setChecked(True)
 
     def jump_to_line(self, line_number: int):
         """跳转到指定行并居中显示。"""
@@ -896,6 +907,19 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         if not self._current_path:
             return
 
+        self._body = self._body_edit.toPlainText()
+
+        if not self._has_fm:
+            # 纯 Markdown（无 frontmatter）：只写正文，不生成 frontmatter
+            try:
+                self._current_path.write_text(self._body, encoding="utf-8")
+            except OSError as e:
+                QMessageBox.critical(self, "保存失败", str(e))
+                return
+            QMessageBox.information(self, "保存", f"已保存: {self._current_rel}")
+            self.document_saved.emit(self._current_rel)
+            return
+
         new_version = self._fm_table._version.text().strip()
         old_version = str(self._meta.get("version", ""))
 
@@ -909,7 +933,6 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
                 )
                 return
 
-        self._body = self._body_edit.toPlainText()
         self._meta["version"] = new_version
 
         new_status = self._fm_table._status.currentText()

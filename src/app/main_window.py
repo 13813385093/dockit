@@ -16,6 +16,7 @@ from src.app.style_utils import load_stylesheet
 from src.app.doc_tree import DocTreePanel
 from src.app.dashboard import DashboardPanel
 from src.app.editor import DocEditor
+from src.app.json_editor import JsonEditor
 from src.app.dep_graph import DepGraphPanel
 from src.app.lifecycle import LifecyclePanel
 from src.app.settings import SettingsPanel
@@ -111,12 +112,14 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.dashboard = DashboardPanel(self)
         self.editor = DocEditor(self)
+        self.json_editor = JsonEditor(self)
         self.dep_graph = DepGraphPanel(self)
         self.lifecycle = LifecyclePanel(self)
         self.settings = SettingsPanel(self)
 
         self.tabs.addTab(self.dashboard, get_icon("trello"), "仪表盘")
-        self.tabs.addTab(self.editor, get_icon("edit"), "编辑器")
+        self._tab_idx_editor = self.tabs.addTab(self.editor, get_icon("edit"), "md 编辑器")
+        self._tab_idx_json = self.tabs.addTab(self.json_editor, get_icon("code"), "JSON 编辑器")
         self.tabs.addTab(self.dep_graph, get_icon("graph"), "依赖图")
         self.tabs.addTab(self.lifecycle, get_icon("refresh"), "生命周期")
         self.tabs.addTab(self.settings, get_icon("gear"), "设置")
@@ -423,6 +426,11 @@ class MainWindow(QMainWindow):
         index_path = kit_dir / "index.json"
         self._index = IndexManager(index_path)
 
+        # 以 ProjectSpec/ 实际文档为准全量重建索引并落盘，
+        # 避免 index.json 过期/缺失导致文件树与实际文档不一致。
+        self._index.rebuild(project_root / "ProjectSpec")
+        self._index.save()
+
         # 创建文档类型注册表
         reg_path = kit_dir / "registry.yaml"
         self._registry = Registry(reg_path) if reg_path.exists() else Registry()
@@ -438,14 +446,29 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_doc_selected(self, rel_path: str):
-        """文档树中选择文档 → 在编辑器中打开。"""
+        """文档树中选择文件 → 按类型在对应编辑器中打开。"""
         if not self._project_root or not self._index:
             return
         self._current_doc_rel = rel_path
         full_path = self._project_root / rel_path
-        if full_path.exists():
+        if not full_path.exists():
+            return
+        if full_path.suffix.lower() == ".json":
+            self._switch_editor_visibility(json_mode=True)
+            self.json_editor.open_file(full_path, rel_path)
+            self.tabs.setCurrentWidget(self.json_editor)
+        else:
+            self._switch_editor_visibility(json_mode=False)
             self.editor.open_document(full_path, rel_path, self._index, self._registry)
             self.tabs.setCurrentWidget(self.editor)
+
+    def _switch_editor_visibility(self, json_mode: bool):
+        """按文件类型显示对应编辑器标签页、隐藏另一个。
+
+        json_mode=True：显示 JSON 编辑器、隐藏 md 编辑器；反之亦然。
+        """
+        self.tabs.tabBar().setTabVisible(self._tab_idx_editor, not json_mode)
+        self.tabs.tabBar().setTabVisible(self._tab_idx_json, json_mode)
 
     @Slot()
     def _on_global_save(self):
@@ -464,6 +487,7 @@ class MainWindow(QMainWindow):
             return
         full_path = self._project_root / rel_path
         if full_path.exists():
+            self._switch_editor_visibility(json_mode=False)
             self.editor.open_document(full_path, rel_path, self._index, self._registry)
             self.tabs.setCurrentWidget(self.editor)
 

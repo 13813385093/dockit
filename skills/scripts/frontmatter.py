@@ -104,6 +104,15 @@ def parse(text: str) -> tuple[dict, str]:
     return meta, body
 
 
+def _looks_numeric(s: str) -> bool:
+    """字符串是否会被 YAML 解析为数字（如 1.0 / 123 / 1e5）。"""
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
 def _dump_value(value: Any) -> str:
     if value is None:
         return ""
@@ -112,9 +121,13 @@ def _dump_value(value: Any) -> str:
     if isinstance(value, (int, float)):
         return str(value)
     s = str(value)
-    # Quote when needed to stay parseable by our own parser.
+    # Quote when needed to stay parseable by our own parser, and to keep
+    # string semantics for values external YAML would coerce ("" → null,
+    # "1.0" → float).
     if (
-        ":" in s
+        s == ""
+        or _looks_numeric(s)
+        or ":" in s
         or "#" in s
         or s.startswith("-")
         or s.strip() != s
