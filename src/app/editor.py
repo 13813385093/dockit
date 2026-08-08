@@ -571,6 +571,7 @@ class DocEditor(QWidget):
 
     def _build_toolbar(self) -> QFrame:
         bar = QFrame()
+        bar.setObjectName("EditorToolbar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(2)
@@ -662,6 +663,7 @@ class DocEditor(QWidget):
 
     def _build_search_bar(self) -> QFrame:
         bar = QFrame()
+        bar.setObjectName("SearchBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(2)

@@ -18,10 +18,13 @@ class StatCard(QFrame):
     def __init__(self, title: str, value: str, color: str = "#333", parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
+        self.setObjectName("StatCard")
         layout = QVBoxLayout(self)
         self._value = QLabel(value)
+        self._value.setObjectName("StatValue")
         self._value.setAlignment(Qt.AlignCenter)
         title_label = QLabel(title)
+        title_label.setObjectName("StatTitle")
         title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._value)
         layout.addWidget(title_label)

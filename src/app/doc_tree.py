@@ -43,6 +43,7 @@ class DocTreePanel(QWidget):
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
         self._registry: Registry | None = None
+        self.setObjectName("DocTreePanel")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -50,6 +51,7 @@ class DocTreePanel(QWidget):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(0, 0, 0, 0)
         label = QLabel(" 文档导航")
+        label.setObjectName("DocTreeTitle")
         title_layout.addWidget(label)
         title_layout.addStretch()
 
@@ -68,6 +70,7 @@ class DocTreePanel(QWidget):
         layout.addLayout(title_layout)
 
         self.tree = QTreeWidget()
+        self.tree.setObjectName("DocTree")
         self.tree.setHeaderHidden(True)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._on_context_menu)

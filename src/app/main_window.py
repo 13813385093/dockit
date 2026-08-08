@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
 
         # 可拖拽分割器（侧栏 + 主区域）
         self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.setObjectName("main_splitter")
 
         # 左侧：文档树
         self.doc_tree = DocTreePanel(self)
@@ -182,6 +183,7 @@ class MainWindow(QMainWindow):
     def _setup_toolbar(self):
         """搭建全局工具栏 — 侧栏切换 + 最近项目 + 快捷操作。"""
         toolbar = self.addToolBar("全局工具栏")
+        toolbar.setObjectName("MainToolBar")
         toolbar.setMovable(False)
 
         # 侧栏切换按钮
