@@ -6,6 +6,8 @@ description: 独立代码评审，从 git 变更出发比对设计文档，记�
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
 
+**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。评审文档侧是否合规（段落结构、约束编号、行文规则）时可对照对应 `<doc_type>.md` 能力文件。
+
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
 
 工具调用（从项目根执行）：
@@ -141,6 +143,8 @@ git diff <锚点>..HEAD -- <路径>
 - 对匹配到的文档运行 `python .doc-kit/cli/cli.py doc read <path>` 获取完整内容
 
 > 匹配规则是启发式的 — 按文件名、section 标题、用户描述三者之间的语义关联，不做精确映射。
+
+> **能力库对照**：评审文档侧是否合规（段落结构、边界约束编号、行文规则）时，可 `read_file <项目根>/.doc-kit/skills/guidance/doc-capabilities/<doc_type>.md` 对照能力文件的「段落结构 / 行文规则」。
 
 ---
 

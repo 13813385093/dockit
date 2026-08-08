@@ -14,6 +14,8 @@ behaviour of the former MCP tools with identical validation logic.
     python .doc-kit/cli/cli.py [--root <项目目录>] doc read <path>
     python .doc-kit/cli/cli.py [--root <项目目录>] doc update-section <reference> --content '<text>'
     python .doc-kit/cli/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
@@ -32,6 +34,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from string import Template
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -44,9 +47,10 @@ from docmodel import (  # noqa: E402
     _simplify_depends_on,
     safe_join,
 )
-from frontmatter import FrontmatterParser  # noqa: E402
-from index import IndexManager  # noqa: E402
+from frontmatter import FrontmatterParser, _parse_yaml_block  # noqa: E402
+from index import IndexEntry, IndexManager  # noqa: E402
 from spec_schema import (  # noqa: E402
+    SCENARIO_DOC_TYPES,
     get_schema_metadata,
     render_summary,
     validate as validate_spec,
@@ -251,7 +255,8 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
 
         data.setdefault("project", project_root.name)
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
-        data.setdefault("related_doc_types", [])
+        # related_doc_types 由 scenario 自动推导（spec_schema.SCENARIO_DOC_TYPES），与能力库 _index §2 路由同源
+        data["related_doc_types"] = SCENARIO_DOC_TYPES.get(data.get("scenario", ""), [])
         data.setdefault("resolutions", [])
         data.setdefault("pending_decisions", [])
         data.setdefault("next_steps", [])
@@ -346,8 +351,49 @@ def cmd_spec_archive(project_root: Path) -> str:
 
 # ═══════════════════════════════════════════════════════════════
 #  doc 子命令（对应原 read_doc / update_section / add_section /
-#  doc_structure）
+#  doc_structure；新增 new / remove-section）
 # ═══════════════════════════════════════════════════════════════
+
+# 18 种文档类型注册表（与 app/engine/registry.py 的 DEFAULT_TYPES 一致）。
+# doc_type → level/template；composite 标记精简模式复合类型。
+DOC_TYPE_REGISTRY = [
+    # Level 0 - Top
+    {"doc_type": "business_context", "level": "top", "template": "business-context.md"},
+    {"doc_type": "technical_framework", "level": "top", "template": "technical-framework.md"},
+    {"doc_type": "non_functional_constraints", "level": "top", "template": "non-functional-constraints.md"},
+    {"doc_type": "global_policies", "level": "top", "template": "global-policies.md"},
+    {"doc_type": "inter_module_contract", "level": "top", "template": "inter-module-contracts.md"},
+    {"doc_type": "stakeholders", "level": "top", "template": "stakeholders.md"},
+    {"doc_type": "release_policy", "level": "top", "template": "release-policy.md"},
+    {"doc_type": "charter", "level": "top", "template": "charter.md", "composite": True},
+    # Level 1 - Module
+    {"doc_type": "architecture", "level": "module", "template": "architecture.md"},
+    {"doc_type": "domain_model", "level": "module", "template": "domain-model.md"},
+    {"doc_type": "module_manifest", "level": "module", "template": "module-manifest.md"},
+    {"doc_type": "integration", "level": "module", "template": "integration.md"},
+    {"doc_type": "module_design", "level": "module", "template": "module-design.md", "composite": True},
+    # Level 2 - Feature
+    {"doc_type": "feature_design", "level": "feature", "template": "feature-design.md"},
+    {"doc_type": "decision_log", "level": "feature", "template": "decision-log.md"},
+    {"doc_type": "unit_test", "level": "feature", "template": "unit-tests.md"},
+    {"doc_type": "acceptance_test", "level": "feature", "template": "acceptance-tests.md"},
+    {"doc_type": "feature_package", "level": "feature", "template": "feature-package.md", "composite": True},
+]
+
+
+
+
+def _parse_module_path(module: str) -> tuple[str, str | None]:
+    """解析模块路径（点分）：'order' → ('order', None)；'order.core' → ('order', 'sub-modules/core')。"""
+    parts = module.split(".")
+    main = parts[0]
+    if len(parts) == 1:
+        return main, None
+    sub_parts: list[str] = []
+    for p in parts[1:]:
+        sub_parts.append("sub-modules")
+        sub_parts.append(p)
+    return main, "/".join(sub_parts)
 
 
 def cmd_doc_read(project_root: Path, doc_path: str) -> str:
@@ -476,6 +522,213 @@ def cmd_doc_add_section(project_root: Path, reference: str, heading: str, conten
         doc_content.sections = [s for s in doc_content.sections if s.reference != new_section.reference]
         return _fail(f"写回文件失败: {e}")
     return _ok(suggestions=[f"段落「{heading}」已新增，可通过 doc read 读取最新文档内容验证"])
+
+
+def _load_registry(project_root: Path) -> dict | None:
+    """从 .doc-kit/registry.yaml 加载 doc_type 注册表；缺失或解析失败返回 None（回退内置）。"""
+    reg_path = project_root / ".doc-kit" / "registry.yaml"
+    if not reg_path.exists():
+        return None
+    try:
+        raw = _parse_yaml_block(reg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    types = raw.get("types") or []
+    result: dict[str, dict] = {}
+    for t in types:
+        if isinstance(t, dict) and t.get("doc_type"):
+            result[t["doc_type"]] = {k: v for k, v in t.items() if v is not None}
+    return result or None
+
+
+def cmd_doc_new(
+    project_root: Path,
+    doc_type: str,
+    module: str | None = None,
+    feature: str | None = None,
+    author: str | None = None,
+) -> str:
+    """新增文档：按 registry 自动定位模板（.doc-kit/templates/）与目标目录，渲染后写入并更新索引。"""
+    # 注册表：优先 .doc-kit/registry.yaml（用户可自定义），缺失回退内置
+    registry = _load_registry(project_root) or {d["doc_type"]: d for d in DOC_TYPE_REGISTRY}
+    defn = registry.get(doc_type)
+    if defn is None:
+        candidates = "、".join(sorted(registry))
+        return _fail(
+            f"ERROR [new_doc.unknown_type] 未知的文档类型 '{doc_type}'。"
+            f"修复：从已注册类型中选择其一（{candidates}），详见 doc-capabilities/_index.md §1。"
+        )
+    level = defn["level"]
+    # 复合性是体系固有属性（engine 用 property 判定，registry.yaml 未必带 composite 字段），
+    # 因此以内置集合兜底：defn 显式声明或属于内置复合类型即视为复合
+    is_composite = defn.get("composite", False) or doc_type in {"charter", "module_design", "feature_package"}
+
+    # —— 参数与层级匹配校验 ——
+    if level == "module" and not module:
+        return _fail(
+            f"ERROR [new_doc.missing_module] '{doc_type}' 为模块级类型，缺少 --module。"
+            "修复：补 --module <模块名>（子模块用点分，如 order.core）。"
+        )
+    if level == "feature":
+        missing = [n for n, v in (("--module", module), ("--feature", feature)) if not v]
+        if missing:
+            return _fail(
+                f"ERROR [new_doc.missing_param] '{doc_type}' 为功能级类型，缺少 {', '.join(missing)}。"
+                "修复：补全参数后重试。"
+            )
+    if level == "top" and module:
+        return _fail(
+            f"ERROR [new_doc.top_module_not_allowed] '{doc_type}' 为顶层类型，不接受 --module。"
+            "修复：去掉 --module 重试。"
+        )
+
+    docs_root = project_root / "ProjectSpec"
+    if not docs_root.is_dir():
+        return _fail("ERROR [new_doc.no_docs] 未找到 ProjectSpec/ 目录。修复：先运行项目初始化。")
+
+    # —— 精简模式：仅允许复合类型 ——
+    if (docs_root / "charter.md").exists() and not is_composite:
+        return _fail(
+            f"ERROR [new_doc.minimal_profile] 项目处于精简模式（charter.md 存在），不能创建独立基础文档 '{doc_type}'。"
+            "修复：写入 charter.md 对应章节，或先执行文档拆分（§3.7）。"
+        )
+
+    # —— 计算目标路径 ——
+    if level == "top":
+        target = docs_root / defn["template"]
+    else:
+        main_module, sub_path = _parse_module_path(module)
+        module_dir = docs_root / f"module-{main_module}"
+        if sub_path:
+            module_dir = module_dir / sub_path
+        if not module_dir.is_dir():
+            if is_composite:
+                # 复合类型（模块骨架）允许自动创建目录
+                module_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                return _fail(
+                    f"ERROR [new_doc.module_not_found] 模块 '{module}' 不存在（期望目录 "
+                    f"{module_dir.relative_to(project_root).as_posix()}）。修复：先创建模块骨架，"
+                    f"如 doc new module_design --module {main_module}。"
+                )
+        if level == "module":
+            target = module_dir / defn["template"]
+        else:
+            feature_dir = module_dir / "features" / feature
+            if not feature_dir.is_dir():
+                if is_composite:
+                    feature_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    return _fail(
+                        f"ERROR [new_doc.feature_not_found] 功能 '{feature}' 不存在（期望目录 "
+                        f"{feature_dir.relative_to(project_root).as_posix()}）。修复：先创建功能骨架，"
+                        f"如 doc new feature_package --module {module} --feature {feature}。"
+                    )
+            target = feature_dir / defn["template"]
+
+    rel_target = str(target.relative_to(project_root).as_posix())
+    if target.exists():
+        return _fail(
+            f"ERROR [new_doc.exists] 目标文件已存在: {rel_target}。"
+            "修复：改用 doc update-section / add-section，或换一个 doc_type。"
+        )
+
+    # —— 渲染模板并写入 ——
+    template_path = project_root / ".doc-kit" / "templates" / defn["template"]
+    if not template_path.exists():
+        return _fail(
+            f"ERROR [new_doc.template_missing] 模板缺失: {template_path}。修复：重新运行项目初始化以复制模板。"
+        )
+    try:
+        now = datetime.now().strftime("%Y-%m-%d")
+        tpl = Template(template_path.read_text(encoding="utf-8"))
+        content = tpl.safe_substitute(
+            module=module or "",
+            feature=feature or "",
+            now=now,
+            author=(author or "").strip(),
+            project_name=project_root.name,
+        )
+    except Exception as e:
+        return _fail(f"ERROR [new_doc.render_failed] 模板渲染失败: {e}。")
+
+    try:
+        meta_dict, _ = FrontmatterParser.parse(content)
+    except Exception as e:
+        return _fail(f"ERROR [new_doc.render_failed] 渲染结果 frontmatter 解析失败: {e}。")
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    except Exception as e:
+        return _fail(f"ERROR [new_doc.write_failed] 写文件失败: {e}。")
+
+    index = _load_index(project_root)
+    if index:
+        entry = IndexEntry(
+            path=rel_target,
+            doc_type=doc_type,
+            module=str(meta_dict.get("module") or module or "project-charter"),
+            level=level,
+            version=str(meta_dict.get("version") or "0.1.0"),
+            status=str(meta_dict.get("status") or "active"),
+            depends_on=[],
+            mtime=datetime.now().strftime("%Y-%m-%d"),
+        )
+        index.add_entry(entry)
+        index.save()
+
+    return _ok(
+        message=f"## ✅ 文档已创建\n\n**路径**: {rel_target}\n\n**doc_type**: {doc_type}",
+        data={"path": rel_target, "doc_type": doc_type, "level": level},
+        suggestions=[
+            f"可 doc read {rel_target} 查看骨架。",
+            "正文按 doc-capabilities/<doc_type>.md 的能力说明填充。",
+            "frontmatter 的 version / last_updated / author / depends_on 由人工维护，AI 不修改。",
+        ],
+    )
+
+
+def cmd_doc_remove_section(project_root: Path, reference: str) -> str:
+    """删除指定段落及其全部子段落，自动写回文件。"""
+    file_rel = reference.split("#")[0]
+    doc_rel = file_rel if file_rel.startswith("ProjectSpec/") else f"ProjectSpec/{file_rel}"
+    safe_path = safe_join(project_root, doc_rel)
+    if safe_path is None:
+        return _fail(f"ERROR [remove_section.invalid_path] 非法的路径: {file_rel}。")
+    full_path = safe_path
+    if not full_path.exists():
+        return _fail(
+            f"ERROR [remove_section.not_found] 文件不存在: {file_rel}。修复：先 doc structure 确认路径。"
+        )
+    try:
+        raw_text = full_path.read_text(encoding="utf-8")
+        meta_dict, body = FrontmatterParser.parse(raw_text)
+    except Exception as e:
+        return _fail(f"ERROR [remove_section.read_failed] 读取文件失败: {e}。")
+    doc_meta = DocMeta(
+        doc_type=meta_dict.get("doc_type", ""), module=meta_dict.get("module", ""),
+        level=meta_dict.get("level", ""), version=meta_dict.get("version", ""),
+        status=meta_dict.get("status", "active"), mtime="",
+    )
+    doc_content = DocContent.from_body(file_rel, doc_meta, body, raw_frontmatter=meta_dict)
+    try:
+        removed = doc_content.remove_section(reference)
+    except ValueError as e:
+        return _fail(
+            f"ERROR [remove_section.not_found] {e}。修复：先 doc read 获取正确的段落 reference。"
+        )
+    try:
+        new_markdown = doc_content.to_markdown()
+        full_path.write_text(new_markdown, encoding="utf-8")
+    except Exception as e:
+        return _fail(f"ERROR [remove_section.write_failed] 写回文件失败: {e}。")
+    removed_refs = [s.reference for s in removed]
+    return _ok(
+        message=f"## ✅ 段落已删除\n\n共删除 {len(removed)} 个段落（含子段落）",
+        data={"removed": removed_refs},
+        suggestions=[f"已从 {file_rel} 删除段落及其子段落，可 doc read 验证。"],
+    )
 
 
 def cmd_doc_structure(project_root: Path) -> str:
@@ -692,6 +945,13 @@ def build_parser() -> argparse.ArgumentParser:
     doc_add_p.add_argument("heading", help="新段落标题")
     doc_add_p.add_argument("--content", default="", help="正文内容")
     doc_add_p.add_argument("--level", default="sibling", choices=["sibling", "child"], help="同级或子级插入")
+    doc_new_p = doc_sub.add_parser("new", help="新增文档（按 registry 自动定位模板与目录）")
+    doc_new_p.add_argument("doc_type", help="文档类型，如 business_context / feature_design")
+    doc_new_p.add_argument("--module", default=None, help="模块名（module/feature 级必填；子模块用点分，如 order.core）")
+    doc_new_p.add_argument("--feature", default=None, help="功能名（仅 feature 级必填）")
+    doc_new_p.add_argument("--author", default=None, help="文档负责人（可选；留空则交人工维护）")
+    doc_rm_p = doc_sub.add_parser("remove-section", help="删除段落及其全部子段落")
+    doc_rm_p.add_argument("reference", help="段落引用，如 ProjectSpec/arch.md#模块概述")
 
     review = sub.add_parser("review", help="代码评审锚点与报告")
     review_sub = review.add_subparsers(dest="command", required=True)
@@ -738,6 +998,10 @@ def main(argv: list[str] | None = None) -> None:
                 _emit(cmd_doc_update_section(project_root, args.reference, args.content))
             elif args.command == "add-section":
                 _emit(cmd_doc_add_section(project_root, args.reference, args.heading, args.content, args.level))
+            elif args.command == "new":
+                _emit(cmd_doc_new(project_root, args.doc_type, args.module, args.feature, args.author))
+            elif args.command == "remove-section":
+                _emit(cmd_doc_remove_section(project_root, args.reference))
         elif args.group == "review":
             if args.command == "anchor-get":
                 _emit(cmd_review_anchor_get(project_root))

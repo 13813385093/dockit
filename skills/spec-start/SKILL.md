@@ -6,6 +6,8 @@ description: 开启新议题，提取 topic / scenario 并生成 session_spec_id
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
 
+**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。写入 ProjectSpec 文档前，须先读 `_index.md` 定位 doc_type，再读对应能力文件 `<doc_type>.md` 获取段落结构与行文规则。
+
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
 
 工具调用（从项目根执行）：
@@ -76,7 +78,7 @@ python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<�
 | tech-ref（技术评审）   | `top` 或 `module` |
 | feature-dev（功能设计）  | `feature` |
 
-根据文档结构引导用户选择要填写的文档方向。
+根据文档结构引导用户选择要填写的文档方向。更细的 doc_type 路由见能力库 `_index.md` §2（议题场景 → 候选文档）。
 后续在 spec-pause 或 spec-close 阶段再通过 `doc read` / `doc update-section` / `doc add-section` 完成具体写入。
 
 ## 成功后的状态

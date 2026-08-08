@@ -216,6 +216,23 @@ class DocContent:
         self.sections.insert(insert_idx, new_section)
         return new_section
 
+    def remove_section(self, reference: str) -> list[Section]:
+        """Remove a section and all of its descendant sections.
+
+        Returns the list of removed Section objects (in document order).
+        Raises ValueError if the reference does not exist.
+        """
+        target = self.get_section(reference)
+        if target is None:
+            raise ValueError(f"段落不存在: {reference}")
+        idx = self.sections.index(target)
+        end = idx + 1
+        while end < len(self.sections) and self.sections[end].level > target.level:
+            end += 1
+        removed = self.sections[idx:end]
+        del self.sections[idx:end]
+        return removed
+
     def to_dict(self) -> dict:
         return {
             "path": self.path,

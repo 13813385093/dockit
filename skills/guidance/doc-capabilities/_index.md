@@ -5,7 +5,7 @@
 
 ## 使用流程
 
-1. **定位**：决议确定后，按 §2（议题场景）或 §3（决议主题）定位 doc_type，并按 §4 判断「新增 vs 更新」。
+1. **定位**：先 `doc structure` 查看现有文档，再按 §2（议题场景）或 §3（决议主题）定位 doc_type，并按 §4 判断「新增 vs 更新」。**文档间归属差异在此层判定完毕，能力文件不重复文档间边界。**
 2. **加载**：`read_file doc-capabilities/<doc_type>.md`。
 3. **执行**：
    - 更新已有章节 → `doc update-section <reference>`
@@ -76,11 +76,30 @@
 | 发布门禁 / 流水线 / 回滚 | `release_policy` | §发布门禁 / §回滚策略 |
 | 干系人角色与关注 | `stakeholders` | §角色定义 / §信息需求矩阵 |
 
-## 4. 新增 vs 更新判断
+## 4. 写入动作与工具
+
+### 4.1 新增 vs 更新判断
 
 | 情形 | 动作 |
 |------|------|
 | 目标文档存在，决议主题属于其已有章节 | `doc update-section <reference>` |
 | 目标文档存在，无对应章节 | `doc add-section <reference> '<标题>' [--level sibling\|child]` |
-| 目标文档不存在（新模块 / 新功能） | `doc new` 创建（按能力文件骨架），再填充 |
+| 目标文档不存在（新模块 / 新功能） | `doc new`（见 §4.2），按能力文件骨架填充 |
 | 项目为精简模式（存在 charter / module-design / feature-package） | 写入复合文档对应章节；未拆分前不新建独立基础文档 |
+
+> **新建顺序**：新模块 / 新功能先建骨架（`doc new module_design --module <名>` / `doc new feature_package --module <名> --feature <功能名>`），再创建基础文档；`doc new` 遇目录缺失返回 `new_doc.module_not_found` / `new_doc.feature_not_found` 并带修复建议。
+> **拆分（§3.7）**：复合 → 基础文档的拆分为**人工操作**（app 看板），AI 不执行，仅提示用户。
+
+### 4.2 工具
+
+| 工具 | 用途 |
+|------|------|
+| `doc structure` | 查看项目全部文档：路径 / 层级 / 章节标题 / depends_on（定位目标、判断新增 vs 更新的依据） |
+| `doc read <path>` | 读取单篇文档的段落级内容，返回各段落 reference（供 update / remove-section 引用） |
+| `doc update-section <reference> --content <正文>` | 更新已有段落 |
+| `doc add-section <reference> '<标题>' [--content <正文>] [--level sibling\|child]` | 新增段落 |
+| `doc new <doc_type> [--module <模块名>] [--feature <功能名>]` | 新增文档：CLI 按注册表自动定位模板（`.doc-kit/templates/`）与目标目录 |
+| `doc remove-section <reference>` | 删除段落及其子段落 |
+
+> 错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，AI 读到后直接按建议行动。模块/功能目录不存在、精简模式等场景由 CLI 返回对应错误码与修复建议（如 `new_doc.module_not_found`、`new_doc.minimal_profile`）。
+

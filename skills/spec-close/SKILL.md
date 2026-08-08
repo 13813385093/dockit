@@ -6,6 +6,8 @@ description: 关闭当前议题，包含决议完整性检查和文档写入确�
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
 
+**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。写入 ProjectSpec 文档前，须先读 `_index.md` 定位 doc_type，再读对应能力文件 `<doc_type>.md` 获取段落结构与行文规则。
+
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
 
 工具调用（从项目根执行）：
@@ -19,6 +21,8 @@ python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
 python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>]
+python .doc-kit/cli/cli.py doc remove-section <reference>
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败；纯文本输出（spec read）以「错误:」开头即失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
@@ -77,7 +81,7 @@ python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<�
 确认所有已决议的内容（已有 + 本次新增）已写入 ProjectSpec/ 对应文档：
 
 1. 调 `python .doc-kit/cli/cli.py doc structure` 查看当前文档结构（结果可缓存复用）
-2. 对每条未写入的决议，按 spec-pause Step 3 的流程（doc structure → doc read → 判断 update/add）确定写入位置
+2. 对每条未写入的决议，按 spec-pause Step 3 的流程（能力库定位 → doc structure → doc read → 判断 update/add 或 doc new）确定写入位置
 3. 汇总待写入清单，向用户确认
 4. 用户确认后，一次性调 `doc update-section` / `doc add-section` 写入
 

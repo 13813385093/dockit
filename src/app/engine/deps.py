@@ -22,6 +22,10 @@ def derive_initial_depends_on(
     - Same module or parent module only (no cross-module)
 
     Returns list of {doc, module, version} dicts.
+
+    说明：当前项目决策为「depends_on 由人工通过 doc-kit 工具维护」，
+    本函数是「工具自动推导初始依赖」的保留实现（指南 §3.5.7 原意），
+    当前未被 UI 或 CLI 调用，保留备用，勿删除。
     """
     new_level = LEVEL_ORDER.get(doc_type_def.level, 99)
     results: list[dict] = []

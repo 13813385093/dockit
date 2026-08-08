@@ -202,6 +202,26 @@ def copy_skills(project_root: Path) -> list[str]:
     return copied
 
 
+def copy_guidance(project_root: Path) -> list[str]:
+    """把能力库（guidance/doc-capabilities/*.md）复制到 .doc-kit/skills/guidance/。
+
+    与 copy_skills 同构：能力库是 AI 写入 ProjectSpec 前的规范来源，
+    SKILL.md 统一以 `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`
+    引用。返回复制成功的文件名列表。
+    """
+    kit_dir = project_root / ".doc-kit"
+    dst_dir = kit_dir / "skills" / "guidance" / "doc-capabilities"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    src_dir = _get_skills_source_dir() / "guidance" / "doc-capabilities"
+    if not src_dir.is_dir():
+        return copied
+    for src_path in sorted(src_dir.glob("*.md")):
+        shutil.copy2(src_path, dst_dir / src_path.name)
+        copied.append(src_path.name)
+    return copied
+
+
 def init_project(
     project_root: Path,
     project_name: str | None = None,
@@ -230,6 +250,7 @@ def init_project(
     copy_templates(project_root)
     copy_cli(project_root)
     copy_skills(project_root)
+    copy_guidance(project_root)
     build_index(project_docs, project_root, created)
 
     return name

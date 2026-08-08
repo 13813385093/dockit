@@ -7,6 +7,8 @@ description: 按标签分解待提交变更，生成规范化的 git 提交
 
 在本次 Skill 执行过程中，所有 git 操作一律使用 `bash` 工具执行。
 
+**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产），允许直接 read_file 读取（仅读）——辅助理解 diff 涉及的文档类型时，可对照对应 `<doc_type>.md` 能力文件。
+
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`。若缺失，输出「请先运行 doc-kit 初始化该项目」并终止流程。
 
 允许调用的共享 CLI（**只读用途，不得写入**）：

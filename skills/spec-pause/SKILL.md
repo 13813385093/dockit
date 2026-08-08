@@ -6,6 +6,8 @@ description: 保存当前议题进度，提取决议并写入文档，不改变�
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
 
+**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。写入 ProjectSpec 文档前，须先读 `_index.md` 定位 doc_type，再读对应能力文件 `<doc_type>.md` 获取段落结构与行文规则。
+
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
 
 工具调用（从项目根执行）：
@@ -19,6 +21,8 @@ python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
 python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>]
+python .doc-kit/cli/cli.py doc remove-section <reference>
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败；纯文本输出（spec read / spec schema）以「错误:」开头即失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
@@ -74,13 +78,14 @@ AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确
 
 ### Step 3：决议写入文档
 
-对每条已确认的决议，按以下流程动态决定写入位置：
+对每条已确认的决议，先查能力库定位目标文档，再按流程写入：
 
 1. 调 `python .doc-kit/cli/cli.py doc structure` 查看当前 ProjectSpec/ 下所有文档及其 section 结构
-2. 根据决议内容和文档的 `level`（top/module/feature）判断适合的文档
-3. 调 `python .doc-kit/cli/cli.py doc read <path>` 查看目标文档当前内容
-4. 判断是更新已有 section（`doc update-section <reference> --content '<正文>'`）还是新增 section（`doc add-section <reference> '<标题>' --content '<正文>'`）
-5. 汇总所有待写入操作，形成清单
+2. **加载路由**：`read_file <项目根>/.doc-kit/skills/guidance/doc-capabilities/_index.md`，按 §2（议题场景）/ §3（决议主题）定位 doc_type，按 §4 判断「新增 vs 更新」（文档间归属差异在此层判定）
+3. **加载能力**：`read_file <项目根>/.doc-kit/skills/guidance/doc-capabilities/<doc_type>.md`，按其「段落结构 / 行文规则」确定目标章节与写法（含约束编号规则）
+4. 调 `python .doc-kit/cli/cli.py doc read <path>` 查看目标文档当前内容
+5. 判断是更新已有 section（`doc update-section <reference> --content '<正文>'`）还是新增 section（`doc add-section <reference> '<标题>' --content '<正文>'`）；目标文档不存在时用 `doc new <doc_type> [--module <模块名>] [--feature <功能名>]`
+6. 汇总所有待写入操作，形成清单
 
 > **缓存提示**：`doc structure` 的结果在 Step 6 中同样需要用到，建议将返回缓存在内存中，无需重复调用。
 

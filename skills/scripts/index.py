@@ -4,6 +4,7 @@ Minimal version extracted from app/engine, used by the skills CLI.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import json
@@ -47,6 +48,27 @@ class IndexManager:
     def get_entry(self, path: str) -> Optional[IndexEntry]:
         """Get entry by document path."""
         return self._entries.get(path)
+
+    def add_entry(self, entry: IndexEntry):
+        """Add or update a document entry."""
+        self._entries[entry.path] = entry
+
+    def remove_entry(self, path: str):
+        """Remove a document entry by path."""
+        self._entries.pop(path, None)
+
+    def save(self):
+        """Write index to disk."""
+        self.index_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "version": 1,
+            "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "documents": [asdict(e) for e in self._entries.values()],
+        }
+        self.index_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def list_entries(self) -> list[IndexEntry]:
         """List all entries."""
