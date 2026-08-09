@@ -129,6 +129,7 @@ class MainWindow(QMainWindow):
         # 编辑器保存后 → 自动 check + 刷新仪表盘
         self.editor.document_saved.connect(self._on_doc_saved)
         self.editor.navigate_to_doc.connect(self._on_navigate_to_doc)
+        self.editor.navigate_to_doc_anchor.connect(self._on_navigate_to_doc_anchor)
 
         # 仪表盘双击导航
         self.dashboard.navigate_to_doc.connect(self._on_navigate_to_doc)
@@ -483,15 +484,24 @@ class MainWindow(QMainWindow):
             self.status.showMessage("当前标签页不支持保存", 3000)
 
     @Slot()
-    def _on_navigate_to_doc(self, rel_path: str):
-        """跳转到依赖表中引用的目标文档。"""
+    def _on_navigate_to_doc(self, rel_path: str) -> bool:
+        """跳转到依赖表中引用的目标文档；返回是否跳转成功。"""
         if not self._project_root:
-            return
+            return False
         full_path = self._project_root / rel_path
         if full_path.exists():
             self._switch_editor_visibility(json_mode=False)
             self.editor.open_document(full_path, rel_path, self._index, self._registry)
             self.tabs.setCurrentWidget(self.editor)
+            return True
+        self.status.showMessage(f"未找到目标文档: {rel_path}", 4000)
+        return False
+
+    @Slot(str, str)
+    def _on_navigate_to_doc_anchor(self, rel_path: str, anchor: str):
+        """预览链接跳转：打开目标文档后定位到锚点（{#锚点} 标记的标题）。"""
+        if self._on_navigate_to_doc(rel_path) and anchor:
+            self.editor.jump_to_anchor(anchor)
 
     @Slot()
     def _on_doc_saved(self, rel_path: str):

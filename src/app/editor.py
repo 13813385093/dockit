@@ -1,7 +1,10 @@
 """文档编辑器 — Frontmatter 表格编辑 + Markdown 正文编辑 + 保存后自动检查。"""
+import re
 from pathlib import Path
+from urllib.parse import urlsplit, unquote, quote
+import posixpath
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QUrl, QTimer
 from PySide6.QtGui import (
     QShortcut, QKeySequence, QAction, QColor, QFont,
     QTextCharFormat, QTextCursor, QSyntaxHighlighter,
@@ -14,7 +17,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser,
     QGroupBox, QToolButton, QSizePolicy, QMenu, QAbstractItemView,
     QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QFrame,
-    QStackedWidget,
+    QStackedWidget, QButtonGroup,
 )
 
 import markdown
@@ -222,6 +225,150 @@ class AddDependencyDialog(QDialog):
 
     def get_deps(self) -> list[dict]:
         return self._deps
+
+
+class AddLinkDialog(QDialog):
+    """模态框：为选中的文字添加文档链接与锚点。
+
+    三步：1) 选择目标文件 → 2) 选择锚点标签插入位置（目标文件中的标题或文档末尾）
+          → 3) 输入锚点文字。
+
+    get_result() 返回:
+        target_rel: 目标文档相对项目根的路径
+        anchor: 锚点文字（id）
+        heading: 锚点标签插入位置对应的标题行原文（None 表示文档末尾）
+    """
+
+    def __init__(self, index: IndexManager, current_rel: str = "", selected: str = "",
+                 registry: Registry | None = None, parent=None):
+        super().__init__(parent)
+        self._index = index
+        self._current_rel = current_rel
+        self._registry = registry
+        self._result: dict = {}
+        self.setWindowTitle("添加链接与锚点")
+        self.resize(560, 540)
+        layout = QVBoxLayout(self)
+
+        # 1) 选择目标文件
+        layout.addWidget(QLabel("1. 选择目标文件:"))
+        self._file_list = QListWidget()
+        self._file_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._file_list.currentItemChanged.connect(self._on_file_changed)
+        self._populate_files()
+        layout.addWidget(self._file_list, 2)
+
+        # 2) 选择锚点标签插入位置
+        layout.addWidget(QLabel("2. 选择锚点标签插入位置（目标文件中的标题）:"))
+        self._pos_list = QListWidget()
+        self._pos_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(self._pos_list, 2)
+
+        # 3) 锚点文字（默认取当前选中的文字）
+        layout.addWidget(QLabel("3. 锚点文字:"))
+        self._anchor_edit = QLineEdit()
+        self._anchor_edit.setPlaceholderText("输入锚点文字（如 概述）")
+        if selected:
+            self._anchor_edit.setText(selected)
+        layout.addWidget(self._anchor_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._validate)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _project_root(self) -> Path | None:
+        if self._index is None:
+            return None
+        return Path(self._index.index_path).parent.parent
+
+    def _populate_files(self):
+        """文件列表：显示文件类型中文名（同左侧文件树），后附文件名便于区分。"""
+        self._file_list.clear()
+        if self._index is None:
+            return
+        for e in self._index.list_entries():
+            if e.path == self._current_rel:
+                continue
+            desc = Path(e.path).name
+            if self._registry:
+                type_def = self._registry.get(e.doc_type)
+                if type_def and type_def.description:
+                    desc = type_def.description
+            item = QListWidgetItem(f"{desc}  ({Path(e.path).name})")
+            item.setData(Qt.UserRole, e.path)
+            self._file_list.addItem(item)
+
+    def _on_file_changed(self, current, _previous):
+        self._pos_list.clear()
+        if current is None:
+            return
+        target_rel = current.data(Qt.UserRole)
+        # 文档末尾选项
+        end_item = QListWidgetItem("（文档末尾）")
+        end_item.setData(Qt.UserRole, None)
+        self._pos_list.addItem(end_item)
+        for heading in self._parse_headings(target_rel):
+            item = QListWidgetItem(heading)
+            item.setData(Qt.UserRole, heading)
+            self._pos_list.addItem(item)
+
+    def _parse_headings(self, rel_path: str) -> list[str]:
+        """读取目标文件，提取标题行（跳过 frontmatter 与代码块）。"""
+        root = self._project_root()
+        if root is None:
+            return []
+        full = root / rel_path
+        if not full.exists():
+            return []
+        try:
+            _, body = FrontmatterParser.read_file(full)
+        except Exception:
+            try:
+                body = full.read_text(encoding="utf-8")
+            except OSError:
+                return []
+        headings: list[str] = []
+        in_code = False
+        for ln in body.split("\n"):
+            s = ln.strip()
+            if s.startswith("```") or s.startswith("~~~"):
+                in_code = not in_code
+                continue
+            if in_code:
+                continue
+            if re.match(r"^#{1,6}\s+\S", s):
+                headings.append(s)
+        return headings
+
+    def _validate(self):
+        file_item = self._file_list.currentItem()
+        pos_item = self._pos_list.currentItem()
+        anchor = self._anchor_edit.text().strip()
+        if file_item is None:
+            QMessageBox.warning(self, "提示", "请先选择目标文件")
+            return
+        if pos_item is None:
+            QMessageBox.warning(self, "提示", "请选择锚点标签插入位置")
+            return
+        if not anchor:
+            QMessageBox.warning(self, "提示", "请输入锚点文字")
+            return
+        if not re.fullmatch(r"[\w\-]+", anchor):
+            QMessageBox.warning(
+                self, "提示",
+                "锚点文字只能包含中文、字母、数字、下划线和连字符",
+            )
+            return
+        self._result = {
+            "target_rel": file_item.data(Qt.UserRole),
+            "anchor": anchor,
+            "heading": pos_item.data(Qt.UserRole),
+        }
+        self.accept()
+
+    def get_result(self) -> dict:
+        return self._result
 
 
 class DependsOnEditor(QWidget):
@@ -456,6 +603,121 @@ class DependsOnEditor(QWidget):
             self.jump_to_doc.emit(entry.path)
 
 
+class ImplementedInEditor(QWidget):
+    """implemented_in 列表编辑（实现位置：源码目录 + 语言）。
+
+    表格与 depends_on 并列展示、可切换查看；仅文档 frontmatter 含
+    implemented_in 字段时显示。单元格可双击直接编辑。
+    """
+
+    impl_changed = Signal(list)  # 变更时发射，参数为新的 implemented_in 列表
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._impls: list[dict] = []
+        self._loading = False  # populate 期间屏蔽 cellChanged，避免误触发保存
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 0, 0, 0)
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["源码目录", "语言"])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
+        self.table.cellChanged.connect(self._on_cell_changed)
+        layout.addWidget(self.table)
+
+    def resizeEvent(self, event):
+        """窗口大小变化时按 3:1 比例重新分配列宽。"""
+        super().resizeEvent(event)
+        self._adjust_column_widths()
+
+    def _adjust_column_widths(self):
+        """按 3:1 比例调整列宽。"""
+        header = self.table.horizontalHeader()
+        total_width = header.width()
+        if total_width <= 0:
+            return
+        ratios = [3, 1]
+        total_ratio = sum(ratios)
+        for i, ratio in enumerate(ratios):
+            header.resizeSection(i, int(total_width * ratio / total_ratio))
+
+    def populate(self, items):
+        """用 implemented_in 列表填充表格。items 为 list[dict]，每项含 path/lang。"""
+        self._loading = True
+        try:
+            self._impls = []
+            if isinstance(items, list):
+                for it in items:
+                    if isinstance(it, dict):
+                        self._impls.append(dict(it))
+            elif isinstance(items, dict):
+                # 手写为单个 mapping 时按单元素处理，避免静默丢弃已有数据
+                self._impls.append(dict(items))
+            self.table.setRowCount(len(self._impls))
+            for i, impl in enumerate(self._impls):
+                self.table.setItem(i, 0, QTableWidgetItem(str(impl.get("path", ""))))
+                self.table.setItem(i, 1, QTableWidgetItem(str(impl.get("lang", ""))))
+        finally:
+            self._loading = False
+        self._adjust_column_widths()
+
+    def _on_cell_changed(self, row: int, col: int):
+        """单元格编辑提交后同步回 _impls 并通知保存。"""
+        if self._loading:
+            return
+        if row < 0 or row >= len(self._impls):
+            return
+        item = self.table.item(row, col)
+        value = (item.text() if item else "").strip()
+        key = "path" if col == 0 else "lang"
+        self._impls[row][key] = value
+        self.impl_changed.emit(list(self._impls))
+
+    def _on_context_menu(self, pos):
+        menu = QMenu(self)
+        add_act = QAction("添加实现项", self)
+        add_act.setIcon(get_icon("plus"))
+        delete_act = QAction("删除实现项", self)
+        delete_act.setIcon(get_icon("trash"))
+        selected_rows = sorted(set(idx.row() for idx in self.table.selectedIndexes()))
+        delete_act.setEnabled(bool(selected_rows))
+        menu.addAction(add_act)
+        menu.addAction(delete_act)
+
+        action = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if action == add_act:
+            self._add_item()
+        elif action == delete_act:
+            self._delete_items()
+
+    def _add_item(self):
+        """在当前行之后（或末尾）插入一个空实现项。"""
+        row = self.table.currentRow()
+        insert_pos = row + 1 if row >= 0 else len(self._impls)
+        self._impls.insert(insert_pos, {"path": "", "lang": ""})
+        self.populate(self._impls)
+        self.impl_changed.emit(list(self._impls))
+
+    def _delete_items(self):
+        rows = sorted(set(idx.row() for idx in self.table.selectedIndexes()), reverse=True)
+        if not rows:
+            return
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除选中的 {len(rows)} 行实现位置吗？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        for row in rows:
+            self._impls.pop(row)
+        self.populate(self._impls)
+        self.impl_changed.emit(list(self._impls))
+
+
 class DocEditor(QWidget):
     """文档编辑器面板。
 
@@ -464,9 +726,11 @@ class DocEditor(QWidget):
     信号:
         document_saved(str): 保存后发射，参数为保存的文档相对路径。
         navigate_to_doc(str): 跳转到目标文档，参数为文档相对路径。
+        navigate_to_doc_anchor(str, str): 跳转到目标文档的锚点，参数为(文档相对路径, 锚点)。
     """
     document_saved = Signal(str)
     navigate_to_doc = Signal(str)
+    navigate_to_doc_anchor = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -519,11 +783,40 @@ class DocEditor(QWidget):
         self._deps_editor = DependsOnEditor()
         self._deps_editor.deps_changed.connect(self._on_deps_save)
         self._deps_editor.jump_to_doc.connect(self.navigate_to_doc.emit)
+        self._impl_editor = ImplementedInEditor()
+        self._impl_editor.impl_changed.connect(self._on_impl_save)
+
+        # 切换按钮行：位于 Frontmatter 分组公共顶部（右对齐），不占用表格
+        # 垂直空间，保证左右两侧（表单 / 表格）在 splitter 内等高对齐
+        switch_row = QHBoxLayout()
+        switch_row.setContentsMargins(0, 0, 0, 0)
+        switch_row.setSpacing(2)
+        self._fm_btn_deps = QToolButton()
+        self._fm_btn_deps.setText("依赖表")
+        self._fm_btn_deps.setCheckable(True)
+        self._fm_btn_deps.setChecked(True)
+        self._fm_btn_impl = QToolButton()
+        self._fm_btn_impl.setText("源码表")
+        self._fm_btn_impl.setCheckable(True)
+        self._fm_btn_impl.setVisible(False)  # 仅含 implemented_in 字段的文档显示
+        switch_row.addStretch()
+        switch_row.addWidget(self._fm_btn_deps)
+        switch_row.addWidget(self._fm_btn_impl)
+        self._fm_btn_group = QButtonGroup(self)
+        self._fm_btn_group.addButton(self._fm_btn_deps, 0)
+        self._fm_btn_group.addButton(self._fm_btn_impl, 1)
+        self._fm_btn_group.idClicked.connect(self._on_fm_switch)
+
         fm_splitter.addWidget(self._fm_table)
-        fm_splitter.addWidget(self._deps_editor)
+        # depends_on / implemented_in 两个表格并列于同一区域，可切换查看
+        self._fm_stack = QStackedWidget()
+        self._fm_stack.addWidget(self._deps_editor)   # index 0 = depends_on
+        self._fm_stack.addWidget(self._impl_editor)   # index 1 = implemented_in
+        fm_splitter.addWidget(self._fm_stack)
         fm_splitter.setSizes([180, 360])
         fm_group_layout = QVBoxLayout(fm_group)
-        fm_group_layout.addWidget(fm_splitter)
+        fm_group_layout.addLayout(switch_row)
+        fm_group_layout.addWidget(fm_splitter, 1)
         fm_layout_inner.addWidget(fm_group)
         layout.addWidget(self._fm_container)
 
@@ -541,8 +834,12 @@ class DocEditor(QWidget):
         self._body_edit = QPlainTextEdit()
         self._body_edit.setPlaceholderText("在此编辑文档正文...")
         self._body_edit.textChanged.connect(self._update_preview)
+        self._body_edit.selectionChanged.connect(self._on_body_selection_changed)
         self._preview = QTextBrowser()
-        self._preview.setOpenExternalLinks(True)
+        # 关闭自动打开外部链接：统一走 anchorClicked 拦截，内部文档链接跳转文档、
+        # 外部链接不响应跳转（openExternalLinks=True 时不发射 anchorClicked）
+        self._preview.setOpenExternalLinks(False)
+        self._preview.anchorClicked.connect(self._on_preview_link_clicked)
         self._body_stack = QStackedWidget()
         self._body_stack.addWidget(self._body_edit)
         self._body_stack.addWidget(self._preview)
@@ -564,6 +861,8 @@ class DocEditor(QWidget):
         self._shortcut_find_next.activated.connect(self._find_next)
         self._shortcut_find_prev = QShortcut(QKeySequence("Shift+F3"), self)
         self._shortcut_find_prev.activated.connect(self._find_prev)
+        self._shortcut_link = QShortcut(QKeySequence("Ctrl+L"), self)
+        self._shortcut_link.activated.connect(self._insert_link)
 
         self._set_editable(False)
 
@@ -612,6 +911,15 @@ class DocEditor(QWidget):
         btn_table.clicked.connect(self._insert_table)
         layout.addWidget(btn_table)
 
+        # 添加链接与锚点：需先选中一段文字
+        self._link_btn = QToolButton()
+        self._link_btn.setIcon(get_icon("external-link"))
+        self._link_btn.setToolTip("插入链接与锚点（先选中文字） Ctrl+L")
+        self._link_btn.setProperty("class", "toolbar-btn")
+        self._link_btn.setEnabled(False)
+        self._link_btn.clicked.connect(self._insert_link)
+        layout.addWidget(self._link_btn)
+
         layout.addStretch()
         return bar
 
@@ -658,6 +966,102 @@ class DocEditor(QWidget):
             "| 数据 | 数据 | 数据 |"
         )
         self._body_edit.setFocus()
+
+    # ── 链接与锚点插入 ──
+
+    def _on_body_selection_changed(self):
+        """选中文字时启用「添加链接」按钮，无选区时禁用。"""
+        if hasattr(self, "_link_btn"):
+            self._link_btn.setEnabled(self._body_edit.textCursor().hasSelection())
+
+    def _project_root(self) -> Path | None:
+        if self._index is None:
+            return None
+        return Path(self._index.index_path).parent.parent
+
+    def _relative_link_path(self, target_rel: str) -> str:
+        """目标文档相对当前文档目录的链接路径（./ 或 ../ 开头）。"""
+        rel = posixpath.relpath(target_rel, posixpath.dirname(self._current_rel))
+        if not rel.startswith("."):
+            rel = "./" + rel
+        return rel
+
+    def _apply_anchor_tag(self, target_rel: str, anchor: str, heading: str | None) -> bool:
+        """把 {#锚点} 标签写入目标文档（标题行末尾或文档末尾）。
+
+        返回 True 表示锚点标签已就位（已写入或已存在）；False 表示失败
+        （文件不可读、标题行未找到）。目标文档已含同锚点标签时不重复写入。
+        """
+        root = self._project_root()
+        if root is None:
+            return False
+        full = root / target_rel
+        if not full.exists():
+            return False
+        try:
+            lines = full.read_text(encoding="utf-8").split("\n")
+        except OSError:
+            return False
+        tag = f"{{#{anchor}}}"
+        if heading:
+            # 在匹配的标题行末尾追加 {#锚点}
+            for i, ln in enumerate(lines):
+                if ln.strip() == heading.strip():
+                    if "{#" in ln:
+                        return True  # 该标题已含锚点标签，不重复追加
+                    lines[i] = ln + f" {tag}"
+                    break
+            else:
+                return False  # 标题行未找到（目标文件已变化）
+        else:
+            # 文档末尾：已含同锚点则跳过；否则挂到最后一个非空行末尾，
+            # 避免孤立锚点行（空段落无法可靠定位）
+            if tag in "\n".join(lines):
+                return True
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip():
+                    if "{#" not in lines[i]:
+                        lines[i] = lines[i] + f" {tag}"
+                    break
+        try:
+            full.write_text("\n".join(lines), encoding="utf-8")
+        except OSError:
+            return False
+        return True
+
+    def _insert_link(self):
+        """为选中文字添加链接：弹窗选择目标文件/锚点位置/锚点文字，
+        向目标文档写入 {#锚点} 标签，并在光标处插入 [文字](路径#锚点)。"""
+        if self._index is None or not self._current_rel:
+            return
+        cursor = self._body_edit.textCursor()
+        if not cursor.hasSelection():
+            return
+        selected = cursor.selectedText().replace("\u2029", " ").strip()
+        if not selected:
+            return
+        dialog = AddLinkDialog(
+            self._index, self._current_rel,
+            selected=selected, registry=self._registry, parent=self,
+        )
+        if not dialog.exec():
+            return
+        result = dialog.get_result()
+        if not result:
+            return
+        target_rel = result["target_rel"]
+        anchor = result["anchor"]
+        if not self._apply_anchor_tag(target_rel, anchor, result["heading"]):
+            QMessageBox.warning(self, "添加链接", f"无法写入目标文档: {target_rel}")
+            return
+        link_path = quote(self._relative_link_path(target_rel))
+        link_text = f"[{selected}]({link_path}#{anchor})"
+        cursor.insertText(link_text)
+        self._body_edit.setFocus()
+        QMessageBox.information(
+            self, "添加链接",
+            f"已添加链接: {link_text}\n锚点标签已就位: {target_rel}",
+        )
 
     # ── 搜索替换栏 ──
 
@@ -804,12 +1208,88 @@ class DocEditor(QWidget):
         self._fm_toggle.setIcon(get_icon("panel-visible" if visible else "panel-hidden"))
         self._fm_toggle.setToolTip("收起 Frontmatter" if visible else "展开 Frontmatter")
 
+    @Slot(int)
+    def _on_fm_switch(self, index: int):
+        """切换 depends_on / implemented_in 表格视图。"""
+        self._fm_stack.setCurrentIndex(index)
+
     def _set_editable(self, enabled: bool):
         self._body_edit.setReadOnly(not enabled)
         self._toolbar.setEnabled(enabled)
 
+    _ANCHOR_TAG_RE = re.compile(
+        r'^(#{1,6})\s+(.+?)\s+\{#([^{}\s]+)\}\s*$'
+    )
+    _ANY_ANCHOR_RE = re.compile(r'\{#([^{}\s]+)\}')
+    _INLINE_CODE_RE = re.compile(r'`[^`\n]*`')
+
+    # 锚点标签前的小图标（灰色锚点 SVG，data URI 内嵌，Qt 富文本支持 img data URI）
+    _ANCHOR_ICON_DATA = (
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOTk5OTk5IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIgM3YxMyIvPjxwYXRoIGQ9Ik0xMiA3YTQgNCAwIDAgMC00IDRoOGE0IDQgMCAwIDAtNC00eiIvPjxwYXRoIGQ9Ik01IDE2aDE0Ii8+PHBhdGggZD0iTTEyIDE2djQiLz48L3N2Zz4="
+    )
+
+    @staticmethod
+    def _anchor_span(anchor_id: str, with_id: bool = False) -> str:
+        """灰色上标锚点标签：锚点小图标 + 灰色锚点名。
+
+        Qt 富文本不支持 class 选择器与 border/border-radius，但支持
+        vertical-align:super 与 img 的 data URI，故用上标 + 内嵌 SVG 图标实现。
+        """
+        id_attr = f' id="{anchor_id}"' if with_id else ""
+        return (
+            f'<span{id_attr} style="vertical-align:super; color:#888888;">'
+            f'<img src="{DocEditor._ANCHOR_ICON_DATA}" width="9" height="9"/>'
+            f'{anchor_id}</span>'
+        )
+
+    def _add_anchor_tags(self, md_text: str) -> str:
+        """把 {#锚点} 可视化：任意位置（标题或正文）渲染为红色高亮标签（锚点名）。
+
+        - 标题行保留 {#锚点} 交给 attr_list 生成 id，跳转定位不受影响；
+        - 正文中的 {#锚点} 替换为带 id 的标签，同样支持锚点定位；
+        - 代码块（``` 与 ~~~）与行内代码（`...`）内的内容不处理。
+        """
+        lines = md_text.split("\n")
+        out = []
+        in_code = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_code = not in_code
+                out.append(line)
+                continue
+            if not in_code:
+                # 保护行内代码，避免 {#id} 被误渲染
+                code_spans = []
+                line = self._INLINE_CODE_RE.sub(
+                    lambda m: self._protect_code(m, code_spans), line
+                )
+                m = self._ANCHOR_TAG_RE.match(line)
+                if m:
+                    hashes, title, anchor_id = m.groups()
+                    line = (
+                        f'{hashes} {title} '
+                        f'{self._anchor_span(anchor_id)} '
+                        f'{{#{anchor_id}}}'
+                    )
+                else:
+                    # 正文任意位置：{#id} 直接渲染为带 id 的标签
+                    line = self._ANY_ANCHOR_RE.sub(
+                        lambda mm: self._anchor_span(mm.group(1), with_id=True),
+                        line,
+                    )
+                for i, span in enumerate(code_spans):
+                    line = line.replace(f"\x00CODE{i}\x00", span)
+            out.append(line)
+        return "\n".join(out)
+
+    @staticmethod
+    def _protect_code(match, store: list) -> str:
+        store.append(match.group(0))
+        return f"\x00CODE{len(store) - 1}\x00"
+
     def _update_preview(self):
-        md_text = self._body_edit.toPlainText()
+        md_text = self._add_anchor_tags(self._body_edit.toPlainText())
         html = markdown.markdown(
             md_text,
             extensions=["extra", "codehilite", "toc", "tables"],
@@ -836,6 +1316,44 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         preview_scroll.blockSignals(True)
         self._preview.setHtml(styled)
         preview_scroll.blockSignals(False)
+
+    def _on_preview_link_clicked(self, url: QUrl):
+        """浏览态点击链接：内部文档链接跳转目标文档（含锚点定位），外部链接不跳转。
+
+        markdown 文档链接格式: [链接文字](<文件相对路径>#[锚点])
+        - <文件相对路径>: 相对当前文档所在目录的相对路径（./ 或 ../ 开头）
+        - #[锚点]: 可选；目标文档以 {#锚点} 标记标题时，跳转后定位到该标题
+        """
+        href = unquote(url.toString())
+        if not href:
+            return
+        # 带 scheme 的视为外部链接（http/https/mailto 等），点击不跳转
+        if urlsplit(href).scheme:
+            return
+        path, _, anchor = href.partition("#")
+        path = path.strip()
+        # 防御：Python-Markdown 对含 # 的 <...> 包裹路径会保留并转义尖括号
+        if path.startswith("<") and path.endswith(">"):
+            path = path[1:-1]
+        if not path:
+            # 纯锚点：同文档内滚动定位（延迟到布局完成后执行）
+            if anchor:
+                QTimer.singleShot(0, lambda: self._preview.scrollToAnchor(anchor))
+            return
+        if self._current_rel:
+            # 链接路径相对当前文档所在目录（./、../），解析为 project-root-relative
+            path = posixpath.normpath(
+                posixpath.join(posixpath.dirname(self._current_rel), path)
+            )
+        self.navigate_to_doc_anchor.emit(path, anchor)
+
+    def jump_to_anchor(self, anchor: str):
+        """切到浏览态并滚动到锚点对应的标题（目标文档需含 {#锚点} 标记）。"""
+        if not anchor:
+            return
+        self._view_toggle.setChecked(False)  # 浏览态，刷新预览为最新 HTML
+        # setHtml 后需等事件循环空闲完成布局，scrollToAnchor 才能正确定位
+        QTimer.singleShot(0, lambda: self._preview.scrollToAnchor(anchor))
 
     def open_document(self, full_path: Path, rel_path: str, index: IndexManager, registry: Registry | None = None):
         self._current_path = full_path
@@ -877,6 +1395,13 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         deps = self._meta.get("depends_on") or []
         self._deps_editor.populate(deps, self._index, self._registry, self._current_rel)
 
+        # implemented_in：仅当文档含该字段时显示「实现位置」表格，与 depends_on 并列切换
+        has_impl = "implemented_in" in self._meta
+        self._fm_btn_impl.setVisible(has_impl)
+        self._impl_editor.populate(self._meta.get("implemented_in") or [])
+        self._fm_btn_deps.setChecked(True)  # 打开文档时默认停留在 depends_on
+        self._fm_stack.setCurrentIndex(0)
+
         self._body_edit.setPlainText(self._body)
         self._update_preview()
         self._set_editable(True)
@@ -898,11 +1423,28 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         if not self._current_path or not self._index:
             return
         self._meta["depends_on"] = deps
-        FrontmatterParser.write_file(self._current_path, self._meta, self._body)
+        # 用编辑框当前正文写盘，避免覆盖未保存的正文修改
+        FrontmatterParser.write_file(
+            self._current_path, self._meta, self._body_edit.toPlainText()
+        )
         project_root = self._current_path.parent.parent
         self._index.rebuild(project_root / "ProjectSpec")
         self._index.save()
         self.document_saved.emit(self._current_rel)
+
+    @Slot()
+    def _on_impl_save(self, impls: list[dict]):
+        """implemented_in 表格变更后写回 frontmatter。
+
+        implemented_in 不参与依赖索引，无需重建 index，也不触发
+        document_saved（避免无谓的依赖检查与仪表盘刷新）。
+        """
+        if not self._current_path:
+            return
+        self._meta["implemented_in"] = impls
+        FrontmatterParser.write_file(
+            self._current_path, self._meta, self._body_edit.toPlainText()
+        )
 
     @Slot()
     def _on_save(self):

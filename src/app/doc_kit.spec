@@ -55,7 +55,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(app_root / 'resources' / 'icons' / 'dropbox.png'),
+    icon=str(app_root / 'resources' / 'icons' / 'dropbox.ico'),
 )
 
 coll = COLLECT(
