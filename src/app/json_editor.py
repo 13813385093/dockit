@@ -27,6 +27,7 @@ class JsonEditor(QWidget):
         super().__init__(parent)
         self._current_path: Path | None = None
         self._current_rel: str = ""
+        self._modified = False  # 修改标志
 
         layout = QVBoxLayout(self)
 
@@ -57,6 +58,7 @@ class JsonEditor(QWidget):
         self._text = QPlainTextEdit()
         self._text.setPlaceholderText("JSON 内容（美化格式），可直接编辑后保存")
         self._text.setFont(QFont("Consolas, 'Courier New', monospace"))
+        self._text.textChanged.connect(self._on_text_changed)
         self._body_stack.addWidget(self._text)
 
         layout.addWidget(self._body_stack, 1)
@@ -83,6 +85,8 @@ class JsonEditor(QWidget):
         # 打开新文件时默认回到编辑态
         self._view_toggle.setChecked(True)
         self._sync_view_button()
+        # 重置修改标志（setPlainText 会触发 textChanged）
+        self.reset_modified()
 
     def _rebuild_tree(self, data):
         """根据解析后的数据重建结构树。"""
@@ -121,6 +125,20 @@ class JsonEditor(QWidget):
         if kind == "list":
             return f"{k}: [...]  ({len(value)} 项)"
         return f"{k}: {json.dumps(value, ensure_ascii=False)}"
+
+    # ── 修改标志 ──
+
+    def _on_text_changed(self):
+        """文本变化时标记为已修改。"""
+        self._modified = True
+
+    def is_modified(self) -> bool:
+        """返回是否有未保存的修改。"""
+        return self._modified
+
+    def reset_modified(self):
+        """重置修改标志（保存后调用）。"""
+        self._modified = False
 
     # ── 编辑态 / 浏览态切换 ──
 
@@ -176,4 +194,5 @@ class JsonEditor(QWidget):
         self._rebuild_tree(data)
         self._text.setPlainText(json.dumps(data, ensure_ascii=False, indent=2))
         QMessageBox.information(self, "保存", f"已保存: {self._current_rel}")
+        self.reset_modified()
         self.document_saved.emit(self._current_rel)

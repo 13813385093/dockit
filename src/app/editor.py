@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QMessageBox, QComboBox, QHeaderView,
-    QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser,
+    QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser, QTextEdit,
     QGroupBox, QToolButton, QSizePolicy, QMenu, QAbstractItemView,
     QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QFrame,
     QStackedWidget, QButtonGroup,
@@ -227,16 +227,31 @@ class AddDependencyDialog(QDialog):
         return self._deps
 
 
+class ClickablePlainText(QPlainTextEdit):
+    """可点击定位的纯文本编辑器，用于选择锚点插入位置。"""
+    position_clicked = Signal(int)  # 发射点击位置的文档绝对偏移量
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursorWidth(2)
+        self.viewport().setCursor(Qt.IBeamCursor)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        cursor = self.cursorForPosition(event.pos())
+        self.position_clicked.emit(cursor.position())
+
+
 class AddLinkDialog(QDialog):
     """模态框：为选中的文字添加文档链接与锚点。
 
-    三步：1) 选择目标文件 → 2) 选择锚点标签插入位置（目标文件中的标题或文档末尾）
+    三步：1) 选择目标文件 → 2) 在目标文件原文中点击定位锚点插入位置
           → 3) 输入锚点文字。
 
     get_result() 返回:
         target_rel: 目标文档相对项目根的路径
         anchor: 锚点文字（id）
-        heading: 锚点标签插入位置对应的标题行原文（None 表示文档末尾）
+        line_number: 锚点插入位置的行号（0-based）
     """
 
     def __init__(self, index: IndexManager, current_rel: str = "", selected: str = "",
@@ -256,13 +271,14 @@ class AddLinkDialog(QDialog):
         self._file_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self._file_list.currentItemChanged.connect(self._on_file_changed)
         self._populate_files()
-        layout.addWidget(self._file_list, 2)
+        layout.addWidget(self._file_list, 1)
 
-        # 2) 选择锚点标签插入位置
-        layout.addWidget(QLabel("2. 选择锚点标签插入位置（目标文件中的标题）:"))
-        self._pos_list = QListWidget()
-        self._pos_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        layout.addWidget(self._pos_list, 2)
+        # 2) 选择锚点标签插入位置（目标文件原文预览）
+        layout.addWidget(QLabel("2. 点击目标文件原文中的位置以插入锚点:"))
+        self._preview_edit = ClickablePlainText()
+        self._preview_edit.position_clicked.connect(self._on_position_selected)
+        layout.addWidget(self._preview_edit, 2)
+        self._selected_position = -1
 
         # 3) 锚点文字（默认取当前选中的文字）
         layout.addWidget(QLabel("3. 锚点文字:"))
@@ -300,56 +316,36 @@ class AddLinkDialog(QDialog):
             self._file_list.addItem(item)
 
     def _on_file_changed(self, current, _previous):
-        self._pos_list.clear()
+        """加载目标文件原文到预览区，清空选中位置。"""
+        self._preview_edit.clear()
+        self._selected_position = -1
         if current is None:
             return
         target_rel = current.data(Qt.UserRole)
-        # 文档末尾选项
-        end_item = QListWidgetItem("（文档末尾）")
-        end_item.setData(Qt.UserRole, None)
-        self._pos_list.addItem(end_item)
-        for heading in self._parse_headings(target_rel):
-            item = QListWidgetItem(heading)
-            item.setData(Qt.UserRole, heading)
-            self._pos_list.addItem(item)
-
-    def _parse_headings(self, rel_path: str) -> list[str]:
-        """读取目标文件，提取标题行（跳过 frontmatter 与代码块）。"""
         root = self._project_root()
         if root is None:
-            return []
-        full = root / rel_path
+            return
+        full = root / target_rel
         if not full.exists():
-            return []
+            return
         try:
-            _, body = FrontmatterParser.read_file(full)
-        except Exception:
-            try:
-                body = full.read_text(encoding="utf-8")
-            except OSError:
-                return []
-        headings: list[str] = []
-        in_code = False
-        for ln in body.split("\n"):
-            s = ln.strip()
-            if s.startswith("```") or s.startswith("~~~"):
-                in_code = not in_code
-                continue
-            if in_code:
-                continue
-            if re.match(r"^#{1,6}\s+\S", s):
-                headings.append(s)
-        return headings
+            content = full.read_text(encoding="utf-8")
+        except OSError:
+            return
+        self._preview_edit.setPlainText(content)
+
+    def _on_position_selected(self, position: int):
+        """记录点击位置的文档偏移量作为锚点插入位置。"""
+        self._selected_position = position
 
     def _validate(self):
         file_item = self._file_list.currentItem()
-        pos_item = self._pos_list.currentItem()
         anchor = self._anchor_edit.text().strip()
         if file_item is None:
             QMessageBox.warning(self, "提示", "请先选择目标文件")
             return
-        if pos_item is None:
-            QMessageBox.warning(self, "提示", "请选择锚点标签插入位置")
+        if self._selected_position < 0:
+            QMessageBox.warning(self, "提示", "请在目标文件原文中点击选择锚点插入位置")
             return
         if not anchor:
             QMessageBox.warning(self, "提示", "请输入锚点文字")
@@ -363,7 +359,7 @@ class AddLinkDialog(QDialog):
         self._result = {
             "target_rel": file_item.data(Qt.UserRole),
             "anchor": anchor,
-            "heading": pos_item.data(Qt.UserRole),
+            "position": self._selected_position,
         }
         self.accept()
 
@@ -743,6 +739,7 @@ class DocEditor(QWidget):
         self._has_fm = False  # 当前文件是否有 frontmatter
         self._fm_visible = False
         self._search_visible = False
+        self._modified = False  # 修改标志
 
         layout = QVBoxLayout(self)
 
@@ -833,6 +830,7 @@ class DocEditor(QWidget):
         # 正文：编辑态 / 浏览态切换（同一视图区，QStackedWidget）
         self._body_edit = QPlainTextEdit()
         self._body_edit.setPlaceholderText("在此编辑文档正文...")
+        self._body_edit.textChanged.connect(self._on_text_changed)
         self._body_edit.textChanged.connect(self._update_preview)
         self._body_edit.selectionChanged.connect(self._on_body_selection_changed)
         self._preview = QTextBrowser()
@@ -986,11 +984,11 @@ class DocEditor(QWidget):
             rel = "./" + rel
         return rel
 
-    def _apply_anchor_tag(self, target_rel: str, anchor: str, heading: str | None) -> bool:
-        """把 {#锚点} 标签写入目标文档（标题行末尾或文档末尾）。
+    def _apply_anchor_tag(self, target_rel: str, anchor: str, position: int) -> bool:
+        """在目标文档指定位置插入 {#锚点} 标签。
 
         返回 True 表示锚点标签已就位（已写入或已存在）；False 表示失败
-        （文件不可读、标题行未找到）。目标文档已含同锚点标签时不重复写入。
+        （文件不可读、位置无效）。目标文档已含同锚点标签时不重复写入。
         """
         root = self._project_root()
         if root is None:
@@ -999,32 +997,20 @@ class DocEditor(QWidget):
         if not full.exists():
             return False
         try:
-            lines = full.read_text(encoding="utf-8").split("\n")
+            content = full.read_text(encoding="utf-8")
         except OSError:
             return False
         tag = f"{{#{anchor}}}"
-        if heading:
-            # 在匹配的标题行末尾追加 {#锚点}
-            for i, ln in enumerate(lines):
-                if ln.strip() == heading.strip():
-                    if "{#" in ln:
-                        return True  # 该标题已含锚点标签，不重复追加
-                    lines[i] = ln + f" {tag}"
-                    break
-            else:
-                return False  # 标题行未找到（目标文件已变化）
-        else:
-            # 文档末尾：已含同锚点则跳过；否则挂到最后一个非空行末尾，
-            # 避免孤立锚点行（空段落无法可靠定位）
-            if tag in "\n".join(lines):
-                return True
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip():
-                    if "{#" not in lines[i]:
-                        lines[i] = lines[i] + f" {tag}"
-                    break
+        # 检查整个文件是否已含同锚点标签
+        if tag in content:
+            return True
+        # 验证位置有效性
+        if position < 0 or position > len(content):
+            return False
+        # 在指定位置插入锚点标签
+        new_content = content[:position] + tag + content[position:]
         try:
-            full.write_text("\n".join(lines), encoding="utf-8")
+            full.write_text(new_content, encoding="utf-8")
         except OSError:
             return False
         return True
@@ -1051,7 +1037,7 @@ class DocEditor(QWidget):
             return
         target_rel = result["target_rel"]
         anchor = result["anchor"]
-        if not self._apply_anchor_tag(target_rel, anchor, result["heading"]):
+        if not self._apply_anchor_tag(target_rel, anchor, result["position"]):
             QMessageBox.warning(self, "添加链接", f"无法写入目标文档: {target_rel}")
             return
         link_path = quote(self._relative_link_path(target_rel))
@@ -1179,6 +1165,20 @@ class DocEditor(QWidget):
         self._body_edit.setPlainText(text.replace(search, replace))
         QMessageBox.information(self, "替换完成", f"已替换 {count} 处")
 
+    # ── 修改标志 ──
+
+    def _on_text_changed(self):
+        """文本变化时标记为已修改。"""
+        self._modified = True
+
+    def is_modified(self) -> bool:
+        """返回是否有未保存的修改。"""
+        return self._modified
+
+    def reset_modified(self):
+        """重置修改标志（保存后调用）。"""
+        self._modified = False
+
     # ── 原有功能 ──
 
     def save(self):
@@ -1230,15 +1230,10 @@ class DocEditor(QWidget):
 
     @staticmethod
     def _anchor_span(anchor_id: str, with_id: bool = False) -> str:
-        """灰色上标锚点标签：锚点小图标 + 灰色锚点名。
-
-        Qt 富文本不支持 class 选择器与 border/border-radius，但支持
-        vertical-align:super 与 img 的 data URI，故用上标 + 内嵌 SVG 图标实现。
-        """
+        """灰色上标锚点标签。"""
         id_attr = f' id="{anchor_id}"' if with_id else ""
         return (
             f'<span{id_attr} style="vertical-align:super; color:#888888;">'
-            f'<img src="{DocEditor._ANCHOR_ICON_DATA}" width="9" height="9"/>'
             f'{anchor_id}</span>'
         )
 
@@ -1407,6 +1402,8 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
         self._set_editable(True)
         # 打开新文档时默认回到编辑态
         self._view_toggle.setChecked(True)
+        # 重置修改标志（setPlainText 会触发 textChanged）
+        self.reset_modified()
 
     def jump_to_line(self, line_number: int):
         """跳转到指定行并居中显示。"""
@@ -1461,6 +1458,7 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
                 QMessageBox.critical(self, "保存失败", str(e))
                 return
             QMessageBox.information(self, "保存", f"已保存: {self._current_rel}")
+            self.reset_modified()
             self.document_saved.emit(self._current_rel)
             return
 
@@ -1495,4 +1493,5 @@ blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 4px 16px; color: 
             self._index.save()
 
         QMessageBox.information(self, "保存", f"已保存: {self._current_rel}")
+        self.reset_modified()
         self.document_saved.emit(self._current_rel)

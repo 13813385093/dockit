@@ -91,6 +91,49 @@ class MainWindow(QMainWindow):
 
     # ── UI 搭建 ──────────────────────────────────────────────
 
+    def _prompt_save(self) -> bool:
+        """检查编辑器是否有未保存的修改，提示用户保存。
+        
+        返回 True 表示可以继续操作，False 表示用户取消了操作。
+        """
+        # 检查 md 编辑器
+        if self.editor.is_modified():
+            reply = QMessageBox.question(
+                self,
+                "未保存的修改",
+                "Markdown 编辑器中有未保存的修改，是否保存？",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if reply == QMessageBox.Save:
+                self.editor.save()
+                if self.editor.is_modified():
+                    # 保存失败（如 JSON 格式错误），取消操作
+                    return False
+            elif reply == QMessageBox.Cancel:
+                return False
+            # Discard: 不保存，继续操作
+        
+        # 检查 json 编辑器
+        if self.json_editor.is_modified():
+            reply = QMessageBox.question(
+                self,
+                "未保存的修改",
+                "JSON 编辑器中有未保存的修改，是否保存？",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if reply == QMessageBox.Save:
+                self.json_editor.save()
+                if self.json_editor.is_modified():
+                    # 保存失败（如 JSON 格式错误），取消操作
+                    return False
+            elif reply == QMessageBox.Cancel:
+                return False
+            # Discard: 不保存，继续操作
+        
+        return True
+
     def _setup_ui(self):
         """搭建主界面布局。"""
         main_widget = QWidget()
@@ -384,6 +427,10 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_open_project(self):
         """打开项目目录。若未初始化则弹出 init 对话框。"""
+        # 先检查是否有未保存的修改
+        if not self._prompt_save():
+            return
+        
         directory = QFileDialog.getExistingDirectory(self, "选择项目根目录")
         if not directory:
             return
@@ -414,6 +461,10 @@ class MainWindow(QMainWindow):
 
     def load_project(self, project_root: Path):
         """加载指定项目。"""
+        # 先检查是否有未保存的修改
+        if not self._prompt_save():
+            return
+        
         kit_dir = project_root / ".doc-kit"
         if not kit_dir.exists():
             QMessageBox.warning(self, "无效项目", f"未找到 .doc-kit/ 目录: {project_root}")
@@ -450,6 +501,10 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_doc_selected(self, rel_path: str):
         """文档树中选择文件 → 按类型在对应编辑器中打开。"""
+        # 先检查是否有未保存的修改
+        if not self._prompt_save():
+            return
+        
         if not self._project_root or not self._index:
             return
         self._current_doc_rel = rel_path
@@ -525,6 +580,10 @@ class MainWindow(QMainWindow):
     @Slot(int)
     def _on_tab_changed(self, index: int):
         """标签页切换时，仪表盘被激活则执行检查，依赖图被激活则显示当前文档依赖。"""
+        # 先检查是否有未保存的修改
+        if not self._prompt_save():
+            return
+        
         current_widget = self.tabs.widget(index)
         if current_widget == self.dashboard and self._index:
             from src.app.engine.deps import check_version_drift, check_deprecated_deps
@@ -763,3 +822,10 @@ class MainWindow(QMainWindow):
             "授权和/或出售本软件的副本，前提是在所有副本中\n"
             "保留上述版权声明和本许可声明。"
         )
+
+    def closeEvent(self, event):
+        """关闭窗口时检查是否有未保存的修改。"""
+        if not self._prompt_save():
+            event.ignore()
+            return
+        event.accept()
