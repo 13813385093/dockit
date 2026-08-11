@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QPlainTextEdit, QTextBrowser, QTextEdit,
     QGroupBox, QToolButton, QSizePolicy, QMenu, QAbstractItemView,
     QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QFrame,
-    QStackedWidget, QButtonGroup,
+    QStackedWidget, QButtonGroup, QTreeWidget, QTreeWidgetItem,
 )
 
 import markdown
@@ -26,7 +26,7 @@ from src.app.icon_utils import get_icon, set_button_icon
 from src.app.engine.index import IndexManager
 from src.app.engine.frontmatter import FrontmatterParser
 from src.app.engine.registry import Registry
-from src.app.engine.validation import parse_version
+from src.app.engine.validation import parse_module_path, parse_version
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
@@ -262,16 +262,17 @@ class AddLinkDialog(QDialog):
         self._registry = registry
         self._result: dict = {}
         self.setWindowTitle("添加链接与锚点")
-        self.resize(560, 540)
+        self.resize(560, 750)
         layout = QVBoxLayout(self)
 
-        # 1) 选择目标文件
+        # 1) 选择目标文件（树形展示，同左侧文件导航 ProjectSpec 结构）
         layout.addWidget(QLabel("1. 选择目标文件:"))
-        self._file_list = QListWidget()
-        self._file_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._file_list.currentItemChanged.connect(self._on_file_changed)
+        self._file_tree = QTreeWidget()
+        self._file_tree.setHeaderHidden(True)
+        self._file_tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._file_tree.currentItemChanged.connect(self._on_file_changed)
         self._populate_files()
-        layout.addWidget(self._file_list, 1)
+        layout.addWidget(self._file_tree, 2)
 
         # 2) 选择锚点标签插入位置（目标文件原文预览）
         layout.addWidget(QLabel("2. 点击目标文件原文中的位置以插入锚点:"))
@@ -299,21 +300,109 @@ class AddLinkDialog(QDialog):
         return Path(self._index.index_path).parent.parent
 
     def _populate_files(self):
-        """文件列表：显示文件类型中文名（同左侧文件树），后附文件名便于区分。"""
-        self._file_list.clear()
+        """文件树：按 ProjectSpec 结构分组展示（模块 → features → 文件）。"""
+        self._file_tree.clear()
         if self._index is None:
             return
-        for e in self._index.list_entries():
-            if e.path == self._current_rel:
+
+        entries = self._index.list_entries()
+        entries.sort(key=lambda e: e.path)
+
+        # 按模块分组
+        modules: dict[str, list] = {}
+        for e in entries:
+            modules.setdefault(e.module, []).append(e)
+
+        # 顶层文件夹：ProjectSpec/
+        ps_item = QTreeWidgetItem(self._file_tree, ["ProjectSpec"])
+        ps_item.setIcon(0, get_icon("folder"))
+        ps_item.setFlags(ps_item.flags() & ~Qt.ItemIsSelectable)
+        ps_item.setExpanded(True)
+
+        # 顶层文档（project-charter）
+        for e in modules.get("project-charter", []):
+            self._add_tree_file_item(ps_item, e)
+
+        # 模块节点
+        for mod_name in sorted(modules.keys()):
+            if mod_name == "project-charter":
                 continue
-            desc = Path(e.path).name
-            if self._registry:
-                type_def = self._registry.get(e.doc_type)
-                if type_def and type_def.description:
-                    desc = type_def.description
-            item = QListWidgetItem(f"{desc}  ({Path(e.path).name})")
-            item.setData(Qt.UserRole, e.path)
-            self._file_list.addItem(item)
+            # 子模块（带点号）→ 嵌套节点
+            if "." in mod_name:
+                main_module, sub_path = parse_module_path(mod_name)
+                sub_name = sub_path.split("/")[-1] if sub_path else mod_name
+                parent_item = None
+                for i in range(ps_item.childCount()):
+                    child = ps_item.child(i)
+                    if child.text(0) == main_module:
+                        parent_item = child
+                        break
+                if parent_item is None:
+                    parent_item = QTreeWidgetItem(ps_item, [main_module])
+                    parent_item.setIcon(0, get_icon("grid"))
+                    parent_item.setFlags(parent_item.flags() & ~Qt.ItemIsSelectable)
+                mod_item = QTreeWidgetItem(parent_item, [sub_name])
+            else:
+                mod_item = QTreeWidgetItem(ps_item, [mod_name])
+            mod_item.setIcon(0, get_icon("grid"))
+            mod_item.setFlags(mod_item.flags() & ~Qt.ItemIsSelectable)
+
+            # 将条目分为模块级文件和功能级文件
+            module_files = []
+            features: dict[str, list] = {}
+            for e in modules[mod_name]:
+                path_str = e.path
+                if "/features/" in path_str:
+                    parts = path_str.split("/features/")
+                    if len(parts) >= 2:
+                        feat_parts = parts[1].split("/")
+                        feat_name = feat_parts[0]
+                        features.setdefault(feat_name, []).append(e)
+                else:
+                    module_files.append(e)
+
+            # 模块级文件
+            for e in module_files:
+                self._add_tree_file_item(mod_item, e)
+
+            # features/ 子目录
+            if features:
+                feat_folder = QTreeWidgetItem(mod_item, ["features"])
+                feat_folder.setIcon(0, get_icon("folder"))
+                feat_folder.setFlags(feat_folder.flags() & ~Qt.ItemIsSelectable)
+                for feat_name in sorted(features.keys()):
+                    feat_item = QTreeWidgetItem(feat_folder, [feat_name])
+                    feat_item.setIcon(0, get_icon("module"))
+                    feat_item.setFlags(feat_item.flags() & ~Qt.ItemIsSelectable)
+                    for e in features[feat_name]:
+                        self._add_tree_file_item(feat_item, e)
+                    feat_item.setExpanded(True)
+                feat_folder.setExpanded(True)
+
+            self._file_tree.expandItem(mod_item)
+
+    def _add_tree_file_item(self, parent: QTreeWidgetItem, entry):
+        """在文件树中添加一个文档文件项。"""
+        if self._registry:
+            doc_def = self._registry.get(entry.doc_type)
+            label = doc_def.description if doc_def else Path(entry.path).name
+        else:
+            label = Path(entry.path).name
+        item = QTreeWidgetItem(parent, [label])
+        item.setData(0, Qt.UserRole, entry.path)
+        item.setData(0, Qt.UserRole + 1, "file")
+        if entry.status == "active":
+            item.setIcon(0, get_icon("file-text"))
+        elif entry.status == "invalid":
+            item.setIcon(0, get_icon("file"))
+        elif entry.status == "deprecated":
+            item.setForeground(0, Qt.gray)
+            item.setIcon(0, get_icon("warning"))
+        elif entry.status == "archived":
+            item.setForeground(0, Qt.lightGray)
+            item.setIcon(0, get_icon("archive"))
+        else:
+            item.setIcon(0, get_icon("file"))
 
     def _on_file_changed(self, current, _previous):
         """加载目标文件原文到预览区，清空选中位置。"""
@@ -321,7 +410,12 @@ class AddLinkDialog(QDialog):
         self._selected_position = -1
         if current is None:
             return
-        target_rel = current.data(Qt.UserRole)
+        # 仅响应文件节点（非模块/文件夹节点）
+        if current.data(0, Qt.UserRole + 1) != "file":
+            return
+        target_rel = current.data(0, Qt.UserRole)
+        if not target_rel:
+            return
         root = self._project_root()
         if root is None:
             return
@@ -339,11 +433,11 @@ class AddLinkDialog(QDialog):
         self._selected_position = position
 
     def _validate(self):
-        file_item = self._file_list.currentItem()
-        anchor = self._anchor_edit.text().strip()
-        if file_item is None:
+        file_item = self._file_tree.currentItem()
+        if file_item is None or file_item.data(0, Qt.UserRole + 1) != "file":
             QMessageBox.warning(self, "提示", "请先选择目标文件")
             return
+        anchor = self._anchor_edit.text().strip()
         if self._selected_position < 0:
             QMessageBox.warning(self, "提示", "请在目标文件原文中点击选择锚点插入位置")
             return
@@ -357,7 +451,7 @@ class AddLinkDialog(QDialog):
             )
             return
         self._result = {
-            "target_rel": file_item.data(Qt.UserRole),
+            "target_rel": file_item.data(0, Qt.UserRole),
             "anchor": anchor,
             "position": self._selected_position,
         }

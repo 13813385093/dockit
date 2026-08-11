@@ -52,8 +52,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("doc-kit UI")
-        self.resize(1280, 800)
-
+        
         # 当前项目状态
         self._project_root: Path | None = None
         self._index: IndexManager | None = None
@@ -89,6 +88,7 @@ class MainWindow(QMainWindow):
             if last_path.exists():
                 self.load_project(last_path)
 
+        self.showMaximized()
     # ── UI 搭建 ──────────────────────────────────────────────
 
     def _prompt_save(self) -> bool:
@@ -247,7 +247,7 @@ class MainWindow(QMainWindow):
         self._recent_btn.setText(" 打开项目 ")
         self._recent_btn.setToolTip("打开项目或选择最近的项目")
         self._recent_btn.setPopupMode(QToolButton.InstantPopup)
-        self._recent_btn.setFixedWidth(100)
+        self._recent_btn.setFixedWidth(160)
         self._refresh_recent_menu()
         toolbar.addWidget(self._recent_btn)
 
