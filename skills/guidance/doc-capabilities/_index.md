@@ -42,7 +42,7 @@
 
 | doc_type | 文件名 | 必选 | 一句话能力 |
 |----------|--------|------|-----------|
-| `feature_design` | feature-design.md | ✅ | 功能行为规格：功能描述、触发条件、处理流程、边界约束（What） |
+| `feature_design` | feature-design.md | ✅ | 功能行为规格：功能描述、触发条件、处理流程、边界约束（What）+ 函数调用关系（函数级静态结构） |
 | `decision_log` | decision-log.md | ✅ | 设计决策理由与替代方案（Why，只追加不改写） |
 | `unit_test` | unit-tests.md | ✅ | GWT 单元测试用例（代码正确性），「覆盖约束」行引用约束 ID |
 | `acceptance_test` | acceptance-tests.md | ✅ | Gherkin 验收场景（业务符合性） |
@@ -69,7 +69,7 @@
 | 模块组件 / 内部流程 | `architecture` | §组件划分 / §关键流程 |
 | 领域实体 / 业务不变条件 | `domain_model` | §聚合根 / §实体 / §领域约束 |
 | 外部系统对接 / 降级 | `integration` | §外部系统概览 / §错误处理与降级 |
-| 功能行为 / 触发 / 边界约束 | `feature_design` | §功能描述 / §触发条件 / §边界约束 |
+| 功能行为 / 触发 / 边界约束 / 函数签名与调用 | `feature_design` | §功能描述 / §触发条件 / §边界约束 / §函数调用关系 |
 | 选型理由 / 方案对比 / 权衡 | `decision_log` | 追加一条新决策记录（不改写旧记录） |
 | 单元测试用例 | `unit_test` | 新增 GWT 用例（含「覆盖约束」行） |
 | 业务验收场景 | `acceptance_test` | 新增 Gherkin 场景 |
