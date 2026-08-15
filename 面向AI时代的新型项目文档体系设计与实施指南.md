@@ -663,6 +663,15 @@ features/order-timeout-cancel/
 ### 边界约束
 - [MUST] C-101 扫描周期 ≤ 5 分钟
 - [MUST] C-102 取消与释放库存原子执行（同一事务）
+
+### 函数调用关系
+
+| 函数 | 签名 | 职责 | 调用 |
+|------|------|------|------|
+| cancelExpiredOrders | (ctx context.Context) error | 扫描并取消超时订单（入口） | findExpiredOrders、cancelOrder、releaseStock |
+| findExpiredOrders | (ctx context.Context) ([]Order, error) | 查询超时未支付订单 | — |
+| cancelOrder | (order Order) error | 标记订单已取消 | — |
+| releaseStock | (order Order) error | 释放订单占用库存 | — |
 ```
 
 ##### decision-log.md — 决策溯源 (Why，左翼)
@@ -988,7 +997,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 [描述输入状态、前置数据]
 
 #### When 触发动作
-[调用哪个函数、传入什么参数]
+[调用哪个函数、传入什么参数；函数名引用 feature-design.md 的「函数调用关系」章节（§3.5.10）]
 
 #### Then 预期结果
 - [预期返回值 / 状态变化 / 异常]
@@ -1079,6 +1088,35 @@ implemented_in:
 
 > 与 `depends_on` 的分工：`depends_on` 是文档域内部的依赖（文档↔文档），实现映射是跨域链接（文档→代码），两维正交、缺一不可——前者保证文档自洽，后者保证文档与实现一致。
 
+#### 3.5.10 函数调用关系规范（设计 → 编码的桥）
+
+函数调用关系是 `feature-design.md` 的固有章节（§3.3.2），描述单功能的**函数级静态结构**——函数签名与调用关系，弥补从行为规格到代码实现之间的最后一步：`implemented_in` 定位代码落点（Where），函数调用关系设计代码如何组织（How 的静态骨架）。
+
+**定位与边界**：
+
+- 只设计**函数边界**（函数名 + 入参/出参 + 职责 + 调用链），不写函数体、分支、循环或伪代码——实现代码归 `implemented_in` 声明的源码文件（§3.5.9）。
+- 只描述**本功能内部**的函数调用；跨组件/跨模块调用归 `architecture.md`（组件关系）与 `inter-module-contracts.md`（接口契约）。
+- 与 `unit-tests.md` 联动：单元测试的 `When 触发动作` 应引用本章节的函数名，使「测哪个函数」有权威来源（§3.5.6）。
+
+**签名表达**：
+
+- 签名用 `implemented_in` 声明的语言表达；未声明语言时用语言无关伪签名（如 `(samples []Sample, threshold float64) → TripCmd`）。
+- 入口函数标注「入口」；`调用` 列列出被调用的函数名，无则记 `—`。
+
+**格式**：
+
+```markdown
+### 函数调用关系
+
+| 函数 | 签名 | 职责 | 调用 |
+|------|------|------|------|
+| detectOverVoltage | (samples []Sample, threshold float64) → TripCmd | 电压越限检测（入口） | evaluateThreshold、issueTrip |
+| evaluateThreshold | (samples []Sample, threshold float64) → bool | 判断采样值是否越限 | — |
+| issueTrip | (cmd TripCmd) → error | 生成并发送跳闸报文 | — |
+```
+
+> 复杂调用链可用 mermaid `flowchart` 代码块补充；`处理流程` 的每个步骤应能映射到表中一个或多个函数。
+
 ### 3.6 文档类型注册表
 
 本节完整枚举本体系定义的 18 种文档类型（15 种基础类型 + 3 种复合类型），明确每种类型的责任、层级归属、版本策略和依赖规则。
@@ -1108,7 +1146,7 @@ implemented_in:
 
 | 编号   | doc_type          | 文件名                | 必选？  | 责任                        | 版本策略                     | 可依赖目标                 | 编写顺序 |
 | ---- | ----------------- | ------------------ | ---- | ------------------------- | ------------------------ | --------------------- | ---- |
-| T-11 | `feature_design`  | feature-design.md   | ✅ 必选 | 功能行为规格：触发条件、流程、约束  | 功能规格变更时递增   | T-07, T-08       | 11th |
+| T-11 | `feature_design`  | feature-design.md   | ✅ 必选 | 功能行为规格：触发条件、流程、约束、函数调用关系  | 功能规格变更时递增   | T-07, T-08       | 11th |
 | T-12 | `decision_log`    | decision-log.md     | ✅ 必选 | 关键设计决策：背景、方案对比、选型理由 | 决策变更时递增     | T-11              | 12th |
 | T-13 | `unit_test`       | unit-tests.md       | ✅ 必选 | 单元级别的代码正确性验证         | 测试用例变更时递增   | T-11              | 13th |
 | T-14 | `acceptance_test` | acceptance-tests.md | ✅ 必选 | BDD 验收场景：业务行为验证       | 验收场景变更时递增   | T-11, T-12       | 14th |

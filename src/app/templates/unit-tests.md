@@ -45,9 +45,10 @@ depends_on: []                # 声明依赖的其他文档（见 §3.5.7）
 #### When 触发动作
 
 <!-- 
-描述测试的触发动作。
+描述测试的触发动作；调用函数时引用 feature-design.md「函数调用关系」章节的函数名（见 §3.5.6）。
 正例：
   保护装置监测到电压异常
+  调用 detectOverVoltage(samples, threshold)
 -->
 
 - <!-- 触发动作 -->
