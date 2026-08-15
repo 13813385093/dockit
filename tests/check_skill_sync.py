@@ -18,9 +18,18 @@ SKILL_DIR = REPO / "skills"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+# CLI 命令分组（正则捕获组）。dev 组为两级子命令（如 `dev plan create`），
+# 因此允许捕获至多两个单词，其余组为单级命令（如 `doc update-section`）。
+# 仅匹配行内空格（[ \t]+），避免跨行误匹配。
+GROUP_RE = re.compile(r"cli\.py[ \t]+(spec|doc|review|dev)((?:[ \t]+[a-z][a-z-]*){1,2})")
+
 
 def extract_commands() -> dict[str, set[str]]:
-    """从 cli.py 的 argparse 定义提取 {group: set(command)}。"""
+    """从 cli.py 的 argparse 定义提取 {group: set(完整命令路径)}。
+
+    递归遍历嵌套 subparsers，叶子命令以「子组 命令」形式记录（如
+    "plan create" / "status"），与 SKILL.md 中的调用形式一一对应。
+    """
     import argparse
 
     import cli  # noqa: E402
@@ -29,25 +38,32 @@ def extract_commands() -> dict[str, set[str]]:
     sub_actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
     if not sub_actions:
         return {}
-    group_parsers = sub_actions[0].choices  # type: ignore[attr-defined]
+
+    def walk(p, prefix: str) -> set[str]:
+        leaves: set[str] = set()
+        for action in p._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                for name, subparser in action.choices.items():
+                    sub_leaves = walk(subparser, prefix + name + " ")
+                    if sub_leaves:
+                        leaves.update(sub_leaves)
+                    else:
+                        leaves.add(prefix + name)
+        return leaves
+
     result: dict[str, set[str]] = {}
-    for gname, gparser in group_parsers.items():
-        inner = [a for a in gparser._actions if isinstance(a, argparse._SubParsersAction)]  # type: ignore[attr-defined]
-        cmds: set[str] = set()
-        if inner:
-            cmds.update(inner[0].choices.keys())  # type: ignore[attr-defined]
-        result[gname] = cmds
+    for gname, gparser in sub_actions[0].choices.items():
+        result[gname] = walk(gparser, "")
     return result
 
 
 def extract_skill_refs() -> set[tuple[str, str]]:
-    """从 skill/*/SKILL.md 提取所有 `cli.py <group> <command>` 引用。"""
+    """从 skill/*/SKILL.md 提取所有 `cli.py <group> <命令...>` 引用。"""
     refs: set[tuple[str, str]] = set()
-    pattern = re.compile(r"cli\.py\s+(spec|doc|review)\s+([a-z][a-z-]*)")
     for md_file in sorted(SKILL_DIR.glob("**/SKILL.md")):
         text = md_file.read_text(encoding="utf-8")
-        for m in pattern.finditer(text):
-            refs.add((m.group(1), m.group(2)))
+        for m in GROUP_RE.finditer(text):
+            refs.add((m.group(1), m.group(2).strip()))
     return refs
 
 

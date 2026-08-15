@@ -121,4 +121,23 @@ def cli_env(tmp_project):
         add_section=lambda ref, heading, content="", level="sibling": cli.cmd_doc_add_section(
             root, ref, heading, content, level),
         doc_structure=lambda: cli.cmd_doc_structure(root),
+        # ── dev（spec-dev-loop）──
+        dev_status=lambda: cli.cmd_dev_status(root),
+        dev_plan_create=lambda scope, target, module=None, title=None, session=None: cli.cmd_dev_plan_create(
+            root, scope, target, module, title, session),
+        dev_plan_read=lambda: cli.cmd_dev_plan_read(root),
+        dev_plan_update_section=lambda ref, content: cli.cmd_dev_plan_update_section(root, ref, content),
+        dev_plan_add_section=lambda ref, heading, content="", level="sibling": cli.cmd_dev_plan_add_section(
+            root, ref, heading, content, level),
+        dev_task_list=lambda: cli.cmd_dev_task_list(root),
+        dev_task_set=lambda tasks_json: cli.cmd_dev_task_set(root, tasks_json),
+        dev_task_update=lambda tid, status, note="": cli.cmd_dev_task_update(root, tid, status, note),
+        dev_task_annotate=lambda tid, note: cli.cmd_dev_task_annotate(root, tid, note),
+        dev_align=lambda feature, module, status, note="": cli.cmd_dev_align(root, feature, module, status, note),
+        dev_integrate=lambda module, status, note="": cli.cmd_dev_integrate(root, module, status, note),
+        dev_notes_append=lambda content, section=None: cli.cmd_dev_notes_append(root, content, section),
+        dev_report_write=lambda kind, name, content: cli.cmd_dev_report_write(root, kind, name, content),
+        dev_close=lambda reason: cli.cmd_dev_close(root, reason),
+        dev_abort=lambda reason: cli.cmd_dev_abort(root, reason),
+        dev_archive=lambda: cli.cmd_dev_archive(root),
     )
