@@ -7,11 +7,13 @@ bin-release/
 
 # Other files and folders
 .settings/
+.codegraph/
 pkg/
 dist/
 build/
 __pycache__/
 .reasonix/
+reasonix.toml
 
 # 本软件元数据目录（开发态位于仓库根，与 exe 同级 .meta/）
 .meta/
