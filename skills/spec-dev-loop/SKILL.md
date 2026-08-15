@@ -6,7 +6,9 @@ description: 根据 ProjectSpec 设计执行 开发->自测->缺陷修复->回�
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
 
-**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。
+**例外一（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。
+
+**例外二（git 操作）**：所有 git 操作（`git branch` / `git checkout` / `git rev-parse` 等）一律使用 `bash` 工具执行——git 不在 doc-kit CLI 的职责范围（与 spec-smart-git / spec-code-review 相同的边界）。
 
 **核心纪律：ProjectSpec 全程只读（不可协商）**
 
@@ -68,15 +70,28 @@ ProjectSpec 中的 `feature-design.md`（§函数调用关系 / §边界约束�
 4. **自测必须真实运行**：GWT 是语言无关描述，必须翻译成真实测试代码（`implemented_in` 声明的语言与路径）并实际跑通——禁止写 trivial 测试糊弄自测（假绿）
 5. **一次只有一个活跃开发循环**（串行约束）：新的循环必须等当前循环 close/abort + archive 后开启
 
+## git 分支策略（开发分支隔离，人工合并）
+
+> **原则**：git 提交意味着代码进入仓库，但开发中提交的代码可能是与设计文档**未对齐**的状态（ProjectSpec 的更新流程不在开发循环内）。因此所有开发提交都发生在**独立开发分支**上，主分支永远不受未对齐状态污染；合并回主分支是**人工**在循环外完成的动作。
+
+- **git 操作一律使用 `bash` 工具执行**（与 spec-smart-git / spec-code-review 相同的边界；CLI 不执行 git）
+- **分支命名**：`dev-loop/<session_id>`，与开发循环**严格一一对应**（开发任务串行，一次一个活跃循环 → 一次一个活跃开发分支）
+- **分支创建时机**：Phase 1 规划完成、第一个任务开始前（`git checkout -b dev-loop/<sid>`，从当前分支创建）
+- **分支记录**：`dev plan create` 自动在 `dev-spec.json` 记录建议分支名 `dev-loop/<sid>`，并在 plan.md §6 分支信息 中注明；如人工调整分支名，用 `dev plan update-section 'plan.md#6. 分支信息'` 更新记录
+- **提交**：循环内所有提交（任务 done / 功能对齐，走 spec-smart-git）都在开发分支上进行
+- **断点续跑检查**：Phase 0 调 `dev status` 后，检查 `git branch --show-current` 是否等于 plan.md §6 记录的分支名；**不一致则 `git checkout <分支名>` 自动切换**，再继续
+- **合并（人工，循环外）**：`dev close` 后提示——代码位于 `dev-loop/<sid>` 分支，由人工评审/验收通过后合并回主分支并删除开发分支；循环内不做任何合并/推送
+- **退化策略**：项目不是 git 仓库时，跳过全部 git 操作，提交完全由人工决定
+
 ## 流程总览
 
 ```
-Phase 0 — 入口：dev status（断点检测）
-Phase 1 — 规划（人机交互）：dev plan create → 读取范围文档 → 约束整合 → 任务提案 → 用户确认边界 → dev task set
-Phase 2 — 任务循环（LOOP）：拓扑序执行任务（in-progress → implemented → unit-green / fixing → done）
+Phase 0 — 入口：dev status（断点检测 + 分支检查）
+Phase 1 — 规划（人机交互）：dev plan create → 读取范围文档 → 约束整合 → 任务提案 → 用户确认边界 → dev task set → 创建开发分支
+Phase 2 — 任务循环（LOOP）：拓扑序执行任务（in-progress → implemented → unit-green / fixing → done，提交在开发分支）
 Phase 3 — 功能对齐：验收测试（自动化为主）→ G4 约束覆盖 → 回归 → dev align → 功能报告
 Phase 4 — 模块集成：G3 契约闭合 + 契约字段校验 → dev integrate → CodeNotes 整理 → 模块开发报告 → documented → done
-Phase 5 — 收尾：dev close → dev archive
+Phase 5 — 收尾：dev close（提示人工合并分支）→ dev archive
 ```
 
 ## Phase 0：入口
@@ -165,6 +180,17 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 }
 ```
 
+### Step 6：创建开发分支（第一个任务开始前）
+
+规划完成后、进入任务循环前，创建与本次开发循环严格对应的独立开发分支：
+
+1. 确认项目是 git 仓库：`git rev-parse --git-dir`；不是 git 仓库则跳过本步骤（提交完全由人工决定）
+2. 分支名取 `dev-spec.json` 记录的建议值 `dev-loop/<sid>`（或 plan.md §6 人工调整后的名称）
+3. 从当前分支创建并切换：`git checkout -b dev-loop/<sid>`
+4. 确认 plan.md §6 分支信息 与 dev-spec.json 的 branch 一致；若人工调整了分支名，用 `dev plan update-section 'plan.md#6. 分支信息' --content ...` 更新记录
+
+> 所有开发提交（Phase 2-4）都在此分支上进行；合并回主分支由人工在循环外完成（Phase 5）。
+
 ## Phase 2：任务循环（LOOP）
 
 对拓扑序中的每个 pending 任务执行：
@@ -200,7 +226,7 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 `dev task update <id> --status done`。任务 DoD：
 - 函数签名与 §函数调用关系 一致，位于 `implemented_in` 路径内
 - 覆盖约束对应的 GWT 场景全部真实通过
-- 代码提交（可调 spec-smart-git 智能提交）
+- 代码提交（可调 spec-smart-git 智能提交；**提交必须落在开发分支 `dev-loop/<sid>` 上**，提交前先确认 `git branch --show-current`）
 
 ## Phase 3：功能对齐
 
@@ -299,12 +325,20 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 ## Phase 5：收尾
 
 1. `dev close --reason '<原因>'`（正常完成）或 `dev abort --reason '<原因>'`（非正常终止）
-2. `dev archive` 将整个会话目录移入 `DevSpec/archive/`，释放串行约束
-3. 下次开发 = 新会话：`dev plan create` 重新生成，互不干扰
+2. **提示人工合并分支**：代码位于 `dev-loop/<sid>` 分支（plan.md §6 记录），请人工评审/验收通过后合并回主分支并删除开发分支——循环内不做任何合并/推送
+3. `dev archive` 将整个会话目录移入 `DevSpec/archive/`，释放串行约束
+4. 下次开发 = 新会话：`dev plan create` 重新生成（含新开发分支），互不干扰
 
 ## 断点续跑
 
 开发很少一次跑完：每次进入先 `dev status` 查看进度，从 pending 任务 / 待对齐功能 / 待集成模块处继续。循环中所有状态均持久化在 `DevSpec/active/<sid>/`（dev-spec.json + tasks.json + plan.md + code-notes.md）。
+
+**分支检查（强制）**：`dev status` 会输出开发分支名（dev-spec.json 的 branch / plan.md §6），继续开发前先执行：
+```bash
+git branch --show-current        # 当前分支
+git checkout <记录的分支名>       # 不一致时自动切换，再继续任务
+```
+分支与开发循环严格一一对应：一个活跃循环 = 一个活跃开发分支。
 
 ## 与其它技能的分工
 

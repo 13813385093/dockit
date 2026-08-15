@@ -104,6 +104,11 @@ class TestDevPlanCreate:
         assert dev_spec["scope_type"] == "module"
         assert dev_spec["scope_target"] == "order"
         assert dev_spec["status"] == "active"
+        # 分支信息：dev-spec.json 记录建议分支名，plan.md §6 记录分支章节
+        assert dev_spec["branch"] == f"dev-loop/{sid}"
+        plan_text = (session_dir / "plan.md").read_text(encoding="utf-8")
+        assert "## 6. 分支信息" in plan_text
+        assert f"dev-loop/{sid}" in plan_text
 
     def test_create_feature_scope(self, tmp_project, cli_env):
         _make_project(tmp_project)
@@ -195,6 +200,16 @@ class TestDevPlanTasks:
         assert len(tasks) == 2
         assert tasks[0]["entry_function"] == "cancelExpiredOrders"
         assert tasks[0]["status"] == "pending"
+
+    def test_status_reports_branch(self, tmp_project, cli_env):
+        """dev status 输出开发分支名，供断点续跑时比对当前 git 分支。"""
+        _make_project(tmp_project)
+        sid = _create_feature_session(cli_env)
+        result = _parse(cli_env.dev_status())
+        assert result["success"] is True
+        assert result["data"]["branch"] == f"dev-loop/{sid}"
+        assert f"**开发分支**: dev-loop/{sid}" in result["message"]
+        assert any("git branch --show-current" in s for s in result["suggestions"])
 
 
 class TestDevTaskTransitions:

@@ -938,6 +938,12 @@ ProjectSpec 在开发循环内只读，此处仅整合不修改。 -->
 ## 5. 完成标准
 
 <!-- 对齐目标：G4 约束覆盖 / G5 测试全绿 / 功能验收对齐 / 模块集成契约闭合。 -->
+
+## 6. 分支信息
+
+<!-- 开发分支：dev-loop/{session_id}（建议值，可人工调整后在此记录）。
+断点续跑时先检查当前分支（git branch --show-current），与记录不一致则 git checkout 切换。
+所有开发提交都在此分支，合并回主分支由人工在循环外完成。 -->
 """
 
 CODE_NOTES_SKELETON = """# CodeNotes — {title}
@@ -1079,6 +1085,7 @@ def cmd_dev_status(project_root: Path) -> str:
     dev_spec = _load_dev_spec(session_dir)
     tasks = _load_dev_tasks(session_dir)
     sid = dev_spec.get("session_id", session_dir.name)
+    branch = dev_spec.get("branch", "") or ""
     total = len(tasks)
     done = sum(1 for t in tasks if t.get("status") == "done")
     lines = [
@@ -1088,6 +1095,8 @@ def cmd_dev_status(project_root: Path) -> str:
         f"**范围**: {dev_spec.get('scope_type')} {dev_spec.get('scope_target')} · {dev_spec.get('title', '')}",
         f"**任务进度**: {done}/{total} done",
     ]
+    if branch:
+        lines.append(f"**开发分支**: {branch}")
     if tasks:
         lines.append("")
         lines.append("| 任务 | 标题 | 状态 |")
@@ -1108,6 +1117,10 @@ def cmd_dev_status(project_root: Path) -> str:
             lines.append(f"- {mname}: {info.get('status')}")
 
     suggestions = []
+    if branch:
+        suggestions.append(
+            f"分支检查：git branch --show-current 应为 {branch}；不一致则 git checkout {branch}（或按 plan.md §6 记录的分支名）。"
+        )
     next_task = next((t for t in tasks if t.get("status") == "pending"), None)
     if next_task:
         suggestions.append(f"下一步：dev task update {next_task['task_id']} --status in-progress 开始任务。")
@@ -1129,6 +1142,7 @@ def cmd_dev_status(project_root: Path) -> str:
             "scope_target": dev_spec.get("scope_target"),
             "title": dev_spec.get("title"),
             "status": dev_spec.get("status"),
+            "branch": branch,
             "tasks": tasks,
             "features": features,
             "modules": modules,
@@ -1185,12 +1199,14 @@ def cmd_dev_plan_create(
 
     scope_label = "模块" if scope == "module" else "功能"
     title = title or f"{scope_label} {target} 开发循环"
+    branch = f"dev-loop/{sid}"  # 建议值；人工可调整，dev plan update-section 'plan.md#6. 分支信息' 记录最终分支名
     dev_spec = {
         "session_id": sid,
         "scope_type": scope,
         "scope_target": target,
         "module": module or target,
         "title": title,
+        "branch": branch,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "active",
         "closed_at": None,
@@ -1209,7 +1225,8 @@ def cmd_dev_plan_create(
             json.dumps({"version": 1, "tasks": []}, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         (session_dir / "plan.md").write_text(
-            PLAN_SKELETON.format(title=title, scope_type=scope, target=target), encoding="utf-8"
+            PLAN_SKELETON.format(title=title, scope_type=scope, target=target, session_id=sid),
+            encoding="utf-8",
         )
         (session_dir / "code-notes.md").write_text(
             CODE_NOTES_SKELETON.format(title=title), encoding="utf-8"
@@ -1218,13 +1235,14 @@ def cmd_dev_plan_create(
         return _fail(f"ERROR [dev_plan.write_failed] 写会话骨架失败: {e}。")
 
     return _ok(
-        message=f"## ✅ 开发循环已创建\n\n**会话**: {sid}\n\n位于 DevSpec/active/{sid}/",
+        message=f"## ✅ 开发循环已创建\n\n**会话**: {sid}\n**开发分支**: {branch}\n\n位于 DevSpec/active/{sid}/",
         data={"session_id": sid, "path": str(session_dir.relative_to(project_root).as_posix()),
-              "scope_type": scope, "scope_target": target},
+              "scope_type": scope, "scope_target": target, "branch": branch},
         suggestions=[
             "读取范围文档：doc structure / doc read（ProjectSpec 只读）。",
             "整合约束：dev plan update-section '<plan.md>#2. 约束整合' --content ...",
             "确认任务边界后写入：dev task set --json '<tasks 数组>'（全量替换）。",
+            f"第一个任务开始前创建开发分支：git checkout -b {branch}（从当前分支）。",
         ],
     )
 
