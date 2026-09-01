@@ -2,6 +2,7 @@
 name: spec-dev-loop
 description: 根据 ProjectSpec 设计执行 开发->自测->缺陷修复->回归->报告提交 的开发循环
 ---
+
 # 最高优先级：
 
 在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
@@ -17,13 +18,15 @@ description: 根据 ProjectSpec 设计执行 开发->自测->缺陷修复->回�
 - 开发中发现的**设计问题只记录到 CodeNotes 与报告**（`dev notes append` / `dev report-write`），**不修改 ProjectSpec**
 - 设计修改的决策留给循环外的评审/会议流程（那里有版本递增与人工确认机制），循环内只记录、不执行
 
+**CLI 容灾 Fallback（紧急直读）**
+若 `dev task list` / `dev status` 因 CLI 异常（非 JSON 输出、超时或 Python 报错）**连续失败 2 次**，AI 可降级为**直接只读** `DevSpec/active/<sid>/tasks.json` 和 `dev-spec.json` 以解析当前断点状态（使用 `read_file` 工具，**仅限当前活跃会话目录**，且必须遵守“禁止写”原则）。此降级操作必须在 `dev notes append` 中记录“CLI Fallback 触发”。写操作（状态更新）仍优先尝试 CLI，若 CLI 写失败则**必须停止**并提示用户检查 doc-kit 安装，不可直接写入 tasks.json。
+
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
 
 工具调用（从项目根执行）：
 
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
-# —— DevSpec（开发循环工作区）——
 python .doc-kit/cli/cli.py dev status
 python .doc-kit/cli/cli.py dev plan create --scope <module|feature> --target <范围> [--module <模块>] [--title <标题>] [--session <id>]
 python .doc-kit/cli/cli.py dev plan read
@@ -40,13 +43,11 @@ python .doc-kit/cli/cli.py dev report-write --kind <feature|module> --name <目�
 python .doc-kit/cli/cli.py dev close --reason '<原因>'
 python .doc-kit/cli/cli.py dev abort --reason '<原因>'
 python .doc-kit/cli/cli.py dev archive
-# —— ProjectSpec（只读）——
 python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
----
 
 # spec-dev-loop — 开发执行循环
 
@@ -76,7 +77,7 @@ ProjectSpec 中的 `feature-design.md`（§函数调用关系 / §边界约束�
 
 - **git 操作一律使用 `bash` 工具执行**（与 spec-smart-git / spec-code-review 相同的边界；CLI 不执行 git）
 - **分支命名**：`dev-loop/<session_id>`，与开发循环**严格一一对应**（开发任务串行，一次一个活跃循环 → 一次一个活跃开发分支）
-- **分支创建时机**：Phase 1 规划完成、第一个任务开始前（`git checkout -b dev-loop/<sid>`，从当前分支创建）
+- **分支创建时机**：Phase 1 `dev task set` 成功后、Phase 2 第一个任务开始前（详见 Phase 1 Step 6）
 - **分支记录**：`dev plan create` 自动在 `dev-spec.json` 记录建议分支名 `dev-loop/<sid>`，并在 plan.md §6 分支信息 中注明；如人工调整分支名，用 `dev plan update-section 'plan.md#6. 分支信息'` 更新记录
 - **提交**：循环内所有提交（任务 done / 功能对齐，走 spec-smart-git）都在开发分支上进行
 - **断点续跑检查**：Phase 0 调 `dev status` 后，检查 `git branch --show-current` 是否等于 plan.md §6 记录的分支名；**不一致则 `git checkout <分支名>` 自动切换**，再继续
@@ -87,7 +88,7 @@ ProjectSpec 中的 `feature-design.md`（§函数调用关系 / §边界约束�
 
 ```
 Phase 0 — 入口：dev status（断点检测 + 分支检查）
-Phase 1 — 规划（人机交互）：dev plan create → 读取范围文档 → 约束整合 → 任务提案 → 用户确认边界 → dev task set → 创建开发分支
+Phase 1 — 规划（人机交互）：dev plan create → 读取范围文档 → 代码考古（Step 3.5） → 约束整合（含风格快照） → 任务提案 → 用户确认边界 → dev task set → 创建开发分支
 Phase 2 — 任务循环（LOOP）：拓扑序执行任务（in-progress → implemented → unit-green / fixing → done，提交在开发分支）
 Phase 3 — 功能对齐：验收测试（自动化为主）→ G4 约束覆盖 → 回归 → dev align → 功能报告
 Phase 4 — 模块集成：G3 契约闭合 + 契约字段校验 → dev integrate → CodeNotes 整理 → 模块开发报告 → documented → done
@@ -125,6 +126,15 @@ Phase 5 — 收尾：dev close（提示人工合并分支）→ dev archive
 2. `doc read` 读取范围内文档：功能 → `feature-design.md` + `unit-tests.md` + `acceptance-tests.md` + `decision-log.md`；模块 → `architecture.md` + `domain-model.md` + `module-manifest.md` + `integration.md`
 3. 沿 `depends_on` / imports 读取相关的顶层文档（`global-policies.md` / `inter-module-contracts.md` / `non-functional-constraints.md` 等）
 
+### Step 3.5：代码考古（上下文嗅探）
+
+在阅读文档之后、整合约束之前，必须扫描目标模块内的实际现有代码，提取隐性风格规范（命名约定、错误处理模式、现有工具类/中间件、日志格式），防止生成代码与存量代码风格割裂。
+
+- 使用 bash 工具执行：
+`find <模块源码路径> -type f \( -name "*.go" -o -name "*.java" -o -name "*.py" -o -name "*.ts" \) | head -5 | xargs cat`（根据项目主语言调整扩展名）
+- 若模块路径为空或找不到文件，则从项目根同语言入口文件取样
+- 将提取的模式摘要（如 错误返回格式: errors.New(...)、日志: log.WithField(...)）用 dev plan update-section 'plan.md#2.5 代码风格快照' --content ... 记录到计划表，作为后续实现的强制风格约束
+
 ### Step 4：整合约束到计划表
 
 调 `dev plan update-section '<plan.md>#2. 约束整合' --content ...`，把散落在各文档的相关约束**整合到计划表**，每条注明来源引用（体系引用格式，如 `feature-design@order-timeout-cancel:C-101`）：
@@ -134,6 +144,7 @@ Phase 5 — 收尾：dev close（提示人工合并分支）→ dev archive
 - 接口契约（inter-module-contracts 字段级定义）
 - 领域约束（domain-model）
 - 验收标准摘要（acceptance-tests 场景清单）
+- 代码风格快照（来自 Step 3.5）
 
 > 目标：执行任务时，AI 只需读 plan.md 的任务卡 + `implemented_in` 源码，无需回翻 ProjectSpec。计划表是开发循环的**唯一工作上下文**。
 
@@ -147,7 +158,7 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 向用户展示提案（格式示例）：
 
 ```
-📋 开发计划提案：order-timeout-cancel（order 模块）
+开发计划提案：order-timeout-cancel（order 模块）
 
 任务清单（按依赖拓扑序，共 2 个）：
   T1  扫描并取消超时订单（入口）
@@ -182,12 +193,13 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 
 ### Step 6：创建开发分支（第一个任务开始前）
 
-规划完成后、进入任务循环前，创建与本次开发循环严格对应的独立开发分支：
+`dev task set` 成功后、进入 Phase 2 任务循环前，创建独立开发分支：
 
 1. 确认项目是 git 仓库：`git rev-parse --git-dir`；不是 git 仓库则跳过本步骤（提交完全由人工决定）
 2. 分支名取 `dev-spec.json` 记录的建议值 `dev-loop/<sid>`（或 plan.md §6 人工调整后的名称）
-3. 从当前分支创建并切换：`git checkout -b dev-loop/<sid>`
-4. 确认 plan.md §6 分支信息 与 dev-spec.json 的 branch 一致；若人工调整了分支名，用 `dev plan update-section 'plan.md#6. 分支信息' --content ...` 更新记录
+3. 尝试从当前分支创建并切换： `git checkout -b dev-loop/<sid>`
+4. 若创建失败（分支已存在、非 git 仓库等），立即执行 dev abort --reason "Git 分支创建失败: <错误信息>"，并提示用户手动处理（删除旧分支或切换仓库）后重新 `/spec-dev-loop`。 **严禁在无分支状态下进入 Phase 2**。
+5. 确认 plan.md §6 分支信息 与 dev-spec.json 的 branch 一致；若人工调整了分支名，用 `dev plan update-section 'plan.md#6. 分支信息' --content ...` 更新记录
 
 > 所有开发提交（Phase 2-4）都在此分支上进行；合并回主分支由人工在循环外完成（Phase 5）。
 
@@ -195,13 +207,35 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 
 对拓扑序中的每个 pending 任务执行：
 
+### 任务超时与重试
+每个任务卡必须包含 timeout_seconds 字段（默认 300 秒）：
+
+  timeout_seconds: 300       # 单任务最大执行时间
+  retry_count: 0             # 自动重试次数（测试偶发失败时）
+  retry_delay: 5             # 重试前等待秒数
+
+执行策略：
+1. 任务执行超过 timeout_seconds 秒无输出，自动 abort 并标记为 timed_out
+2. timed_out 的任务自动重试 retry_count 次，每次间隔 retry_delay 秒
+3. 重试后仍失败，标记为 failed 并记录到 CodeNotes，暂停后续任务执行
+4. 用户可选择：a) 手动修复后 continue <task_id>  b) skip <task_id>  c) abort
+
+超时检测实现：在 bash 中用 timeout 命令包装测试执行
+`timeout ${timeout_seconds}s python -m pytest tests/... 2>&1 | tee evidence/<task_id>.log`
+
 ### Step 1：开始任务
 
 `dev task update <id> --status in-progress`（可在 evidence/ 留测试计划）
 
 ### Step 2：实现
 
-在 `implemented_in` 声明的源码路径实现函数，**签名与 §函数调用关系 一致**；遵守计划表 §2 整合的全部约束。
+在 `implemented_in` 声明的源码路径实现函数，签名与 §函数调用关系 一致；遵守计划表 §2 整合的全部约束（含 §2.5 代码风格快照）。
+
+**代码内自描述性（强制，P0 级）**：
+
+a) 负面路径注释：对于每一个涉及外部 IO、数据库事务、并发锁、网络调用、缓存的函数，必须在函数体或关键逻辑分支旁显式编写 `// NEGATIVE: ...` 注释块，说明当依赖失败（超时/拒绝/空返回/脏数据）时的具体降级、重试或明确报错策略。若文档中未明确定义该负面路径策略，则必须在注释中追加 `// CONFIDENCE: LOW`, 需业务方确认。
+
+b) 决策回溯注释：对于任何业务规则解释存在歧义、或在跨文档冲突“轻/中”档位中选择了合理路径的情况，必须在函数头或关键逻辑旁添加 `// DECISION: ... (Ref: CodeNotes#<条目>)`，使代码本身具备可追溯的设计决策上下文。
 
 ### Step 3：自测（真实运行）
 
@@ -215,8 +249,8 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 
 | 档位 | 情形 | 处理 |
 |------|------|------|
-| 轻 | 实现细节、措辞、测试层级错位（如 unit-tests 设计了 1 小时流量冲击测试，不应在单元层执行） | 采用当下合理方式，`dev task update <id> --status fixing --note '<偏差>'` → 修复 → `dev task annotate` 记录 → `dev notes append` 记录到 CodeNotes，**不碰 ProjectSpec** |
-| 中 | 约束自相矛盾、文档前后不一致 | 选择当下更合理者实现，CodeNotes 详记（发现/判断/依据/影响范围/建议的 Spec 修改），**不碰 ProjectSpec** |
+| 轻 | 实现细节、措辞、测试层级错位（如 unit-tests 设计了 1 小时流量冲击测试，不应在单元层执行） | 采用当下合理方式，`dev task update <id> --status fixing --note '<偏差>'` → 修复 → `dev task annotate` 时，备注内容必须以 `[DEVIATION]` 开头，注明严重等级（轻）；随后 `dev notes append` 记录详情到 CodeNotes，**不碰 ProjectSpec** |
+| 中 | 约束自相矛盾、文档前后不一致 | 选择当下更合理者实现，`dev task annotate` 时，备注内容必须以 `[DEVIATION]` 开头，注明严重等级（中）；随后 `dev notes append` 记录详情（发现/判断/依据/影响范围/建议的 Spec 修改）到 CodeNotes，**不碰 ProjectSpec** |
 | 重 | 跨模块契约（inter-module-contracts / module-manifest）变更、[MUST] 冲突无法裁决 | **停止任务**，升级用户决策；如需改设计，由用户在循环外走会议/人工流程，改完后再恢复循环 |
 
 > 开发过程是**反思设计的过程**：设计文档出现问题时，开发可以选择合理方式实现并记录，评审后可快速追溯到需要调整的位置（报告 → CodeNotes 反链 → 原文档段落）。唯一底线：**不直接修改 ProjectSpec**。
@@ -266,8 +300,10 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 - G4 约束覆盖：C-101 ✓ C-102 ✓ …
 - 回归：<范围 + 结果>
 
-## 设计偏差
-- （引用 CodeNotes §设计文档遗漏与偏差 条目，只记录不修改）
+## 设计偏差汇总（供评审追溯）
+| # | 严重等级 | 偏差描述 | 判断依据 | CodeNotes 条目 | 建议的 Spec 修改 |
+|---|---------|---------|---------|---------------|-----------------|
+| 1 | 轻/中/重 | ... | ... | ... | ... |
 ```
 
 ## Phase 4：模块集成
@@ -311,8 +347,9 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 - <范围 + 结果>
 
 ## 设计偏差汇总（供评审追溯）
-| # | 偏差 | 判断 | CodeNotes 条目 | 建议的 Spec 修改 |
-|---|------|------|---------------|-----------------|
+| # | 严重等级 | 偏差描述 | 判断依据 | CodeNotes 条目 | 建议的 Spec 修改 |
+|---|---------|---------|---------|---------------|-----------------|
+| 1 | 轻/中/重 | ... | ... | ... | ... |
 
 ## 流程与方案改进建议
 - ...
@@ -329,14 +366,14 @@ AI 基于 §函数调用关系 推导任务清单（含拓扑序：**先被调�
 3. `dev archive` 将整个会话目录移入 `DevSpec/archive/`，释放串行约束
 4. 下次开发 = 新会话：`dev plan create` 重新生成（含新开发分支），互不干扰
 
-## 断点续跑
+## 运行前检查
 
-开发很少一次跑完：每次进入先 `dev status` 查看进度，从 pending 任务 / 待对齐功能 / 待集成模块处继续。循环中所有状态均持久化在 `DevSpec/active/<sid>/`（dev-spec.json + tasks.json + plan.md + code-notes.md）。
+每次进入先 `dev status` 查看进度，从 pending 任务 / 待对齐功能 / 待集成模块处继续。循环中所有状态均持久化在 `DevSpec/active/<sid>/`（dev-spec.json + tasks.json + plan.md + code-notes.md）。
 
 **分支检查（强制）**：`dev status` 会输出开发分支名（dev-spec.json 的 branch / plan.md §6），继续开发前先执行：
 ```bash
 git branch --show-current        # 当前分支
-git checkout <记录的分支名>       # 不一致时自动切换，再继续任务
+git checkout <记录的分支名>        # 不一致时自动切换，再继续任务
 ```
 分支与开发循环严格一一对应：一个活跃循环 = 一个活跃开发分支。
 
@@ -347,4 +384,3 @@ git checkout <记录的分支名>       # 不一致时自动切换，再继续�
 | spec-dev-loop（本技能） | 开发执行闭环，ProjectSpec 只读 |
 | spec-smart-git | 代码提交（任务 done / 功能对齐时调用） |
 | spec-code-review | 循环外代码评审（比对设计文档，允许改文档） |
-| SessionSpec 会议 | 纯会议用途，与开发循环互不耦合；设计修改决策走会议/人工流程 |
