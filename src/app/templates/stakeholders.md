@@ -12,7 +12,7 @@ superseded_by:                   # 替代文档列表（废弃且存在替代时
   - doc: <替代文档>
     module: <所属模块>
 archived_at:                     # 归档日期（status=archived 时必填）
-depends_on: []                # 顶层入口文档，无文档依赖；引用其他文档需在此声明（见 §3.5.7）
+depends_on: []                # 顶层文档：可依赖 T-01 business-context.md；引用其他文档需在此声明（见 §3.5.7、§3.6.1）
 ---
 
 # 干系人分析

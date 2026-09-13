@@ -44,8 +44,8 @@
 
 分**对外接口**（本模块提供给其他模块）与**对内接口**（组件间约定）两张表，**不重复字段细节**。接口只列**能力名 + 用途 + 约束**；**签名归 `module_manifest.md` §Exports**，字段级请求/响应与错误码归 `inter-module-contracts.md`。
 
-- 格式：对外接口（能力名 | 用途 | 约束）；对内接口（调用方 | 被调方 | 能力名）
-- 正例：对外接口 `receive_sv_data(stream_id, dataset) → (status, parsed_data)`，约束 `[MUST] C-701` 延迟 ≤ 1ms。
+- 格式：对外接口（能力名 | 用途 | 约束）；对内接口（调用方 | 被调方 | 签名 | 说明）
+- 正例：对外接口 `receive_sv_data`（接收 SV 采样值），约束 `[MUST] C-701` 延迟 ≤ 1ms。
 - 正例：对内接口 协议适配层 → 业务逻辑层：`on_sv_sample(sample)`；业务逻辑层 → 数据持久层：`save_sample(sample)`。
 
 ### §关键流程
