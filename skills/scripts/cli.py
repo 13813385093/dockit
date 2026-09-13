@@ -393,7 +393,9 @@ DOC_TYPE_REGISTRY = [
     {"doc_type": "acceptance_test", "level": "feature", "template": "acceptance-tests.md"},
 ]
 
-
+# 注册表条目必需、且必须为真值的字段：只有 doc_type 的残缺条目不参与加载，
+# 否则会顶替整个内置注册表，并让 cmd_doc_new 里的 defn["level"] 抛 KeyError
+_REQUIRED_TYPE_FIELDS = ("level", "template")
 
 
 def _parse_module_path(module: str) -> tuple[str, str | None]:
@@ -538,7 +540,20 @@ def cmd_doc_add_section(project_root: Path, reference: str, heading: str, conten
 
 
 def _load_registry(project_root: Path) -> dict | None:
-    """从 .doc-kit/registry.yaml 加载 doc_type 注册表；缺失或解析失败返回 None（回退内置）。"""
+    """从 .doc-kit/registry.yaml 加载 doc_type 注册表。
+
+    结构非法（顶层非映射、types 非列表）、条目缺 level/template 必需键、
+    文件缺失、解析失败或结果为空均返回 None（回退内置注册表）。
+
+    刻意**不**按名字过滤「已下线的文档类型」：项目内 .doc-kit/registry.yaml
+    陈旧时应照原样加载，让异常保持可见，由人工重跑 init 同步；而不是在代码里
+    写死黑名单静默掩盖（项目内那份旧 CLI / 旧能力库 / 旧模板并不会因此消失）。
+
+    结构判定在此显式做出，不再依赖 _parse_yaml_block 对非法输入抛异常被
+    except 兜住。这里刻意**不支持**顶层裸列表格式：本函数用的
+    _parse_yaml_block 是手写迷你解析器，本来就解析不了裸列表；裸列表
+    registry.yaml 一律返回 None，回退内置注册表。
+    """
     reg_path = project_root / ".doc-kit" / "registry.yaml"
     if not reg_path.exists():
         return None
@@ -546,11 +561,20 @@ def _load_registry(project_root: Path) -> dict | None:
         raw = _parse_yaml_block(reg_path.read_text(encoding="utf-8"))
     except Exception:
         return None
-    types = raw.get("types") or []
+    if not isinstance(raw, dict):
+        return None
+    types = raw.get("types")
+    if not isinstance(types, list):
+        return None
     result: dict[str, dict] = {}
     for t in types:
-        if isinstance(t, dict) and t.get("doc_type"):
-            result[t["doc_type"]] = {k: v for k, v in t.items() if v is not None}
+        if not isinstance(t, dict) or not t.get("doc_type"):
+            continue
+        # 缺 level/template 必需键的残缺条目跳过，避免顶替整个内置注册表，
+        # 也避免 cmd_doc_new 里 defn["level"] 抛 KeyError
+        if not all(t.get(k) for k in _REQUIRED_TYPE_FIELDS):
+            continue
+        result[t["doc_type"]] = {k: v for k, v in t.items() if v is not None}
     return result or None
 
 

@@ -19,6 +19,9 @@ BUILTIN_TEMPLATES_DIR = _get_builtin_templates_dir()
 # 已下线的复合类型模板：重新初始化时从目标目录清理，避免残留
 LEGACY_TEMPLATE_FILES = ("charter.md", "module-design.md", "feature-package.md")
 
+# 已下线的复合类型能力说明：重新初始化时从副本目录清理，避免残留
+LEGACY_CAPABILITY_FILES = ("charter.md", "module_design.md", "feature_package.md")
+
 
 def _get_cli_source_dir() -> Path:
     """返回工具链 CLI 源码目录（skills/scripts）。
@@ -201,6 +204,11 @@ def copy_guidance(project_root: Path) -> list[str]:
     与 copy_skills 同构：能力库是 AI 写入 ProjectSpec 前的规范来源，
     SKILL.md 统一以 `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`
     引用。返回复制成功的文件名列表。
+
+    复制完成后，仅从副本目录清理 LEGACY_CAPABILITY_FILES 列出的已下线
+    复合类型能力文件残留（这些能力说明已不再随包分发，留着会让 AI 按已
+    废除的规范写作）；其它文件一律不删除，用户自行放置的能力文件会原样
+    保留。文件不存在时不报错，可重复调用。
     """
     kit_dir = project_root / ".doc-kit"
     dst_dir = kit_dir / "skills" / "guidance" / "doc-capabilities"
@@ -208,10 +216,17 @@ def copy_guidance(project_root: Path) -> list[str]:
     copied: list[str] = []
     src_dir = _get_skills_source_dir() / "guidance" / "doc-capabilities"
     if not src_dir.is_dir():
+        # 源目录缺失是新版工具随包分发的异常情况，但已下线残留的清理与
+        # 源目录是否存在无关：先按同一份清单清理再返回，旧项目副本在这种
+        # 异常下也能清掉已废除的能力说明。清理幂等，可安全重复调用。
+        for legacy_name in LEGACY_CAPABILITY_FILES:
+            (dst_dir / legacy_name).unlink(missing_ok=True)
         return copied
     for src_path in sorted(src_dir.glob("*.md")):
         shutil.copy2(src_path, dst_dir / src_path.name)
         copied.append(src_path.name)
+    for legacy_name in LEGACY_CAPABILITY_FILES:
+        (dst_dir / legacy_name).unlink(missing_ok=True)
     return copied
 
 
