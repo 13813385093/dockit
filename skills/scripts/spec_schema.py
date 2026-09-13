@@ -15,8 +15,6 @@ SCENARIO_DOC_TYPES = {
     "spec-scribe": [
         "business_context",
         "stakeholders",
-        # 精简模式复合类型
-        "charter",
     ],
     "tech-ref": [
         "technical_framework",
@@ -29,16 +27,12 @@ SCENARIO_DOC_TYPES = {
         "module_manifest",
         # 可选
         "integration",
-        # 精简模式复合类型
-        "module_design",
     ],
     "feature-dev": [
         "feature_design",
         "decision_log",
         "unit_test",
         "acceptance_test",
-        # 精简模式复合类型
-        "feature_package",
     ],
 }
 """scenario 到文档类型（doc_type）的映射表。

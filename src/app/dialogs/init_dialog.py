@@ -1,16 +1,16 @@
-"""项目初始化对话框 — 选择 profile 和项目名称。"""
+"""项目初始化对话框 — 输入项目名称。"""
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QComboBox, QPushButton, QDialogButtonBox,
+    QLineEdit, QPushButton, QDialogButtonBox,
     QFormLayout, QGroupBox,
 )
 
 
 class InitDialog(QDialog):
-    """首次初始化对话框：询问项目名称和文档模式。"""
+    """首次初始化对话框：询问项目名称。"""
 
     def __init__(self, project_root: Path, parent=None):
         super().__init__(parent)
@@ -35,11 +35,6 @@ class InitDialog(QDialog):
         form = QFormLayout()
         self._name_edit = QLineEdit(self._project_root.name)
         form.addRow("项目名称:", self._name_edit)
-
-        self._profile_combo = QComboBox()
-        self._profile_combo.addItem("minimal — 仅 charter.md", "minimal")
-        self._profile_combo.addItem("full — 6 个顶层文件", "full")
-        form.addRow("文档模式:", self._profile_combo)
         layout.addLayout(form)
 
         # 按钮
@@ -55,7 +50,3 @@ class InitDialog(QDialog):
     @property
     def project_name(self) -> str:
         return self._name_edit.text().strip() or "untitled"
-
-    @property
-    def profile(self) -> str:
-        return self._profile_combo.currentData()

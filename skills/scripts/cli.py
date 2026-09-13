@@ -370,8 +370,8 @@ def cmd_spec_archive(project_root: Path) -> str:
 #  doc_structure；新增 new / remove-section）
 # ═══════════════════════════════════════════════════════════════
 
-# 18 种文档类型注册表（与 app/engine/registry.py 的 DEFAULT_TYPES 一致）。
-# doc_type → level/template；composite 标记精简模式复合类型。
+# 15 种文档类型注册表（与 app/engine/registry.py 的 DEFAULT_TYPES 一致）。
+# doc_type → level/template
 DOC_TYPE_REGISTRY = [
     # Level 0 - Top
     {"doc_type": "business_context", "level": "top", "template": "business-context.md"},
@@ -381,19 +381,16 @@ DOC_TYPE_REGISTRY = [
     {"doc_type": "inter_module_contract", "level": "top", "template": "inter-module-contracts.md"},
     {"doc_type": "stakeholders", "level": "top", "template": "stakeholders.md"},
     {"doc_type": "release_policy", "level": "top", "template": "release-policy.md"},
-    {"doc_type": "charter", "level": "top", "template": "charter.md", "composite": True},
     # Level 1 - Module
     {"doc_type": "architecture", "level": "module", "template": "architecture.md"},
     {"doc_type": "domain_model", "level": "module", "template": "domain-model.md"},
     {"doc_type": "module_manifest", "level": "module", "template": "module-manifest.md"},
     {"doc_type": "integration", "level": "module", "template": "integration.md"},
-    {"doc_type": "module_design", "level": "module", "template": "module-design.md", "composite": True},
     # Level 2 - Feature
     {"doc_type": "feature_design", "level": "feature", "template": "feature-design.md"},
     {"doc_type": "decision_log", "level": "feature", "template": "decision-log.md"},
     {"doc_type": "unit_test", "level": "feature", "template": "unit-tests.md"},
     {"doc_type": "acceptance_test", "level": "feature", "template": "acceptance-tests.md"},
-    {"doc_type": "feature_package", "level": "feature", "template": "feature-package.md", "composite": True},
 ]
 
 
@@ -575,9 +572,6 @@ def cmd_doc_new(
             f"修复：从已注册类型中选择其一（{candidates}），详见 doc-capabilities/_index.md §1。"
         )
     level = defn["level"]
-    # 复合性是体系固有属性（engine 用 property 判定，registry.yaml 未必带 composite 字段），
-    # 因此以内置集合兜底：defn 显式声明或属于内置复合类型即视为复合
-    is_composite = defn.get("composite", False) or doc_type in {"charter", "module_design", "feature_package"}
 
     # —— 参数与层级匹配校验 ——
     if level == "module" and not module:
@@ -602,13 +596,6 @@ def cmd_doc_new(
     if not docs_root.is_dir():
         return _fail("ERROR [new_doc.no_docs] 未找到 ProjectSpec/ 目录。修复：先运行项目初始化。")
 
-    # —— 精简模式：仅允许复合类型 ——
-    if (docs_root / "charter.md").exists() and not is_composite:
-        return _fail(
-            f"ERROR [new_doc.minimal_profile] 项目处于精简模式（charter.md 存在），不能创建独立基础文档 '{doc_type}'。"
-            "修复：写入 charter.md 对应章节，或先执行文档拆分（§3.7）。"
-        )
-
     # —— 计算目标路径 ——
     if level == "top":
         target = docs_root / defn["template"]
@@ -617,29 +604,10 @@ def cmd_doc_new(
         module_dir = docs_root / f"module-{main_module}"
         if sub_path:
             module_dir = module_dir / sub_path
-        if not module_dir.is_dir():
-            if is_composite:
-                # 复合类型（模块骨架）允许自动创建目录
-                module_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                return _fail(
-                    f"ERROR [new_doc.module_not_found] 模块 '{module}' 不存在（期望目录 "
-                    f"{module_dir.relative_to(project_root).as_posix()}）。修复：先创建模块骨架，"
-                    f"如 doc new module_design --module {main_module}。"
-                )
         if level == "module":
             target = module_dir / defn["template"]
         else:
             feature_dir = module_dir / "features" / feature
-            if not feature_dir.is_dir():
-                if is_composite:
-                    feature_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    return _fail(
-                        f"ERROR [new_doc.feature_not_found] 功能 '{feature}' 不存在（期望目录 "
-                        f"{feature_dir.relative_to(project_root).as_posix()}）。修复：先创建功能骨架，"
-                        f"如 doc new feature_package --module {module} --feature {feature}。"
-                    )
             target = feature_dir / defn["template"]
 
     rel_target = str(target.relative_to(project_root).as_posix())
@@ -1174,7 +1142,7 @@ def cmd_dev_plan_create(
         expected = _dev_scope_hint(scope, target, module)
         return _fail(
             f"ERROR [dev_plan.scope_not_found] 范围不存在（期望目录 {expected}）。"
-            "修复：确认范围在 ProjectSpec/ 下的路径，或先创建模块/功能骨架。"
+            "修复：确认范围在 ProjectSpec/ 下的路径，或先用 doc new 创建该模块/功能的文档。"
         )
 
     active_dir = _dev_active_dir(project_root)

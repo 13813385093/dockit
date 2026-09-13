@@ -445,12 +445,10 @@ class MainWindow(QMainWindow):
                 name = init_project(
                     project_root,
                     project_name=dlg.project_name,
-                    profile=dlg.profile,
                 )
                 QMessageBox.information(
                     self, "初始化完成",
                     f"项目「{name}」文档骨架已创建。\n"
-                    f"模式: {dlg.profile}\n"
                     f"路径: {project_root / 'ProjectSpec'}",
                 )
             except Exception as e:

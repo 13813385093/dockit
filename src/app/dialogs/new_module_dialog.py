@@ -66,14 +66,13 @@ class NewModuleDialog(QDialog):
 
         options_group = QGroupBox("创建以下文档：")
         options_layout = QVBoxLayout(options_group)
-        self._ck_module_design = QCheckBox("module-design.md (复合类型 — 推荐)")
-        self._ck_module_design.setChecked(True)
         self._ck_manifest = QCheckBox("module-manifest.md (模块清单)")
         self._ck_manifest.setChecked(True)
         self._ck_architecture = QCheckBox("architecture.md (架构设计)")
+        self._ck_architecture.setChecked(True)
         self._ck_domain_model = QCheckBox("domain-model.md (领域模型)")
+        self._ck_domain_model.setChecked(True)
         self._ck_integration = QCheckBox("integration.md (外部集成 — 可选)")
-        options_layout.addWidget(self._ck_module_design)
         options_layout.addWidget(self._ck_manifest)
         options_layout.addWidget(self._ck_architecture)
         options_layout.addWidget(self._ck_domain_model)
@@ -144,8 +143,6 @@ class NewModuleDialog(QDialog):
     @property
     def doc_types(self) -> list[str]:
         types = []
-        if self._ck_module_design.isChecked():
-            types.append("module_design")
         if self._ck_manifest.isChecked():
             types.append("module_manifest")
         if self._ck_architecture.isChecked():

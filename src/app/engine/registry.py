@@ -6,7 +6,7 @@ from typing import Optional
 
 import yaml
 
-# Built-in default registry with all 18 document types
+# Built-in default registry with all 15 document types
 DEFAULT_TYPES = [
     # Level 0 - Top
     {"doc_type": "business_context", "level": "top", "template": "business-context.md", "description": "业务背景"},
@@ -16,22 +16,16 @@ DEFAULT_TYPES = [
     {"doc_type": "inter_module_contract", "level": "top", "template": "inter-module-contracts.md", "description": "模块间接口契约"},
     {"doc_type": "stakeholders", "level": "top", "template": "stakeholders.md", "description": "干系人分析"},
     {"doc_type": "release_policy", "level": "top", "template": "release-policy.md", "description": "发布策略"},
-    # Level 0 - Composite
-    {"doc_type": "charter", "level": "top", "template": "charter.md", "description": "项目宪章（复合类型）"},
     # Level 1 - Module
     {"doc_type": "architecture", "level": "module", "template": "architecture.md", "description": "模块架构设计"},
     {"doc_type": "domain_model", "level": "module", "template": "domain-model.md", "description": "领域模型"},
     {"doc_type": "module_manifest", "level": "module", "template": "module-manifest.md", "description": "模块清单"},
     {"doc_type": "integration", "level": "module", "template": "integration.md", "description": "外部集成"},
-    # Level 1 - Composite
-    {"doc_type": "module_design", "level": "module", "template": "module-design.md", "description": "模块设计（复合类型）"},
     # Level 2 - Feature
     {"doc_type": "feature_design", "level": "feature", "template": "feature-design.md", "description": "功能设计"},
     {"doc_type": "decision_log", "level": "feature", "template": "decision-log.md", "description": "设计决策"},
     {"doc_type": "unit_test", "level": "feature", "template": "unit-tests.md", "description": "单元测试"},
     {"doc_type": "acceptance_test", "level": "feature", "template": "acceptance-tests.md", "description": "验收测试"},
-    # Level 2 - Composite
-    {"doc_type": "feature_package", "level": "feature", "template": "feature-package.md", "description": "功能包（复合类型）"},
 ]
 
 
@@ -43,10 +37,6 @@ class DocTypeDef:
     template: str
     description: str = ""
     required_fields: list[str] = field(default_factory=list)
-
-    @property
-    def is_composite(self) -> bool:
-        return self.doc_type in {"charter", "module_design", "feature_package"}
 
 
 class Registry:

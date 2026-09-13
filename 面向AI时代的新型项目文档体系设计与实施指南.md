@@ -51,7 +51,7 @@
 
 | 场景     | 使用的文档                                           | 价值                  |
 | ------ | ----------------------------------------------- | ------------------- |
-| 新人入职   | 项目宪章（顶层文档集合，精简模式为 `charter.md`）+ 一个完整模块 | 1 小时内理解业务全貌和技术架构 |
+| 新人入职   | 项目宪章（顶层文档集合）+ 一个完整模块 | 1 小时内理解业务全貌和技术架构 |
 | 代码评审   | `feature-design.md` + `decision-log.md`         | 验证实现是否匹配设计意图，了解选型理由 |
 | 架构评审   | `architecture.md` + `inter-module-contracts.md` | 检查模块边界和接口设计的合理性     |
 | 变更影响评估 | 查 `depends_on` 反向链                              | 修改一个文档前知道会影响谁       |
@@ -139,12 +139,12 @@
 ├── global-policies.md               # 全局策略（必选）
 ├── inter-module-contracts.md        # 模块间契约（推荐）
 ├── stakeholders.md                  # 干系人分析（可选）
-└── release-policy.md                # 发布策略（推荐，见 §3.9）
+└── release-policy.md                # 发布策略（推荐，见 §3.8）
 ```
 
 #### 3.1.2 各文档基本结构
 
-项目宪章包含 7 份顶层文档（`stakeholders.md` 可选；`inter-module-contracts.md` 与 `release-policy.md` 推荐，其余必选），按"业务背景 → 技术框架 → 约束 → 策略 → 契约 → 干系人"的逻辑组织；`release-policy.md` 定义发布域（见 §3.9），独立于上述逻辑链，其基本结构见本节末尾。以下逐份说明每份文档的核心定位与推荐章节结构。
+项目宪章包含 7 份顶层文档（`stakeholders.md` 可选；`inter-module-contracts.md` 与 `release-policy.md` 推荐，其余必选），按"业务背景 → 技术框架 → 约束 → 策略 → 契约 → 干系人"的逻辑组织；`release-policy.md` 定义发布域（见 §3.8），独立于上述逻辑链，其基本结构见本节末尾。以下逐份说明每份文档的核心定位与推荐章节结构。
 
 > **术语说明**：以下各文档中的「约束」指**写作边界**（哪些内容不应写进本文档）；它不同于 §3.5.5 的内容级约束标记 `[MUST]` / `[SHOULD]` / `[MAY]`，两者勿混淆。
 
@@ -350,7 +350,7 @@
 
 ##### release-policy.md — 发布策略
 
-**定位**：定义项目发布域的权威规则——发布单元划分、发布门禁、发布流水线、发布号规则与回滚策略，是发布域（§3.9）的策略载体：门禁与流程的默认定义在 §3.9，项目可在本文档中自定义。本文档为**推荐**，精简模式可省略（使用工具默认门禁）。
+**定位**：定义项目发布域的权威规则——发布单元划分、发布门禁、发布流水线、发布号规则与回滚策略，是发布域（§3.8）的策略载体：门禁与流程的默认定义在 §3.8，项目可在本文档中自定义。本文档为**推荐**。
 
 **约束**：不写部署操作细节——部署模型归 `technical-framework.md`；不写某次具体发布的内容——发布记录为工具链生成的派生制品，不属于 Spec 文档。
 
@@ -367,7 +367,7 @@
 ```
 
 **编写要点**：
-- 门禁在 §3.9.3 的 G1~G6 基础上按需增删
+- 门禁在 §3.8.3 的 G1~G6 基础上按需增删
 - 发布号建议采用 `YYYY.MM.n` 格式，与 Spec 版本（§3.5.7）相互独立
 
 #### 3.1.3 通用元数据结构
@@ -395,7 +395,7 @@ status: active                   # active | deprecated | archived
 
 > 完整的字段定义、必填规则和 doc_type 完整取值列表见 §3.5.2 元数据块规范。
 
-**doc_type 与文件名的关系**：`doc_type` 是注册表（§3.6）中的类型标识，用下划线命名（如 `business_context`）；文件名是约定的标准文件名，用连字符命名（如 `business-context.md`）。基础类型一一对应，frontmatter 中只写 `doc_type`；复合类型例外——文件名带模块/功能名前缀（见 §3.6.5）。
+**doc_type 与文件名的关系**：`doc_type` 是注册表（§3.6）中的类型标识，用下划线命名（如 `business_context`）；文件名是约定的标准文件名，用连字符命名（如 `business-context.md`）。两者一一对应，frontmatter 中只写 `doc_type`。
 
 ### 3.2 模块层：模块架构设计
 
@@ -616,7 +616,7 @@ module-name/
 - 子模块**继承**父模块的模块间契约：子模块的 imports/exports 视为父模块能力的一部分，遵循父模块声明的契约
 - 子模块间的接口约定记录在**父模块**的架构文档中
 - 子模块对外暴露的能力通过父模块接口呈现，避免外部模块直接依赖子模块细节；如需独立暴露能力，可维护自己的 `module-manifest.md`（可选）
-- 子模块文档的 `module` 字段填 `<父模块名>/<子模块名>`（如 `order/order-core`），目录位于 `module-<父模块名>/sub-modules/<子模块名>/`
+- 子模块文档的 `module` 字段填 `<父模块名>.<子模块名>`（点分，如 `order.core`），目录位于 `module-<父模块名>/sub-modules/<子模块名>/`（如 `module-order/sub-modules/core/`）
 - 子模块可以继续嵌套子模块，形成递归结构（通常最多 2~3 层为宜）
 
 ### 3.3 功能层：功能规格设计
@@ -788,7 +788,7 @@ project-docs/
 ├── global-policies.md                # Level 0：全局策略
 ├── inter-module-contracts.md         # Level 0：模块间契约
 ├── stakeholders.md                   # Level 0：干系人分析（可选）
-├── release-policy.md                 # Level 0：发布策略（推荐，见 §3.9）
+├── release-policy.md                 # Level 0：发布策略（推荐，见 §3.8）
 ├── module-order/                     # Level 1：模块1 — 订单
 │   ├── module-manifest.md            # 模块清单：exports/imports
 │   ├── architecture.md               # 模块架构设计
@@ -859,7 +859,7 @@ project-docs/
 ---
 # 元数据层（frontmatter）— 结构化字段，供人与工具解析；各字段维护者见下方字段表
 doc_type: feature_design         # 文档类型，见 §3.6 文档类型注册表
-module: order                     # 所属模块名（子模块填 父模块名/子模块名，如 order/order-core）
+module: order                     # 所属模块名（子模块填 父模块名.子模块名，点分，如 order.core）
 feature: order-timeout-cancel    # 所属功能名（仅 Level 2 需要）
 level: feature                   # 层级：top | module | feature
 version: 1.0.0                   # 语义化版本，用户手动递增
@@ -872,11 +872,10 @@ superseded_by:                   # 替代文档（废弃且存在替代时必填
   - doc: feature-design-v2.md
     module: order
 archived_at:                     # 归档日期（status=archived 时必填）
-# implemented_in 仅 Level 2 功能/测试文档需要（见 §3.5.9），基础类型不声明
+# implemented_in 仅 Level 2 功能/测试文档需要（见 §3.5.9）
 implemented_in:                  # 实现位置，工具校验路径存在性
   - path: src/order/features/timeout_cancel/
     lang: go
-# contains 仅复合类型文档需要（见 §3.7），基础类型不声明
 depends_on:                      # 依赖声明，精确版本锁定
   - doc: domain-model.md
     module: order
@@ -907,7 +906,6 @@ depends_on:                      # 依赖声明，精确版本锁定
 | `deprecated_reason` | 条件 | 用户手动 | 仅 `status=deprecated` 时需要，简述废弃原因 |
 | `superseded_by` | 条件 | 用户手动 | 替代文档的引用列表（废弃且存在替代文档时必填，无替代可省略） |
 | `archived_at` | 条件 | 用户手动 | 仅 `status=archived` 时需要，填写 ISO 8601 日期 |
-| `contains` | 条件 | 创建时设定 | 仅复合类型需要（见 §3.7），声明包含的子类型列表 |
 | `implemented_in` | 条件 | 用户+工具 | 仅 Level 2 功能/测试文档需要（见 §3.5.9），声明实现位置；工具校验路径存在性 |
 | `depends_on` | 条件 | 用户+工具 | 声明依赖的其他文档（见 §3.5.7），工具在保存时重新推导，用户确认版本号 |
 
@@ -966,7 +964,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 - 开发者 [MAY] 选择使用同步或异步方式实现
 ```
 
-**约束 ID（追踪机制）**：为支持「[MUST] 约束 → 测试用例」的机械覆盖校验（见 §3.9.3 门禁 G4），约束需携带唯一标识：
+**约束 ID（追踪机制）**：为支持「[MUST] 约束 → 测试用例」的机械覆盖校验（见 §3.8.3 门禁 G4），约束需携带唯一标识：
 
 - ID 前缀与约束级别一一对应：`C-`（Constraint，必须级）用于 `[MUST]`，`S-`（Should，建议级）用于 `[SHOULD]`，`[MAY]` 不编号；`[MUST]` **必须**编号（如 `C-101`），`[SHOULD]` 可选编号（建议编，如 `S-101`）
 - ID 在所属文档内唯一；跨文档引用用完整形式 `feature-design@<功能名>:C-101`
@@ -1003,7 +1001,7 @@ depends_on:                      # 依赖声明，精确版本锁定
 - [预期返回值 / 状态变化 / 异常]
 ```
 
-> 场景通过 `覆盖约束` 行声明其验证的约束 ID（语法见 §3.5.5）；工具据此机械校验「每个编号的 [MUST] 约束至少被一个场景引用」（门禁 G4，见 §3.9.3）。
+> 场景通过 `覆盖约束` 行声明其验证的约束 ID（语法见 §3.5.5）；工具据此机械校验「每个编号的 [MUST] 约束至少被一个场景引用」（门禁 G4，见 §3.8.3）。
 
 #### 3.5.7 版本依赖管理
 
@@ -1078,7 +1076,7 @@ implemented_in:
 | 粒度 | 文档侧 | 代码侧 | 用途 | 级别 |
 |------|--------|--------|------|------|
 | 功能级 | `feature-design.md` 的 `implemented_in` | 功能实现源码目录/文件 | AI 定位实现、变更影响分析 | [MUST] |
-| 用例级 | `unit-tests.md` 的测试场景名 | 测试函数/方法（命名约定） | 约束覆盖追踪（见 §3.9.3 门禁 G4） | [SHOULD] |
+| 用例级 | `unit-tests.md` 的测试场景名 | 测试函数/方法（命名约定） | 约束覆盖追踪（见 §3.8.3 门禁 G4） | [SHOULD] |
 | 契约级 | `inter-module-contracts.md` 的接口名 | RPC 方法 / API 端点 | 契约实现验证 | [MAY] |
 
 **校验规则**：
@@ -1119,7 +1117,7 @@ implemented_in:
 
 ### 3.6 文档类型注册表
 
-本节完整枚举本体系定义的 18 种文档类型（15 种基础类型 + 3 种复合类型），明确每种类型的责任、层级归属、版本策略和依赖规则。
+本节完整枚举本体系定义的 15 种文档类型，明确每种类型的责任、层级归属、版本策略和依赖规则。
 
 #### 3.6.1 Level 0：项目宪章
 
@@ -1131,7 +1129,7 @@ implemented_in:
 | T-04 | `global_policies`        | global-policies.md        | ✅ 必选 | 跨模块全局策略：认证、可观测性、数据一致性  | 全局策略变化时递增  | T-01, T-02, T-03 | 4th  |
 | T-05 | `inter_module_contract`  | inter-module-contracts.md | 推荐   | 模块间接口规范：请求/响应格式、共享事件、数据结构 | 接口变更时递增    | T-04, T-02       | 5th  |
 | T-06 | `stakeholders`           | stakeholders.md           | 可选   | 干系人分析：角色、关注点、决策权       | 干系人变动时递增   | T-01             | 6th  |
-| T-15 | `release_policy`         | release-policy.md         | 推荐   | 发布域权威定义：门禁、流水线、发布号、回滚策略（见 §3.9） | 门禁/流程变更时递增 | T-01, T-02, T-03, T-05 | 15th |
+| T-15 | `release_policy`         | release-policy.md         | 推荐   | 发布域权威定义：门禁、流水线、发布号、回滚策略（见 §3.8） | 门禁/流程变更时递增 | T-01, T-02, T-03, T-05 | 15th |
 
 #### 3.6.2 Level 1：模块层
 
@@ -1168,78 +1166,11 @@ implemented_in:
 
 > 说明：本图表示**主依赖链**（图中相邻项互为直接依赖）；每类文档的完整「可依赖目标」以 §3.6.1~§3.6.3 注册表为准（例如 `unit_test` 仅依赖 `feature_design`，`acceptance_test` 依赖 `feature_design` 与 `decision_log`）。
 
-#### 3.6.5 复合类型（精简模式）
-
-本体系定义了 3 种复合类型，用于小型项目或项目初期的**精简模式**。复合类型允许将多个基础类型组合到一个文件中，保留完整的表达深度，同时减少文件数量。
-
-| 编号   | doc_type          | 文件名                       | 层级      | contains | 对应的基础类型                                                                                                                                  |
-| ---- | ----------------- | ------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| T-C1 | `charter`         | `charter.md`               | Top     | 5+1 种    | `business_context`, `technical_framework`, `non_functional_constraints`, `global_policies`（必选）；`inter_module_contract`（推荐）、`stakeholders`（可选） |
-| T-C2 | `module_design`   | `<模块名>-module-design.md` | Module  | 3+1 种    | `architecture`, `domain_model`, `module_manifest`（必选）、`integration`（可选） |
-| T-C3 | `feature_package` | `<功能名>-feature-package.md` | Feature | 4 种      | `feature_design`, `decision_log`, `unit_test`, `acceptance_test`                                                                         |
-
-**复合类型的 frontmatter 示例：**
-
-```yaml
----
-doc_type: charter              # 复合类型标识
-module: project-charter
-level: top
-contains:
-  - business_context
-  - technical_framework
-  - non_functional_constraints
-  - global_policies
-  - inter_module_contract
-  # stakeholders 可选，不在列表即视为省略
-version: 0.1.0
-last_updated: 2024-06-01
-status: active
----
-
-# 项目宪章
-```
-
-### 3.7 文档拆分与演化
-
-项目文档体系通常从精简模式起步，随规模扩大自然演进到完整模式；这一演进通过文档**拆分**完成——将复合类型文档拆分为多个独立的基础类型文档。
-
-#### 3.7.1 拆分操作
-
-将一个复合类型文档拆分为多个独立的基础类型文档。
-
-**拆分规则：**
-- `contains` 中的每个子类型对应一个独立的文件
-- 文件名为子类型对应的标准文件名（见 §3.6 注册表）
-- 各文件继承原复合文档的 `module`、`level`、`author`，版本号初始化为 `0.1.0`
-- 拆分完成后，原复合文档建议删除，或标记为 `deprecated`（`superseded_by` 指向拆分产物），避免同一内容两份并存
-
-**拆分示例：**
-
-```
-拆分示例：1 个 charter.md → 6 个独立文件
-══════════════════════════════════════════════════
-
-  charter.md                     ─┬──→  business-context.md
-    ├── ## 业务背景               ├──→  technical-framework.md
-    ├── ## 技术框架               ├──→  non-functional-constraints.md
-    ├── ## 非功能性约束           ├──→  global-policies.md
-    ├── ## 全局策略               ├──→  inter-module-contracts.md
-    ├── ## 模块间契约             └──→  stakeholders.md
-    └── ## 干系人
-```
-
-#### 3.7.2 典型演化路径
-
-1. 项目启动：使用精简模式——顶层 1 份 `charter.md`；每个模块 1 份 `<模块名>-module-design.md`（如 `order-module-design.md`）；每个功能 1 份 `<功能名>-feature-package.md`（如 `order-timeout-cancel-feature-package.md`）
-2. 功能增多：`charter.md` → 拆分为独立顶层文件（不含可选 stakeholders 时为 5 份，含时为 6 份）
-3. 团队扩大：`<模块名>-module-design.md` → 拆分为独立的 architecture.md + domain-model.md + module-manifest.md（+ integration.md）
-
-### 3.8 生命周期管理规范
+### 3.7 生命周期管理规范
 
 文档随项目演进，部分文档会逐渐失效。本体系定义了三级生命周期状态，避免僵尸文档堆积。
 
-#### 3.8.1 三状态定义
+#### 3.7.1 三状态定义
 
 ```
 状态机：
@@ -1262,7 +1193,7 @@ status: active
 | 废弃 | `deprecated` | 文档不再推荐使用，但历史引用仍需维护 | 被新版本替代、设计已过时 |
 | 归档 | `archived` | 文档从动态索引中移除，仅作历史参考 | 废弃后超过清理周期、确认不再需要 |
 
-#### 3.8.2 各状态语义
+#### 3.7.2 各状态语义
 
 **active（活跃）**
 - 文档内容与项目当前设计一致，是可信的参考来源
@@ -1279,7 +1210,7 @@ status: active
 - 归档前应确认所有依赖方已完成迁移
 - 需要时可恢复为 active，但恢复后应审查内容是否需要更新
 
-#### 3.8.3 废弃操作指南
+#### 3.7.3 废弃操作指南
 
 废弃一份文档应遵循以下步骤：
 
@@ -1291,7 +1222,7 @@ status: active
    b) 自身内容同步标记为 `deprecated`
    c) 评估后确认不受影响，不做变更
 
-#### 3.8.4 归档与删除策略
+#### 3.7.4 归档与删除策略
 
 **归档（推荐）**
 - 文件保留在磁盘，状态标记为 `archived`，内容供历史审计或复盘参考
@@ -1308,34 +1239,34 @@ status: active
 - 不再适用的文档优先标记为 `deprecated`
 - `deprecated` 超过一定周期（如 6 个月）且确认无依赖方的，可转为 `archived`
 
-### 3.9 发布域（AICoding 版 CI/CD）
+### 3.8 发布域（AICoding 版 CI/CD）
 
-§3.8 管理文档的**内容维度**——一份文档是否可信（active / deprecated / archived）。内容可信之外还有**上线维度**——可信的文档能否进入生产环境，本节回答后者。传统 CI/CD 的流水线对象是代码（build → test → deploy）；本体系的发布流水线对象是 **Spec**——发布不是「部署一次代码」，而是「把一组 Spec 推进到 released 状态」，代码、测试、部署配置、变更日志均作为**派生制品**在该状态生成。这与结语「Spec 即资产」一脉相承：Spec 是唯一权威，发布是对 Spec 状态的固化。
+§3.7 管理文档的**内容维度**——一份文档是否可信（active / deprecated / archived）。内容可信之外还有**上线维度**——可信的文档能否进入生产环境，本节回答后者。传统 CI/CD 的流水线对象是代码（build → test → deploy）；本体系的发布流水线对象是 **Spec**——发布不是「部署一次代码」，而是「把一组 Spec 推进到 released 状态」，代码、测试、部署配置、变更日志均作为**派生制品**在该状态生成。这与结语「Spec 即资产」一脉相承：Spec 是唯一权威，发布是对 Spec 状态的固化。
 
-#### 3.9.1 发布状态机
+#### 3.8.1 发布状态机
 
-发布状态衡量**可上线度**，与 §3.8 的内容生命周期正交——文档可以 active 但尚未通过发布门禁：
+发布状态衡量**可上线度**，与 §3.7 的内容生命周期正交——文档可以 active 但尚未通过发布门禁：
 
 ```
 draft（草稿）→ in-review（评审中）→ ready（门禁通过）→ released（已发布）→ superseded（被新发布替代）
 ```
 
-#### 3.9.2 发布单元（Release Unit）
+#### 3.8.2 发布单元（Release Unit）
 
-发布的最小粒度 = **一个 feature-package（4 份文档）+ 其 `depends_on` 依赖链**。修改一个功能只发布该功能及其依赖文档的版本，不整仓发布——与「改一个模块只触发该模块的 CI」同构。
+发布的最小粒度 = **一个功能（`features/<功能名>/` 下的 4 份文档）+ 其 `depends_on` 依赖链**。修改一个功能只发布该功能及其依赖文档的版本，不整仓发布——与「改一个模块只触发该模块的 CI」同构。
 
-#### 3.9.3 发布门禁（Release Gates）
+#### 3.8.3 发布门禁（Release Gates）
 
 | 门禁 | 校验内容 | 依据机制 |
 |------|---------|---------|
-| G1 文档健康 | 发布单元内文档全部 `active`，无 deprecated 阻断 | §3.8 |
+| G1 文档健康 | 发布单元内文档全部 `active`，无 deprecated 阻断 | §3.7 |
 | G2 依赖一致 | `depends_on` 精确版本、无漂移/循环/反向依赖 | §3.5.7 |
 | G3 契约闭合 | imports ↔ exports 配对、契约无悬空接口 | §3.2.2 |
 | G4 约束覆盖 | 每个编号的 [MUST] 约束（`C-101` 等）在 unit-tests.md 中有对应场景引用 | §3.5.5、§3.5.6 |
 | G5 测试全绿 | unit-tests + acceptance-tests 执行通过 | §3.3.3 |
 | G6 实现映射 | `implemented_in` 声明的实现路径真实存在 | §3.5.9 |
 
-#### 3.9.4 发布流水线（Release Pipeline）
+#### 3.8.4 发布流水线（Release Pipeline）
 
 ```
 Spec 变更提交
@@ -1348,9 +1279,9 @@ Spec 变更提交
 任一步失败 → 回退至对应阶段修复（AI 修复，例外决策交人工）
 ```
 
-#### 3.9.5 分级适用
+#### 3.8.5 分级适用
 
-- **小型项目 / 起步期**：使用精简模式，门禁用工具默认值，发布 = 跑通 G1/G2/G3/G5 最小门禁
+- **小型项目 / 起步期**：门禁用工具默认值，发布 = 跑通 G1/G2/G3/G5 最小门禁
 - **正式项目**：启用 G4/G6 全部门禁，`release-policy.md` 落文档
 
 ## 结语：走向 Spec 即资产的时代

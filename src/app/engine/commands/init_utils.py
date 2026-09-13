@@ -16,6 +16,9 @@ def _get_builtin_templates_dir() -> Path:
 
 BUILTIN_TEMPLATES_DIR = _get_builtin_templates_dir()
 
+# 已下线的复合类型模板：重新初始化时从目标目录清理，避免残留
+LEGACY_TEMPLATE_FILES = ("charter.md", "module-design.md", "feature-package.md")
+
 
 def _get_cli_source_dir() -> Path:
     """返回工具链 CLI 源码目录（skills/scripts）。
@@ -51,31 +54,15 @@ def get_project_name(project_root: Path) -> str:
     return project_root.name
 
 
-def generate_charter(project_name: str, now: str) -> str:
-    """生成 charter.md 内容。"""
-    template_path = BUILTIN_TEMPLATES_DIR / "charter.md"
-    tpl = Template(template_path.read_text(encoding="utf-8"))
-    return tpl.safe_substitute(project_name=project_name, now=now)
-
-
 def generate_full_file(template_name: str, now: str) -> str:
-    """生成完整模式下的单个文档。"""
+    """生成单个顶层文档。"""
     template_path = BUILTIN_TEMPLATES_DIR / template_name
     tpl = Template(template_path.read_text(encoding="utf-8"))
     return tpl.safe_substitute(now=now)
 
 
-def create_minimal_structure(project_docs: Path, project_name: str, now: str) -> list[Path]:
-    """创建精简模式骨架：单个 charter.md。"""
-    project_docs.mkdir(parents=True, exist_ok=True)
-    charter_path = project_docs / "charter.md"
-    content = generate_charter(project_name, now)
-    charter_path.write_text(content, encoding="utf-8")
-    return [charter_path]
-
-
 def create_full_structure(project_docs: Path, project_name: str, now: str) -> list[Path]:
-    """创建完整模式骨架：7 个顶层文件直接放在 ProjectSpec/ 根。"""
+    """创建项目文档骨架：7 个顶层文件直接放在 ProjectSpec/ 根。"""
     project_docs.mkdir(parents=True, exist_ok=True)
     files = [
         "business-context.md", "technical-framework.md",
@@ -121,7 +108,7 @@ def build_index(project_docs: Path, project_root: Path, created_files: list[Path
     return mgr
 
 
-def create_config(project_root: Path, project_name: str, profile: str):
+def create_config(project_root: Path, project_name: str):
     """创建 .doc-kit/config.yaml。"""
     import yaml
     kit_dir = project_root / ".doc-kit"
@@ -129,7 +116,6 @@ def create_config(project_root: Path, project_name: str, profile: str):
     config_path = kit_dir / "config.yaml"
     data = {
         "project_name": project_name,
-        "profile": profile,
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
     }
     config_path.write_text(
@@ -150,13 +136,20 @@ def create_registry(project_root: Path):
 
 
 def copy_templates(project_root: Path):
-    """复制内置模板到 .doc-kit/templates/。"""
+    """复制内置模板到 .doc-kit/templates/。
+
+    复制完成后，仅从目标目录清理 LEGACY_TEMPLATE_FILES 列出的已下线
+    复合类型模板残留（这些模板已不再随包分发）；其它文件一律不删除，
+    用户自行放置的自定义模板会原样保留。文件不存在时不报错，可重复调用。
+    """
     kit_dir = project_root / ".doc-kit"
     tmpl_dir = kit_dir / "templates"
     tmpl_dir.mkdir(parents=True, exist_ok=True)
     for src_path in BUILTIN_TEMPLATES_DIR.glob("*.md"):
         dst_path = tmpl_dir / src_path.name
         shutil.copy2(src_path, dst_path)
+    for legacy_name in LEGACY_TEMPLATE_FILES:
+        (tmpl_dir / legacy_name).unlink(missing_ok=True)
 
 
 def copy_cli(project_root: Path) -> list[str]:
@@ -225,7 +218,6 @@ def copy_guidance(project_root: Path) -> list[str]:
 def init_project(
     project_root: Path,
     project_name: str | None = None,
-    profile: str = "minimal",
 ) -> str:
     """完整的项目初始化流程。
 
@@ -239,13 +231,10 @@ def init_project(
     created: list[Path] = []
 
     if not project_docs.exists():
-        if profile == "minimal":
-            created = create_minimal_structure(project_docs, name, now)
-        else:
-            created = create_full_structure(project_docs, name, now)
+        created = create_full_structure(project_docs, name, now)
 
     # 补全 .doc-kit/ 配置（幂等）
-    create_config(project_root, name, profile)
+    create_config(project_root, name)
     create_registry(project_root)
     copy_templates(project_root)
     copy_cli(project_root)

@@ -3,7 +3,7 @@
 用法:
     python main.py                          # 启动 GUI
     python main.py /path/to/project         # 启动并直接加载项目
-    python main.py init <项目> [--profile minimal|full] [--name <名称>]   # 初始化项目
+    python main.py init <项目> [--name <名称>]   # 初始化项目
     python main.py install-skills <目标目录>                              # 安装 skills
 
 doc-kit 工具是工具链（skills + CLI）的唯一部署/安装入口：
@@ -37,11 +37,11 @@ def get_skills_dir() -> Path:
     return get_app_root().parent.parent / "skills"
 
 
-def _cmd_init(project_root: Path, profile: str, project_name: str | None) -> int:
+def _cmd_init(project_root: Path, project_name: str | None) -> int:
     """doc-kit init：初始化项目（ProjectSpec 骨架 + .doc-kit 全部资源）。"""
     from src.app.engine.commands.init_utils import init_project
 
-    name = init_project(project_root, project_name=project_name, profile=profile)
+    name = init_project(project_root, project_name=project_name)
     print(f"✅ 项目「{name}」已初始化")
     print(f"  ProjectSpec: {project_root / 'ProjectSpec'}")
     print(f"  .doc-kit: config / registry / templates / index / cli / skills")
@@ -76,7 +76,6 @@ def run_cli(argv: list[str]) -> int | None:
     sub = parser.add_subparsers(dest="command")
     p_init = sub.add_parser("init", help="初始化项目（ProjectSpec + .doc-kit 资源）")
     p_init.add_argument("project", help="项目根目录")
-    p_init.add_argument("--profile", default="minimal", choices=["minimal", "full"])
     p_init.add_argument("--name", default=None, help="项目名称")
     p_inst = sub.add_parser("install-skills", help="安装 skills 到 agent skills 目录")
     p_inst.add_argument("target", help="目标 skills 目录（如 ~/.reasonix/skills）")
@@ -87,7 +86,7 @@ def run_cli(argv: list[str]) -> int | None:
 
     args = parser.parse_args(argv)
     if args.command == "init":
-        return _cmd_init(Path(args.project), args.profile, args.name)
+        return _cmd_init(Path(args.project), args.name)
     if args.command == "install-skills":
         return _cmd_install_skills(args.target)
     return None

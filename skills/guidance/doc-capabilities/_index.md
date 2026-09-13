@@ -13,7 +13,7 @@
    - 新增文档 → `doc new`（能力文件提供骨架）后填充
    - frontmatter 元数据（`version` / `last_updated` / `author` / `depends_on` 等）由 doc-kit 工具与人工维护，AI 写入正文时不修改这些字段。
 
-## 1. 文档类型总览（18 种）
+## 1. 文档类型总览（15 种）
 
 ### Level 0 — 顶层（`module: project-charter`，平铺 ProjectSpec/ 根）
 
@@ -26,7 +26,6 @@
 | `inter_module_contract` | inter-module-contracts.md | 推荐 | 模块间接口字段级契约：请求/响应、共享事件 payload、共享结构 |
 | `stakeholders` | stakeholders.md | 可选 | 干系人角色、关注点、决策权、参与方式 |
 | `release_policy` | release-policy.md | 推荐 | 发布域规则：发布单元、门禁、流水线、发布号、回滚 |
-| `charter` | charter.md | —（精简模式） | 复合宪章：business_context + technical_framework + non_functional_constraints + global_policies（+ inter_module_contract / stakeholders） |
 
 ### Level 1 — 模块层（`module-<模块名>/`）
 
@@ -36,7 +35,6 @@
 | `domain_model` | domain-model.md | ✅ | 领域实体、值对象、聚合根及其业务不变条件 |
 | `integration` | integration.md | 可选 | 外部系统集成：协议、数据流、错误处理与降级 |
 | `module_manifest` | module-manifest.md | ✅ | exports / imports 能力声明，import 必须配对 export |
-| `module_design` | `<模块名>-module-design.md` | —（精简模式） | 复合模块设计：architecture + domain_model + module_manifest（+ integration） |
 
 ### Level 2 — 功能层（`module-<模块名>/features/<功能名>/`）
 
@@ -46,15 +44,14 @@
 | `decision_log` | decision-log.md | ✅ | 设计决策理由与替代方案（Why，只追加不改写） |
 | `unit_test` | unit-tests.md | ✅ | GWT 单元测试用例（代码正确性），「覆盖约束」行引用约束 ID |
 | `acceptance_test` | acceptance-tests.md | ✅ | Gherkin 验收场景（业务符合性） |
-| `feature_package` | `<功能名>-feature-package.md` | —（精简模式） | 复合功能包：feature_design + decision_log + unit_test + acceptance_test |
 
 ## 2. 议题场景 → 候选文档（第一级路由）
 
 | scenario | 含义 | 候选 doc_type |
 |----------|------|--------------|
-| `spec-scribe` | 需求讨论 | `business_context`, `stakeholders`, `charter` |
-| `tech-ref` | 技术评审 | `technical_framework`, `non_functional_constraints`, `global_policies`, `inter_module_contract`, `release_policy`, `architecture`, `domain_model`, `module_manifest`, `integration`, `module_design` |
-| `feature-dev` | 功能设计 | `feature_design`, `decision_log`, `unit_test`, `acceptance_test`, `feature_package` |
+| `spec-scribe` | 需求讨论 | `business_context`, `stakeholders` |
+| `tech-ref` | 技术评审 | `technical_framework`, `non_functional_constraints`, `global_policies`, `inter_module_contract`, `release_policy`, `architecture`, `domain_model`, `module_manifest`, `integration` |
+| `feature-dev` | 功能设计 | `feature_design`, `decision_log`, `unit_test`, `acceptance_test` |
 
 ## 3. 决议主题 → 目标文档 → 典型章节（第二级路由）
 
@@ -85,10 +82,8 @@
 | 目标文档存在，决议主题属于其已有章节 | `doc update-section <reference>` |
 | 目标文档存在，无对应章节 | `doc add-section <reference> '<标题>' [--level sibling\|child]` |
 | 目标文档不存在（新模块 / 新功能） | `doc new`（见 §4.2），按能力文件骨架填充 |
-| 项目为精简模式（存在 charter / module-design / feature-package） | 写入复合文档对应章节；未拆分前不新建独立基础文档 |
 
-> **新建顺序**：新模块 / 新功能先建骨架（`doc new module_design --module <名>` / `doc new feature_package --module <名> --feature <功能名>`），再创建基础文档；`doc new` 遇目录缺失返回 `new_doc.module_not_found` / `new_doc.feature_not_found` 并带修复建议。
-> **拆分（§3.7）**：复合 → 基础文档的拆分为**人工操作**（app 看板），AI 不执行，仅提示用户。
+> **新建顺序**：新模块 / 新功能直接创建文档即可，无需先建骨架——`doc new architecture --module <模块名>` 会自动创建 `module-<模块名>/` 目录，`doc new feature_design --module <模块名> --feature <功能名>` 会自动创建 `features/<功能名>/` 目录。
 
 ### 4.2 工具
 
@@ -98,8 +93,8 @@
 | `doc read <path>` | 读取单篇文档的段落级内容，返回各段落 reference（供 update / remove-section 引用） |
 | `doc update-section <reference> --content <正文>` | 更新已有段落 |
 | `doc add-section <reference> '<标题>' [--content <正文>] [--level sibling\|child]` | 新增段落 |
-| `doc new <doc_type> [--module <模块名>] [--feature <功能名>]` | 新增文档：CLI 按注册表自动定位模板（`.doc-kit/templates/`）与目标目录 |
+| `doc new <doc_type> [--module <模块名>] [--feature <功能名>]` | 新增文档：CLI 按注册表自动定位模板（`.doc-kit/templates/`）与目标目录，目录缺失时自动创建 |
 | `doc remove-section <reference>` | 删除段落及其子段落 |
 
-> 错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，AI 读到后直接按建议行动。模块/功能目录不存在、精简模式等场景由 CLI 返回对应错误码与修复建议（如 `new_doc.module_not_found`、`new_doc.minimal_profile`）。
+> 错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，AI 读到后直接按建议行动。文档类型未注册、目标文件已存在等场景由 CLI 返回对应错误码与修复建议（如 `new_doc.unknown_type`、`new_doc.exists`）。
 
