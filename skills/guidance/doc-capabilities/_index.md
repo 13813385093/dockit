@@ -5,7 +5,10 @@
 
 ## 使用流程
 
-1. **定位**：先 `doc structure` 查看现有文档，再按 §2（议题场景）或 §3（决议主题）定位 doc_type，并按 §4 判断「新增 vs 更新」。**文档间归属差异在此层判定完毕，能力文件不重复文档间边界。**
+1. **定位**：先 `doc structure` 查看现有文档，再按 §2（议题场景）或 §3（决议主题）定位 doc_type，并按 §4 判断「新增 vs 更新」。**文档间归属在此层（§2/§3）完成首次判定；能力文件的「行文规则·禁止」只作落笔前的边界提醒，不替代本层的路由判定。**
+
+> **权威优先级**：`doc-capabilities/<doc_type>.md`（落笔模板，AI 据此写正文）＞ 指南 §3.x（设计说明与默认值）；两者不一致时以能力文件为准，并同步修订指南（本仓约定：结构/要素类以能力文件为准回填指南；形式类以指南为准修正能力文件）。
+
 2. **加载**：`read_file doc-capabilities/<doc_type>.md`。
 3. **执行**：
    - 更新已有章节 → `doc update-section <reference>`
@@ -21,8 +24,8 @@
 |----------|--------|------|-----------|
 | `business_context` | business-context.md | ✅ | 项目为什么存在：业务动因、目标、范围、用户、术语 |
 | `technical_framework` | technical-framework.md | ✅ | 全局技术选型与架构风格：语言、框架、中间件、部署、工具链 |
-| `non_functional_constraints` | non-functional-constraints.md | ✅ | 不可突破的量化底线：性能、安全、合规、兼容、编码规范指标 |
-| `global_policies` | global-policies.md | ✅ | 影响 ≥2 模块的统一策略：认证、日志、错误码、一致性、命名 |
+| `non_functional_constraints` | non-functional-constraints.md | ✅ | 不可突破的底线与量化指标：性能、安全、合规、兼容、编码规范门槛 |
+| `global_policies` | global-policies.md | ✅ | 影响 ≥2 模块的统一策略：认证、安全、可观测性、一致性、异常处理、合规审计、代码规范、命名、依赖管理 |
 | `inter_module_contract` | inter-module-contracts.md | 推荐 | 模块间接口字段级契约：请求/响应、共享事件 payload、共享结构 |
 | `stakeholders` | stakeholders.md | 可选 | 干系人角色、关注点、决策权、参与方式 |
 | `release_policy` | release-policy.md | 推荐 | 发布域规则：发布单元、门禁、流水线、发布号、回滚 |
@@ -57,20 +60,20 @@
 
 | 决议主题类别 | 目标文档 | 典型章节 |
 |-------------|---------|---------|
-| 业务动因 / 目标 / 范围 / 术语 | `business_context` | §项目动因 / §项目目标 / §业务范围 / §关键术语表 |
-| 技术选型 / 架构风格 / 工具链 | `technical_framework` | §技术栈概览 / §架构风格 / §开发环境与工具链 |
-| 性能 / 安全 / 合规 / 兼容指标 | `non_functional_constraints` | §性能约束 / §安全约束 / §平台兼容性 |
-| 认证 / 日志 / 错误码 / 一致性 / 命名 | `global_policies` | §安全与认证 / §可观测性 / §异常处理 / §命名约定 |
+| 业务动因 / 目标 / 范围 / 术语 | `business_context` | §项目动因 / §项目目标 / §目标用户 / §业务范围 / §关键术语表 |
+| 技术选型 / 架构风格 / 工具链 | `technical_framework` | §技术栈概览 / §架构风格 / §主要框架与中间件 / §部署模型 / §开发环境与工具链 |
+| 性能 / 安全 / 合规 / 兼容指标 | `non_functional_constraints` | §性能约束 / §安全约束 / §编码规范 / §平台兼容性 / §第三方依赖约束 |
+| 认证 / 安全 / 可观测性 / 一致性 / 异常处理 / 合规审计 / 代码规范 / 命名 / 依赖管理 | `global_policies` | §安全与认证 / §可观测性 / §异常处理 / §命名约定（典型策略主题，可增删） |
 | 模块间接口字段 / 事件 / 共享结构 | `inter_module_contract` | §模块间接口定义 / §共享事件定义 / §共享数据结构 |
 | 模块能力存在性 / 依赖关系 | `module_manifest` | §Exports / §Imports |
-| 模块组件 / 内部流程 | `architecture` | §组件划分 / §关键流程 |
-| 领域实体 / 业务不变条件 | `domain_model` | §聚合根 / §实体 / §领域约束 |
-| 外部系统对接 / 降级 | `integration` | §外部系统概览 / §错误处理与降级 |
-| 功能行为 / 触发 / 边界约束 / 函数签名与调用 | `feature_design` | §功能描述 / §触发条件 / §边界约束 / §函数调用关系 |
+| 模块组件 / 内部流程 | `architecture` | §模块概述 / §核心能力 / §组件划分 / §模块接口 / §关键流程 |
+| 领域实体 / 业务不变条件 | `domain_model` | §聚合根 / §实体 / §值对象 / §领域约束 |
+| 外部系统对接 / 降级 | `integration` | §外部系统概览 / §集成方式与协议 / §数据流与同步策略 / §错误处理与降级 |
+| 功能行为 / 触发 / 边界约束 / 函数签名与调用 | `feature_design` | §功能描述 / §触发条件 / §适用前提 / §处理流程 / §异常路径 / §边界约束 / §函数调用关系 |
 | 选型理由 / 方案对比 / 权衡 | `decision_log` | 追加一条新决策记录（不改写旧记录） |
 | 单元测试用例 | `unit_test` | 新增 GWT 用例（含「覆盖约束」行） |
 | 业务验收场景 | `acceptance_test` | 新增 Gherkin 场景 |
-| 发布门禁 / 流水线 / 回滚 | `release_policy` | §发布门禁 / §回滚策略 |
+| 发布门禁 / 流水线 / 回滚 | `release_policy` | §发布状态 / §发布单元划分 / §发布门禁 / §发布流水线 / §发布号规则 / §回滚策略 |
 | 干系人角色与关注 | `stakeholders` | §角色定义 / §信息需求矩阵 |
 
 ## 4. 写入动作与工具
