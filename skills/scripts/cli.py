@@ -182,10 +182,12 @@ def cmd_spec_status(project_root: Path) -> str:
     """检查当前议题状态并给出下一步操作指引。返回纯文本。"""
     active_dir = project_root / "SessionSpec" / "active"
     archive_dir = project_root / "SessionSpec" / "archive"
-    if not active_dir.is_dir() or not archive_dir.is_dir():
-        active_dir.mkdir(parents=True, exist_ok=True)
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        return "✅ 项目已初始化，SessionSpec/ 目录已就绪。当前无活跃议题，可参考 spec-start 流程开启新议题。"
+    # 先建目录再判定状态：archive/ 缺失只说明项目还没走过归档，不代表没有
+    # 活跃议题。若在此直接返回「无活跃议题」，会与 spec read / 实际文件状态
+    # 互相矛盾（首次 status 晚于创建议题时尤其明显）。
+    first_time = not active_dir.is_dir() or not archive_dir.is_dir()
+    active_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         sid = _detect_active_session(project_root)
@@ -193,6 +195,8 @@ def cmd_spec_status(project_root: Path) -> str:
         return f"错误: {e}"
 
     if sid is None:
+        if first_time:
+            return "✅ 项目已初始化，SessionSpec/ 目录已就绪。当前无活跃议题，可参考 spec-start 流程开启新议题。"
         return "当前没有活跃议题。可参考 spec-start 流程开启新议题。"
 
     spec = _read_spec_file(project_root, sid)
@@ -327,6 +331,24 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
         new_res = data.get("resolutions", [])
         if existing_res and not new_res:
             result += f"\n\n⚠️ **注意**：提交的 resolutions 为空，但该议题原有 {len(existing_res)} 条决议。如果是有意清空请忽略此提示。"
+
+    if data.get("status") == "closed":
+        # 议程结清护栏：关闭时尚有未 resolved 的议程时如实提示。宁可看到这条
+        # 提示，也不允许为了关闭把待决议项谎报为 resolved（deferred / blocked
+        # 才是诚实的处置方式）。
+        unresolved = [
+            str(p.get("topic", "?"))
+            for p in data.get("pending_decisions", [])
+            if p.get("status") != "resolved"
+        ]
+        if unresolved:
+            shown = "、".join(unresolved[:5]) + ("…" if len(unresolved) > 5 else "")
+            result += (
+                f"\n\n⚠️ **注意**：关闭时尚有 {len(unresolved)} 项议程未 resolved（{shown}）。"
+                "请确认它们的 status 是否属实：已解决的用 resolved，推迟的用 deferred"
+                "（并写入 next_steps），受阻的用 blocked（在 note 中写明阻塞原因）"
+                "——不要为了关闭而谎报 resolved。"
+            )
 
     if data.get("status") == "closed":
         result += "\n\n**下一步建议**：调用 spec archive 归档已关闭的议题。"

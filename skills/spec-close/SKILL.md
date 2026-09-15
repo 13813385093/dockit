@@ -1,6 +1,6 @@
 ---
 name: spec-close
-description: 关闭当前议题，包含决议完整性检查和文档写入确认
+description: 结建议题：先落盘会议纪要，再梳理 ProjectSpec 变更清单交审核并批量写入，最后归档
 ---
 # 最高优先级：
 
@@ -15,93 +15,113 @@ description: 关闭当前议题，包含决议完整性检查和文档写入确�
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
 python .doc-kit/cli/cli.py spec read
+python .doc-kit/cli/cli.py spec schema
 python .doc-kit/cli/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
-python .doc-kit/cli/cli.py spec archive
 python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
+python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
 python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
-python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>]
-python .doc-kit/cli/cli.py doc remove-section <reference>
+python .doc-kit/cli/cli.py spec archive
 ```
 
-> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败；纯文本输出（spec read）以「错误:」开头即失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。
+> 输出约定：`spec status` / `spec read` / `spec schema` 直接输出文本——`spec status` 是一行中文状态描述，`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。其余命令输出 JSON 信封，含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `dev`）之前。
 ---
 
-# spec-close — 关闭当前议题
+# spec-close — 结建议题
 
 ## 定位
 
-结束整个议题。议题关闭后不可续接，需开启新议题。
+结束整个议题。五步走：
+
+```
+① 落盘本轮讨论（会议纪要） → ② 议程结清检查 → ③ 梳理 ProjectSpec 变更清单（用户审核）
+   → ④ 批量写入 ProjectSpec → ⑤ 标终态并归档
+```
+
+本技能是议题链路中**唯一写 `ProjectSpec/` 的技能**：整个讨论期间攒下的决议，在这里一次性梳理、审核、落盘。议题关闭后不可续接，需开启新议题。
 
 ## 在哪选
 
-`active` 状态下，当用户说「这个议题讨论完了」「关闭」时。
+`active` 状态下，用户说「这个议题讨论完了」「关闭」「收尾」时；或 `spec-load` 发现议程已全部 resolved 时。
 
 ## 选择判断
 
-在调 `spec write` 之前，先检查和确认以下事项：
+### Step 1：落盘本轮讨论（先确保上下文都进了会议纪要）
 
-### 1. 读取当前议题
+本轮对话中的内容如果还没保存，先按本节落盘（等价于 `spec-pause` 的核心流程）：
 
-调 `python .doc-kit/cli/cli.py spec read` 获取完整的议题数据（含 resolutions、pending_decisions、next_steps）。
+1. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec
+2. 从本次对话提取变更：新决议（`detail` ≥150 字）/ 议程状态推进 / 新增议程 / 后续计划增删
+3. 组装完整 spec（全量替换）→ `python .doc-kit/cli/cli.py spec write --json '<spec_json>'`
 
-### 2. 提取本次对话的变更
+> 本步**只写会议纪要**（`SessionSpec/active/`），不写 `ProjectSpec/`。
+> 若本轮无可落盘内容（上次已 `spec-pause` 保存过），直接进入 Step 2。
 
-从本次对话中提取所有未保存的决议、待定决议和后续计划，结构同 spec-pause Step 1：
+### Step 2：议程结清检查
 
-- 已达成明确结论的 → 追加到 `resolutions[]`
-- 悬而未决的新问题 → 追加到 `pending_decisions[]`
-- 下一步计划 → 追加到 `next_steps[]`
+检查 `pending_decisions[]` 中所有未 `resolved` 的条目，**逐条与用户确认处置**：
 
-> 以下 Step 3–5 的检查均基于「已有数据 + 本次新增」的合并结果。
+| 处置 | 用法 | 后续 |
+|------|------|------|
+| `resolved` | 本次已谈出结论 | 若结论成立，同时补入 `resolutions[]`（`detail` ≥150 字） |
+| `deferred` | 推迟到下次 | 写入 `next_steps[]`，说明下次要谈什么 |
+| `blocked` | 受阻无法推进 | 在 `note` 中写明阻塞原因与解除条件 |
 
-### 3. 待定决议检查
+- **禁止为了关闭而谎报 `resolved`**：没谈出结果就如实标 `deferred` / `blocked`（CLI 在关闭时会对此给出提示）。
+- 用户坚持继续讨论时，回到讨论（本技能中止，待用户再次触发）。
+- 处置结果同样通过 `spec write` 落盘。
 
-检查合并后的 `pending_decisions[]`：
+### Step 3：梳理 ProjectSpec 变更清单（用户审核）
 
-- 如果还有 **未 resolved 的待定决议**，提示用户：
-  > 仍有 X 项待定决议未解决，建议继续讨论后再关闭。
-  > 如需强行关闭，将这些未解决项的 status 改为 resolved 即可清除。
+对**全部决议**（已有 + 本次新增）确定文档归宿：
 
-- 用户可选择继续讨论或强行关闭。
+1. 调 `python .doc-kit/cli/cli.py doc structure` 查看当前 `ProjectSpec/` 的文档与段落结构（结果可缓存在内存复用）
+2. 逐条决议路由：`read_file <项目根>/.doc-kit/skills/guidance/doc-capabilities/_index.md`，按 §2（议题场景）/ §3（决议主题）定位 doc_type，按 §4 判断「新增 vs 更新」
+3. 加载能力：`read_file <项目根>/.doc-kit/skills/guidance/doc-capabilities/<doc_type>.md`，按其「段落结构 / 行文规则」确定目标章节与写法（含约束编号规则）
+4. 调 `python .doc-kit/cli/cli.py doc read <path>` 查看目标文档现状，确认是更新已有段落还是新增段落；文档不存在则计划 `doc new <doc_type> --module <模块名> --feature <功能名> [--author <负责人>]`
+5. 汇总为**变更清单表**：
 
-### 4. 决议 Detail 完整性检查
+| # | 决议 topic | 目标文档 | 章节 | 动作 | 写入摘要 |
+|---|-----------|---------|------|------|---------|
+| 1 | 认证协议选型 | `technical-framework.md` | §主要框架与中间件 | `doc update-section` | … |
+| 2 | 退款功能设计 | `module-pay/features/pay-refund/feature-design.md` | ——（新建） | `doc new` | … |
+| 3 | 内部讨论口径 | —— | —— | 不落文档 | 仅会议纪要，理由：… |
 
-检查合并后的每条决议的 `detail` 是否 ≥150 字。不足时提示用户：
+6. 展示清单给用户审核，允许**改目标文档/章节、拆条、删条、标记"不落文档"**。
 
-  > ⚠️ 以下决议的 detail 不足 150 字，写入文档时可能信息不足：
-  >
-  > 建议用 spec write 补充后再关闭。
+**两条硬性纪律**：
 
-> 注意：`detail` 的最小长度校验由 `spec write` 自动执行。
+- **每条决议必须有归宿**：或写入某文档，或显式标「不落文档」并写明理由——不允许静默漏写。
+- **审核通过前不得写入任何一条**（不允许边梳理边写）。
 
-### 5. 文档写入检查
+> 约束标记（`[MUST]` / `[SHOULD]` / `[MAY]`）应忠实保留到目标文档中，不可降级或升格。
 
-确认所有已决议的内容（已有 + 本次新增）已写入 ProjectSpec/ 对应文档：
+### Step 4：批量写入 ProjectSpec
 
-1. 调 `python .doc-kit/cli/cli.py doc structure` 查看当前文档结构（结果可缓存复用）
-2. 对每条未写入的决议，按 spec-pause Step 3 的流程（能力库定位 → doc structure → doc read → 判断 update/add 或 doc new）确定写入位置
-3. 汇总待写入清单，向用户确认
-4. 用户确认后，一次性调 `doc update-section` / `doc add-section` 写入
+用户审核通过后，按清单顺序执行：
 
-### 6. 组装关闭 spec 并写入
+1. **先 `doc new`**：目标文档不存在的条目先建（`doc new architecture --module <模块名>` 会自动创建模块目录；`doc new feature_design --module <模块名> --feature <功能名>` 会自动创建功能目录）
+2. 再逐条 `doc update-section` / `doc add-section` 写入正文
+3. 逐条记录结果（成功 / 失败 + 错误码 `ERROR [<错误码>] …。修复：<建议>`），**失败项记录后继续执行其余条目**（条目之间相互独立）
+4. 末尾汇总：「成功 N 条 / 失败 M 条；失败清单与建议」，失败项交用户决定重试或人工处理
 
-修改 spec：
+### Step 5：标终态并归档
 
-- `status`: `"closed"`
-- `closed_at`: `"当前时间 ISO 8601"`
-- `closed_reason`: `"关闭原因"`
-- 如有需要强行清除未解决的待定决议，将其 status 改为 `resolved`
-
-调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存关闭状态。
-
-### 7. 归档
-
-调 `python .doc-kit/cli/cli.py spec archive` 将已关闭的议题从 active 移至 archive。
+1. 组装关闭 spec：`status: "closed"`、`closed_at`（ISO 8601）、`closed_reason`（**必填**，用户未提供时先询问，不编造）
+2. 调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存关闭状态
+3. 调 `python .doc-kit/cli/cli.py spec archive` 归档（`SessionSpec/active/` → `SessionSpec/archive/`）
 
 ## 成功后
 
-- MCP 标记为 closed，移至 archive
-- 下次 `python .doc-kit/cli/cli.py spec status` 返回「没有活跃议题」
-- 如需再次讨论，需开启新议题
+- 议题状态为 `closed` 并移至 `SessionSpec/archive/`；下次 `spec status` 返回「没有活跃议题」
+- 项目文档已按清单更新；如需再次讨论，必须开启新议题（`spec-start`）
+- 若上次关闭后归档未完成，用 `spec-archive` 兜底补归档
+
+## 边界
+
+- **只有本技能写 `ProjectSpec/`**；`spec-start` / `spec-load` / `spec-pause` / `spec-abort` 都不写
+- 写入必须经用户审核通过（Step 3 → Step 4 的顺序不可颠倒）
+- 归档不可逆：`closed` / `abandoned` 是终态，不能回退为 `active`
+- 删除段落（`doc remove-section`）不在本技能职责内——如需清理废弃段落，属人工或后续议题范畴
+- 决议只增不改：已写入的决议要修正，另开议题

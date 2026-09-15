@@ -51,7 +51,7 @@ SPEC_SCHEMA = {
     "session_spec_id": {
         "type": str,
         "required": True,
-        "description": "人类可读的唯一标识，如 'ss-tech-ref-module-A-001'",
+        "description": "人类可读的唯一标识，格式 '{当天日期}-{topic-kebab}'，如 '20260618-cert-auth'",
     },
     "project": {
         "type": str,
