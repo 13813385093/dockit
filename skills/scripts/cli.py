@@ -911,13 +911,28 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 #  入口——开发循环内 ProjectSpec 只读，发现的设计问题只记录到 CodeNotes /
 #  报告，修改由评审/会议在循环外完成（有版本痕迹地修改）。
 
-DEV_TASK_STATUSES = ["pending", "in-progress", "implemented", "unit-green", "done", "fixing"]
+DEV_TASK_STATUSES = [
+    "pending", "implementing", "submitted", "accepted", "tested", "done", "rejected", "blocked",
+]
+"""任务状态（骨架化 + 委托实现流程）。
+
+pending      骨架已确认，待实现
+implementing 子代理/主代理实现中
+submitted    产出已交回，待主代理验收
+accepted     主代理验收通过（签名/注释承诺/文件范围/编译/冒烟）
+tested       该任务的 GWT 用例真实通过
+done         已提交
+rejected     验收或测试不通过（note 必带失败证据），可重派
+blocked      发现设计缺口/签名需变更，待用户裁决
+"""
 DEV_TASK_TRANSITIONS = {
-    "pending": {"in-progress"},
-    "in-progress": {"implemented", "fixing"},
-    "implemented": {"unit-green", "fixing"},
-    "unit-green": {"done", "fixing"},
-    "fixing": {"in-progress"},
+    "pending": {"implementing"},
+    "implementing": {"submitted", "rejected", "blocked"},
+    "submitted": {"accepted", "rejected"},
+    "accepted": {"tested", "rejected"},
+    "tested": {"done", "rejected"},
+    "rejected": {"implementing"},
+    "blocked": {"implementing", "rejected"},
     "done": set(),
 }
 DEV_FEATURE_STATUSES = ["tasks-done", "aligned", "done"]
@@ -930,6 +945,95 @@ DEV_MODULE_TRANSITIONS = {
     "done": set(),
 }
 
+DEV_PHASE_LABELS = {
+    "design": "设计与骨架化",
+    "implement": "逐方法实现与验收",
+    "test": "单元测试与验收测试",
+    "close": "收尾归档",
+}
+"""循环阶段标签。阶段由 tasks.json 派生（不落库），避免与任务状态漂移。"""
+
+
+def _dev_phase(tasks: list[dict]) -> str:
+    """由任务状态派生当前阶段：design → implement → test → close。"""
+    if not tasks:
+        return "design"
+    statuses = [t.get("status", "pending") for t in tasks]
+    if all(s == "done" for s in statuses):
+        return "close"
+    if all(s in ("accepted", "tested", "done") for s in statuses):
+        return "test"
+    return "implement"
+
+
+def _dev_next_step_suggestions(
+    phase: str, tasks: list[dict], features: dict, modules: dict
+) -> list[str]:
+    """按阶段给出可执行的下一步（仅在循环内提议，不越界改 ProjectSpec）。"""
+    out: list[str] = []
+    if phase == "design":
+        return [
+            "尚无任务清单：完成 Phase 1（读设计 + 代码考古 + 约束整合）后进入 Phase 2 骨架化，"
+            "再 dev task set 写入（每个方法必须带 implemented_in）。"
+        ]
+    if phase == "implement":
+        blocked = [t for t in tasks if t.get("status") == "blocked"]
+        if blocked:
+            return [
+                f"有 {len(blocked)} 个任务处于 blocked（设计缺口或签名变更待裁决）："
+                f"先与用户确认处置后再继续（如 {blocked[0].get('task_id')}）。"
+            ]
+        submitted = [t for t in tasks if t.get("status") == "submitted"]
+        if submitted:
+            out.append(
+                f"待验收 {len(submitted)} 个：主代理逐项验收后 "
+                f"dev task update {submitted[0]['task_id']} --status accepted"
+                "（不通过则 --status rejected --note '<失败证据>'）。"
+            )
+        rejected = [t for t in tasks if t.get("status") == "rejected"]
+        if rejected:
+            out.append(
+                f"有 {len(rejected)} 个 rejected：补简报/修正后重派 → "
+                f"dev task update {rejected[0]['task_id']} --status implementing。"
+            )
+        nxt = next((t for t in tasks if t.get("status") == "pending"), None)
+        if nxt:
+            out.append(
+                f"按拓扑序取下一个任务：dev task update {nxt['task_id']} --status implementing 后派发实现。"
+            )
+    elif phase == "test":
+        accepted = [t for t in tasks if t.get("status") == "accepted"]
+        tested = [t for t in tasks if t.get("status") == "tested"]
+        if accepted:
+            out.append(
+                f"待测试 {len(accepted)} 个：按 unit-tests.md 的 GWT 用例真实运行，"
+                f"通过后 dev task update {accepted[0]['task_id']} --status tested，再 --status done。"
+            )
+        if tested:
+            out.append(
+                f"已 tested {len(tested)} 个：提交后 dev task update {tested[0]['task_id']} --status done。"
+            )
+        if not accepted:
+            out.append(
+                "单元测试已通过：执行验收测试（acceptance-tests.md 的 Gherkin）与回归，"
+                "再 dev align --feature <功能名> --module <模块> --status aligned。"
+            )
+    elif phase == "close":
+        unaligned = [f for f, info in features.items() if info.get("status") in (None, "tasks-done")]
+        for fname in unaligned:
+            out.append(
+                f"功能 {fname} 任务已全部完成，下一步："
+                f"dev align --feature {fname} --module <模块> --status aligned。"
+            )
+        unin = [m for m in modules if modules[m].get("status") in (None, "features-done")]
+        if unin and not unaligned:
+            out.append(
+                f"模块 {unin[0]} 功能已全部对齐，下一步：dev integrate --module {unin[0]} --status integrated。"
+            )
+    if not out:
+        out.append("所有任务与里程碑已完成，可 dev close --reason '<原因>' 后 dev archive 归档。")
+    return out
+
 PLAN_SKELETON = """# 开发计划：{title}
 
 ## 1. 范围与目标
@@ -941,9 +1045,15 @@ PLAN_SKELETON = """# 开发计划：{title}
 <!-- 将散落在 ProjectSpec 各文档的相关约束整合于此，逐条注明来源引用（如 feature-design@<功能名>:C-101）。
 ProjectSpec 在开发循环内只读，此处仅整合不修改。 -->
 
-## 3. 任务清单
+## 2.5 代码风格快照
 
-<!-- 由 CLI 从 tasks.json 自动渲染（dev task set / dev task update 后自动刷新）。 -->
+<!-- 代码考古产物（Phase 1 Step 3.5）：从目标模块存量代码提取的命名约定、错误处理模式、
+日志格式、现有工具类/中间件。本节的每条都是实现阶段的强制风格约束，子代理简报必带。 -->
+
+## 3. 骨架与任务清单
+
+<!-- 由 CLI 从 tasks.json 自动渲染（dev task set / dev task update 后自动刷新）。
+列含义：任务 / 方法(类) / 实现文件 / 覆盖约束 / 状态。骨架信息（类、方法、落点）在 Phase 2 骨架化时确定。 -->
 
 ## 4. 变更记录
 
@@ -1102,21 +1212,32 @@ def cmd_dev_status(project_root: Path) -> str:
     branch = dev_spec.get("branch", "") or ""
     total = len(tasks)
     done = sum(1 for t in tasks if t.get("status") == "done")
+    phase = _dev_phase(tasks)
+    counts = {s: sum(1 for t in tasks if t.get("status", "pending") == s) for s in DEV_TASK_STATUSES}
     lines = [
         "## ✅ 当前活跃开发循环",
         "",
         f"**会话**: {sid}",
         f"**范围**: {dev_spec.get('scope_type')} {dev_spec.get('scope_target')} · {dev_spec.get('title', '')}",
+        f"**阶段**: {DEV_PHASE_LABELS[phase]}（{phase}）",
         f"**任务进度**: {done}/{total} done",
     ]
+    if tasks:
+        counters = " · ".join(f"{s} {counts[s]}" for s in DEV_TASK_STATUSES if counts[s])
+        lines.append(f"**状态分布**: {counters}")
     if branch:
         lines.append(f"**开发分支**: {branch}")
     if tasks:
         lines.append("")
-        lines.append("| 任务 | 标题 | 状态 |")
-        lines.append("|------|------|------|")
+        lines.append("| 任务 | 方法 | 文件 | 状态 |")
+        lines.append("|------|------|------|------|")
         for t in tasks:
-            lines.append(f"| {t.get('task_id')} | {t.get('title', '')} | {t.get('status', 'pending')} |")
+            impl = t.get("implemented_in") or {}
+            path = impl.get("path", "") if isinstance(impl, dict) else str(impl)
+            symbol = t.get("symbol") or ", ".join(t.get("functions", [])[:2]) or "—"
+            lines.append(
+                f"| {t.get('task_id')} | {symbol} | {path or '—'} | {t.get('status', 'pending')} |"
+            )
     features = dev_spec.get("features", {})
     modules = dev_spec.get("modules", {})
     if features:
@@ -1135,18 +1256,7 @@ def cmd_dev_status(project_root: Path) -> str:
         suggestions.append(
             f"分支检查：git branch --show-current 应为 {branch}；不一致则 git checkout {branch}（或按 plan.md §6 记录的分支名）。"
         )
-    next_task = next((t for t in tasks if t.get("status") == "pending"), None)
-    if next_task:
-        suggestions.append(f"下一步：dev task update {next_task['task_id']} --status in-progress 开始任务。")
-    else:
-        unaligned = [f for f, info in features.items() if info.get("status") in (None, "tasks-done")]
-        for fname in unaligned:
-            suggestions.append(f"功能 {fname} 任务已全部完成，下一步：dev align --feature {fname} --module <模块> --status aligned。")
-        unin = [m for m in modules if modules[m].get("status") in (None, "features-done")]
-        if unin and not unaligned:
-            suggestions.append(f"模块 {unin[0]} 功能已全部对齐，下一步：dev integrate --module {unin[0]} --status integrated。")
-    if not suggestions:
-        suggestions.append("所有任务与里程碑已完成，可 dev close --reason '<原因>' 后 dev archive 归档。")
+    suggestions.extend(_dev_next_step_suggestions(phase, tasks, features, modules))
 
     return _ok(
         message="\n".join(lines),
@@ -1157,6 +1267,8 @@ def cmd_dev_status(project_root: Path) -> str:
             "title": dev_spec.get("title"),
             "status": dev_spec.get("status"),
             "branch": branch,
+            "phase": phase,
+            "status_counts": counts,
             "tasks": tasks,
             "features": features,
             "modules": modules,
@@ -1379,15 +1491,29 @@ def cmd_dev_plan_add_section(project_root: Path, reference: str, heading: str, c
 
 
 def _render_task_table(tasks: list[dict]) -> str:
-    rows = ["| 任务 | 标题 | 函数 | 覆盖约束 | 状态 |", "|------|------|------|---------|------|"]
+    rows = ["| 任务 | 方法（类） | 实现文件 | 覆盖约束 | 状态 |", "|------|-----------|---------|---------|------|"]
     for t in tasks:
         fns = ", ".join(
             f"**{f}**（入口）" if f == t.get("entry_function") else f
             for f in t.get("functions", [])
         )
+        cls = t.get("cls") or ""
+        symbol = t.get("symbol") or ""
+        if symbol and cls:
+            method = f"`{cls}.{symbol}`"
+        elif symbol:
+            method = f"`{symbol}`"
+        else:
+            method = fns or "—"
+        if fns and symbol:
+            method = f"{method}<br/>{fns}"
+        impl = t.get("implemented_in") or {}
+        path = impl.get("path", "") if isinstance(impl, dict) else str(impl)
+        lang = impl.get("lang", "") if isinstance(impl, dict) else ""
+        loc = f"`{path}`" + (f" ({lang})" if lang else "") if path else "—"
         cons = ", ".join(t.get("constraint_ids", [])) or "—"
         rows.append(
-            f"| {t.get('task_id','')} | {t.get('title','')} | {fns or '—'} | {cons} | {t.get('status','pending')} |"
+            f"| {t.get('task_id','')} | {method} | {loc} | {cons} | {t.get('status','pending')} |"
         )
     return "\n".join(rows)
 
@@ -1406,9 +1532,15 @@ def _refresh_plan_tasks(project_root: Path, session_dir: Path, tasks: list[dict]
     rel = str(plan_path.relative_to(project_root).as_posix())
     doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     table = _render_task_table(tasks)
-    heading = "3. 任务清单"
+    heading = "3. 骨架与任务清单"
     section = doc.get_section(f"{rel}#{heading}")
     if section is None:
+        # 向后兼容旧会话（旧骨架的章节名为 "3. 任务清单"）
+        legacy = doc.get_section(f"{rel}#3. 任务清单")
+        if legacy is not None:
+            legacy.content = table
+            plan_path.write_text(doc.to_markdown(), encoding="utf-8")
+            return
         doc.insert_section(rel, heading, table)
     else:
         section.content = table
@@ -1418,24 +1550,67 @@ def _refresh_plan_tasks(project_root: Path, session_dir: Path, tasks: list[dict]
 TASK_ALLOWED_KEYS = (
     "task_id", "title", "module", "feature", "functions", "entry_function",
     "signature", "gwt_refs", "constraint_ids", "status", "deviation", "notes",
+    # 骨架化（Phase 2）确定的结构信息：类/方法归属、实现落点、调用关系、能力注释
+    "cls", "symbol", "implemented_in", "calls", "capability_notes", "merge_reason",
+    # 委托实现（Phase 3）的派发参数
+    "timeout_seconds", "max_attempts", "attempts",
+)
+
+_TASK_LIST_FIELDS = ("functions", "gwt_refs", "constraint_ids", "calls", "capability_notes")
+_TASK_STR_FIELDS = (
+    "module", "feature", "entry_function", "signature", "title", "deviation", "notes",
+    "cls", "symbol", "merge_reason",
 )
 
 
 def _clean_task(raw: dict, index: int) -> tuple[dict | None, str | None]:
-    """校验并清洗单条任务。返回 (cleaned, error)。"""
+    """校验并清洗单条任务。返回 (cleaned, error)。
+
+    未知字段一律**报错**（不再静默丢弃）：历史上 timeout_seconds 与
+    implemented_in 都曾因静默丢弃而"写了没生效"，这类坑必须在写入时就暴露。
+    """
     tid = raw.get("task_id")
     if not tid or not str(tid).strip():
         return None, f"tasks[{index}] 缺少 task_id"
     tid = str(tid).strip()
+
+    unknown = [k for k in raw if k not in TASK_ALLOWED_KEYS]
+    if unknown:
+        return None, (
+            f"task '{tid}' 含未知字段 {unknown}。允许的字段: {list(TASK_ALLOWED_KEYS)}。"
+            "（未知字段不再被静默忽略——如需新增字段请先扩展 CLI schema）"
+        )
+
     if not raw.get("title") or not str(raw["title"]).strip():
         return None, f"tasks[{index}]（{tid}）缺少 title"
     status = raw.get("status", "pending")
     if status not in DEV_TASK_STATUSES:
         return None, f"task '{tid}' status '{status}' 不合法。允许: {DEV_TASK_STATUSES}"
+
+    # 实现落点：骨架化的核心产物，子代理派发必需
+    impl = raw.get("implemented_in")
+    if impl is None or (isinstance(impl, dict) and not str(impl.get("path", "")).strip()):
+        return None, (
+            f"task '{tid}' 缺少 implemented_in.path（实现落点）。"
+            "修复：Phase 2 骨架化时确定每个方法的源码文件，形如 "
+            '{"path": "src/order/service.go", "lang": "go"}。'
+        )
+    if isinstance(impl, str):
+        if not impl.strip():
+            return None, f"task '{tid}' implemented_in 不能为空"
+        impl = {"path": impl.strip()}
+    elif not isinstance(impl, dict):
+        return None, f"task '{tid}' implemented_in 必须是对象或路径字符串"
+    else:
+        impl = {"path": str(impl["path"]).strip()}
+        if impl.get("lang") or raw["implemented_in"].get("lang"):
+            impl["lang"] = str(raw["implemented_in"].get("lang", "")).strip()
+
     item: dict = {k: raw[k] for k in TASK_ALLOWED_KEYS if k in raw}
     item["task_id"] = tid
     item["status"] = status
-    for k in ("functions", "gwt_refs", "constraint_ids"):
+    item["implemented_in"] = impl
+    for k in _TASK_LIST_FIELDS:
         v = item.get(k)
         if v is None:
             item[k] = []
@@ -1443,9 +1618,20 @@ def _clean_task(raw: dict, index: int) -> tuple[dict | None, str | None]:
             item[k] = [str(x) for x in v]
         else:
             return None, f"task '{tid}' 字段 {k} 必须是数组"
-    for k in ("module", "feature", "entry_function", "signature", "title", "deviation", "notes"):
+    for k in _TASK_STR_FIELDS:
         if k in item and item[k] is not None and not isinstance(item[k], str):
             item[k] = str(item[k])
+    # 派发参数：数值 + 默认值
+    for k, default in (("timeout_seconds", 300), ("max_attempts", 2), ("attempts", 0)):
+        v = item.get(k, default)
+        try:
+            item[k] = int(v)
+        except (TypeError, ValueError):
+            return None, f"task '{tid}' 字段 {k} 必须是整数"
+    if item["timeout_seconds"] <= 0:
+        return None, f"task '{tid}' timeout_seconds 必须为正整数"
+    if item["max_attempts"] < 0:
+        return None, f"task '{tid}' max_attempts 不能为负"
     return item, None
 
 
@@ -1506,7 +1692,10 @@ def cmd_dev_task_set(project_root: Path, tasks_json: str) -> str:
     return _ok(
         message=f"## ✅ 任务清单已保存（{len(cleaned)} 个任务）",
         data={"count": len(cleaned)},
-        suggestions=["plan.md §3 已同步。进入 LOOP：dev task update <id> --status in-progress。"],
+        suggestions=[
+            "plan.md §3 已同步（骨架与任务清单）。"
+            "下一步：创建开发分支后，按拓扑序 dev task update <id> --status implementing 开始派发实现。"
+        ],
     )
 
 
@@ -1525,7 +1714,9 @@ def cmd_dev_task_update(project_root: Path, task_id: str, status: str, note: str
     if status not in DEV_TASK_TRANSITIONS.get(cur, set()):
         return _fail(
             f"ERROR [dev_task.invalid_transition] 状态 {cur} → {status} 不合法。修复：按状态机推进"
-            "（pending → in-progress → implemented → unit-green → done；失败 → fixing → in-progress）。"
+            "（骨架确认后 pending → implementing → submitted（交回待验收）→ accepted（主代理验收通过）"
+            " → tested（GWT 真实通过）→ done；验收/测试不通过 → rejected（可重派）；"
+            "发现设计缺口或签名需变更 → blocked（待用户裁决））。"
         )
     target["status"] = status
     if note:
@@ -1914,7 +2105,7 @@ def build_parser() -> argparse.ArgumentParser:
     task_set_p.add_argument("--json", required=True, help="完整 tasks 数组 JSON；或 {\"tasks\": [...]}")
     task_upd_p = task_sub.add_parser("update", help="任务状态迁移")
     task_upd_p.add_argument("task_id", help="任务 ID")
-    task_upd_p.add_argument("--status", required=True, help="目标状态：pending/in-progress/implemented/unit-green/done/fixing")
+    task_upd_p.add_argument("--status", required=True, help="目标状态：" + "/".join(DEV_TASK_STATUSES))
     task_upd_p.add_argument("--note", default="", help="附加备注（追加到 notes）")
     task_ann_p = task_sub.add_parser("annotate", help="给任务追加备注（不改变状态）")
     task_ann_p.add_argument("task_id", help="任务 ID")
