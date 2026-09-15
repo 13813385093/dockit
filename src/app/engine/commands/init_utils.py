@@ -1,6 +1,9 @@
 """项目初始化的纯逻辑函数 — 从 CLI init.py 提取，无 typer 依赖。"""
-import sys
+import hashlib
+import json
+import re
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
@@ -230,6 +233,46 @@ def copy_guidance(project_root: Path) -> list[str]:
     return copied
 
 
+def write_toolchain_manifest(project_root: Path) -> dict:
+    """把工具链版本与各副本的 sha256 写入 .doc-kit/toolchain.json。
+
+    为什么需要：init 是把工具链**快照复制**进项目，此后仓库与项目各自演化。
+    「新技能 + 旧 CLI」时，旧 CLI 会静默丢弃它不认识的字段（如 implemented_in），
+    命令还报成功。这份清单让 `cli.py tool status` 能发现版本错配与副本被改动。
+
+    版本号从**刚复制过去的 cli.py** 里解析（单一事实源，避免与应用侧重复维护
+    一份常量而在打包/冻结场景下漂移）；解析不到时记录 None，tool status 会
+    按"版本不一致"处理。
+     """
+    kit_dir = project_root / ".doc-kit"
+    version = None
+    cli_copy = kit_dir / "cli" / "cli.py"
+    if cli_copy.exists():
+        m = re.search(r'^TOOLCHAIN_VERSION\s*=\s*["\']([^"\']+)["\']', cli_copy.read_text(encoding="utf-8"), re.M)
+        if m:
+            version = m.group(1)
+
+    files: dict[str, str] = {}
+    for sub in ("cli", "skills", "templates"):
+        base = kit_dir / sub
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts:
+                rel = path.relative_to(project_root).as_posix()
+                files[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    manifest = {
+        "toolchain_version": version,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "files": files,
+    }
+    (kit_dir / "toolchain.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return manifest
+
+
 def init_project(
     project_root: Path,
     project_name: str | None = None,
@@ -255,6 +298,7 @@ def init_project(
     copy_cli(project_root)
     copy_skills(project_root)
     copy_guidance(project_root)
+    write_toolchain_manifest(project_root)
     build_index(project_docs, project_root, created)
 
     return name

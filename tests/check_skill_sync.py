@@ -21,7 +21,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 # CLI 命令分组（正则捕获组）。dev 组为两级子命令（如 `dev plan create`），
 # 因此允许捕获至多两个单词，其余组为单级命令（如 `doc update-section`）。
 # 仅匹配行内空格（[ \t]+），避免跨行误匹配。
-GROUP_RE = re.compile(r"cli\.py[ \t]+(spec|doc|review|dev)((?:[ \t]+[a-z][a-z-]*){1,2})")
+GROUP_RE = re.compile(r"cli\.py[ \t]+(tool|spec|doc|review|dev)((?:[ \t]+[a-z][a-z-]*){1,2})")
 
 # 技能名的下划线写法（spec_start）是 Python 函数名 / 旧 MCP 工具名的写法，
 # 写进 SKILL.md 正文会让 AI 找不到对应技能。只匹配 9 个真实技能名，避免误伤

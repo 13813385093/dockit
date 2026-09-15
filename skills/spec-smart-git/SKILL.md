@@ -5,16 +5,41 @@ description: 按标签分解待提交变更，生成规范化的 git 提交
 
 # 最高优先级：
 
-在本次 Skill 执行过程中，所有 git 操作一律使用 `bash` 工具执行。
+**三层边界（先看清各自走哪条路）**：
 
-**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产），允许直接 read_file 读取（仅读）——辅助理解 diff 涉及的文档类型时，可对照对应 `<doc_type>.md` 能力文件。
+| 对象 | 读写方式 |
+|------|---------|
+| `ProjectSpec/`（设计文档） | **经 CLI**：`doc structure` / `doc read` 只读；需要改文档时（仅 `spec-code-review` 的后续动作）必须先读 `_index.md` 定位 doc_type + 读能力文件 + **经用户确认**后再 `doc update-section` / `doc add-section` |
+| **源码、diff、工作区文件** | **直接读写**（`bash` / 文件工具）。CLI 不介入代码与工作区 |
+| git 仓库操作 | **一律用 `bash`**（CLI 不执行 git）：`git status` / `git diff` / `git log` / `git add` / `git commit` / `git push` |
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`。若缺失，输出「请先运行 doc-kit 初始化该项目」并终止流程。
+**例外（能力库，仅读）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取，禁止写入**——辅助判断 diff 涉及的文档类型、或按 `_index.md` §2/§3 路由文档写入位置时对照能力文件。
 
-允许调用的共享 CLI（**只读用途，不得写入**）：
-- `python .doc-kit/cli/cli.py doc structure` — 获取项目文档结构，辅助变更分类
-- `python .doc-kit/cli/cli.py doc read <path>` — 读取设计文档内容，辅助理解 diff 上下文
-- `python .doc-kit/cli/cli.py spec read` — 读取活跃议题上下文，辅助生成 commit message
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案，不再执行后续步骤。
+
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+
+- `data.toolchain_version` **等于** `2026.09.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
+- **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
+
+为什么必须有这一步：`init` 是把工具链**快照复制**进项目，之后两边各自演化；而新版技能配旧版 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（命令仍报"已保存"），导致关键信息凭空消失。
+
+工具调用（从项目根执行）：
+
+```bash
+cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python .doc-kit/cli/cli.py tool status
+python .doc-kit/cli/cli.py spec read
+python .doc-kit/cli/cli.py doc structure
+python .doc-kit/cli/cli.py doc read <path>
+```
+
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。
+>
+> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一行中文状态描述，`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
+>
+> 未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `review` / `dev`）之前。
 ---
 
 # spec-smart-git — 智能分解与提交
@@ -39,7 +64,7 @@ Phase 2 — 提案（AI 展示，人确认）
   展示分解方案 → 用户确认 / 调整 / 合并 / 跳过
 
 Phase 3 — 执行（AI 执行）
-  逐个提交 → 可选推送
+  逐个提交（pathspec 形式）→ 可选推送（开发分支默认不推）
 
 Phase 4 — 收尾
   输出完成摘要
@@ -51,10 +76,8 @@ Phase 4 — 收尾
 
 ### Step 1-0：前置条件
 
-在开始任何操作之前，确认环境就绪：
-
 ```bash
-git --version >nul 2>&1 && git rev-parse --git-dir >nul 2>&1
+git --version >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1
 ```
 
 **不满足条件时**，直接输出以下文案并终止流程（不再执行后续 Steps）：
@@ -68,24 +91,15 @@ git --version >nul 2>&1 && git rev-parse --git-dir >nul 2>&1
   • cd 切换到 git 仓库目录后重试
 ```
 
-执行成功后继续到 Step 1-1。
-
 ### Step 1-1：获取变更概览
 
-获取三种状态的变更信息：
-
 ```bash
-# staged 变更（用户已 git add）
-git diff --staged --stat
-
-# unstaged 变更（已修改但未 git add）
-git diff --stat
-
-# 全部变更和未跟踪文件
-git status --porcelain
+git diff --staged --stat      # 已暂存
+git diff --stat               # 已修改未暂存
+git status --porcelain        # 全部状态与未跟踪文件
 ```
 
-> **注意**：如果工作区有未解决的冲突（`git status` 显示 `UU` 等状态），提示用户先解决冲突，终止流程。
+> **冲突检查**：若出现 `UU` 等未解决冲突状态，提示用户先解决冲突并终止流程。
 
 展示给用户的摘要格式：
 
@@ -94,20 +108,17 @@ git status --porcelain
 
 已暂存（staged）: N 个文件
   src/app/feature.py  (+15 / -3)
-  ...
 
 未暂存（unstaged）: M 个文件
   src/app/utils.py    (+8 / -0)
-  ...
 
 未跟踪（untracked）: K 个文件
   new_file.py
-  ...
 ```
 
 ### Step 1-2：检查 .gitignore 遗漏
 
-分析所有**未跟踪文件（untracked）**，判断是否存在**明显应该被 `.gitignore` 排除**的文件类型：
+分析**未跟踪文件**，判断是否有明显应被 `.gitignore` 排除的类型：
 
 | 特征 | 举例 |
 |------|------|
@@ -117,29 +128,30 @@ git status --porcelain
 | 操作系统文件 | `Thumbs.db`, `.DS_Store` |
 | 临时文件 | `*.tmp`, `*~` |
 | 构建产物 | `dist/`, `build/`, `*.egg-info/` |
+| **工具状态**（doc-kit 机器状态，不该进业务仓库） | `.doc-kit/`（config / registry / index.json / code-review-state.json / CLI 与技能副本）——未忽略时评审锚点会被误提交，且会阻塞分支切换；`SessionSpec/active/`、`DevSpec/active/` 属工作区状态，是否入库由用户决定（`archive/` 里的 CodeNotes 与报告通常值得保留） |
 
-**如果有遗漏**，输出：
+**如果发现遗漏**，列出文件并询问用户（用自然语言回答即可，无需按键）：
 
 ```
-️  检测到未跟踪文件中包含应被 .gitignore 排除的文件：
+检测到未跟踪文件中包含应被 .gitignore 排除的文件：
   · __pycache__/util_cache.pyc
   · .vscode/settings.json（非项目级 IDE 配置）
   · Thumbs.db
 
-建议在 .gitignore 中添加对应规则后重新执行本 skill。
-是否继续当前流程（不跟踪这些文件）？ [Y/n]
+建议在 .gitignore 中添加对应规则。
+请选择：① 继续本次提交（这些文件不会进入任何提交）；② 先补 .gitignore，我再重新开始。
 ```
 
-- 用户确认后，继续流程（这些文件不会被列入提交）
-- 用户否，终止流程，让用户先更新 .gitignore
+- 用户选 ① → 继续流程，这些文件**不列入任何提交**
+- 用户选 ② → 终止流程，让用户更新 `.gitignore` 后重新执行
 
 **如果没有遗漏**，继续到 Step 1-3。
 
 ### Step 1-3：读取上下文并分类
 
-AI 先运行 `python .doc-kit/cli/cli.py doc structure` 获取项目文档结构，映射出变更文件可能关联的设计文档。
+先运行 `python .doc-kit/cli/cli.py doc structure` 获取项目文档结构，映射变更文件可能关联的设计文档。
 
-对于每个变更文件，AI 读取其完整 diff（`git diff --staged -- <file>` 或 `git diff -- <file>`），同时**按需运行 `python .doc-kit/cli/cli.py doc read <path>` 读取关联的设计文档**，综合判断属于哪个类型标签。
+对每个变更文件读取其完整 diff（`git diff --staged -- <file>` 或 `git diff -- <file>`），**按需**运行 `python .doc-kit/cli/cli.py doc read <path>` 读取关联设计文档，综合判断标签。
 
 **标签体系**（精简版 Conventional Commits）：
 
@@ -154,19 +166,20 @@ AI 先运行 `python .doc-kit/cli/cli.py doc structure` 获取项目文档结构
 **映射规则**：
 
 - **优先按文件路径语义**：`.md` 文件（非测试文档）→ `docs`；`requirements*.txt`、`.github/`、`Makefile`、打包脚本 → `chore`；`tests/` 下的文件归入关联的 `feat`/`fix` 提交而非独立标签
-- **路径语义不明确时，按 diff 内容**：AI 读取 diff 判断是新增逻辑（`feat`）还是修复（`fix`）还是重构（`refactor`）
-- **同一文件的多个异类修改**：AI 标注为「混合改动」，放入待确认组，由用户决定归属
+- **路径语义不明确时，按 diff 内容**判断是新增逻辑（`feat`）、修复（`fix`）还是重构（`refactor`）
+- **同一文件的多个异类修改**：标注为「混合改动」，放入待确认组，由用户决定归属
+- **无法确定标签或置信度低**：归入「待确认」
 
-**staged 文件处理**：
+**staged 文件处理（重要）**：
 
-- staged 的文件**保留其暂存状态**，不释放（尊重用户手动 add 的意图）
-- staged 的文件如果属于不同标签，按标签拆到不同提交中
-- 执行提交时，只 `git add` 当前分组中**已在 staged 中的文件**（它们已经 add 了，跳过 add 步骤直接 commit）
+- staged 文件**保留其暂存状态，不释放**（尊重用户手动 `add` 的意图）
+- staged 文件若属于不同标签，按标签拆到不同提交中
+- 由于 `git commit` 会提交**索引中的全部内容**，执行提交时必须使用 **pathspec 形式**（见 Phase 3），否则会把其它分组的已暂存文件卷进本次提交
 
 **输出格式**：
 
 ```
- 按标签分类结果
+按标签分类结果
 
 feat: （2 个文件）
   · src/app/feature.py     [staged]
@@ -178,19 +191,15 @@ fix: （1 个文件）
 docs: （1 个文件）
   · README.md              [unstaged]
 
-️  待确认—混合改动（1 个文件）:
+待确认—混合改动（1 个文件）:
   · src/app/mixed.py       [unstaged]  ← 同时包含 feat 和 fix 改动
 ```
-
-> 如果某个文件无法确定标签，或 AI 置信度低，归入「待确认」。
 
 ---
 
 ## Phase 2：提案
 
 ### Step 2-1：展示分解方案
-
-合并 Step 1-3 的分类结果，展示预提案：
 
 ```
 ────────────────────────────────────────────────
@@ -214,69 +223,66 @@ docs: （1 个文件）
 
     - 修正递归展开时栈溢出判断条件
 
-提交 3/3  docs: 更新 README 使用说明
-  文件:
-    · README.md  【unstaged】 (+20 / -5)
-  建议 message:
-    docs: 更新 README 使用说明
-
-    - 补充依赖图功能的操作步骤
-
-⚠️  待确认组（未分配的文件）:
-  · src/utils/helper.py  【unstaged】  — 无法确定标签
-  · src/app/config.py   【unstaged】  — 混合改动（feat + refactor）
+待确认组（未分配的文件）:
+  · src/utils/helper.py    【unstaged】 — 无法确定标签
+  · src/app/config.py      【unstaged】 — 混合改动（feat + refactor）
 ────────────────────────────────────────────────
 ```
 
 ### Step 2-2：用户确认
 
-提示用户：
+用**自然语言**与用户交互（AI 平台无法接收按键，因此不要求"输入数字"）——明确告诉用户可以这样表达：
 
 ```
-请确认以上分解方案：
-  ✅ 输入数字查看某个提交的完整 diff
-  🔀 输入 merge <编号1> <编号2> 合并两个提交
-  ✏️  输入 edit <编号> 修改该提交的 message
-  ❌ 输入 skip <编号> 跳过某个提交
-  ➕ 输入 assign <文件> <标签> 为待确认文件指定标签
-  ✅ 输入 confirm 确认并执行
-  ❌ 输入 abort 取消
+请确认以上分解方案。你可以直接说：
+  · 「看 1 的完整 diff」            —— 展示某个提交的完整 diff
+  · 「合并 1 和 2」                —— 合并两个提交
+  · 「改 3 的信息为 ...」           —— 修改某个提交的 message
+  · 「跳过 4」                     —— 跳过某个提交
+  · 「把 helper.py 归到 fix」       —— 为待确认文件指定标签
+  · 「确认」/「取消」               —— 执行或中止
 ```
 
-> 用户每次操作后，AI 更新提案并重新展示摘要，直到用户输入 `confirm` 或 `abort`。
+> 用户每次操作后，更新提案并重新展示摘要，直到用户「确认」或「取消」。
 
-特殊场景处理：
+特殊场景：
 
 - **所有文件都属于同一个标签** → 只生成一个提交，但仍展示给用户确认
 - **待确认组为空** → 直接展示完整提案
-- **用户选择 skip 所有提交** → 视为 abort
+- **用户跳过全部提交** → 视为取消
 
 ---
 
 ## Phase 3：执行
 
-### Step 3-1：逐个提交
+### Step 3-1：逐个提交（必须用 pathspec 形式）
 
-对于提案中的每个分组，按以下步骤执行：
+> **⚠️ 关键约束**：必须使用 `git commit ... -- <本分组文件>` 的 pathspec 形式。
+>
+> 原因：不带 pathspec 的 `git commit` 会提交**索引中的全部内容**。当用户手工 `git add` 过、且这些已暂存文件属于**其它标签分组**时，普通提交会把它们一起卷进本次提交——实测三个分组会混成一个提交。这与"保留用户暂存状态、按标签分解"的目标直接冲突。
+>
+> pathspec 形式只提交指定路径，**其余文件（含已暂存的）状态原样保留**。
 
 ```bash
-# 1. git add 该分组中尚未 staged 的文件
-git add <file1> <file2> ...
+# 1. 本分组中尚未暂存的文件先 add（已在暂存区的文件跳过 add）
+git add <file1> <file2>
 
-# 2. git commit（staged 的文件自动包含在内）
+# 2. 提交时显式列出本分组文件
 git commit -m "feat: xxx
 
 - 具体改动1
-- 具体改动2"
+- 具体改动2" -- <file1> <file2>
 ```
 
 **注意事项**：
 
-- 如果用户提案阶段确认了多个提交，**按顺序逐个执行**，每执行完一个输出结果，再执行下一个
-- 所有文件必须来自同一个标签分组
-- commit message 的正文（body）**必须**包含简要的变更说明（bullet points），不能只有标题行
+- 多个提交**按顺序逐个执行**，每执行完一个输出结果，再执行下一个
+- 一个提交内的文件必须来自同一个标签分组
+- commit message 正文（body）**必须**包含简要变更说明（bullet points），不能只有标题行
+- 分组内已在暂存区的文件无需 `git reset`，pathspec 提交同样生效
+- **限制说明（同一文件内混合暂存）**：若某文件同时存在"已暂存 + 未暂存"的修改，git 会提交该文件的**全部改动**——本技能不支持按 hunk 拆分；需要精细控制时，请用户先用 `git add -p` 处理后再执行本技能
 
-**commit message 规范**：
+**commit message 规范**（标签后用 ASCII 冒号，符合 Conventional Commits）：
 
 ```
 <标签>: <简短标题>
@@ -285,12 +291,7 @@ git commit -m "feat: xxx
 - <具体改动2>
 ```
 
-**利用议题上下文**：AI 可运行 `python .doc-kit/cli/cli.py spec read` 尝试读取活跃议题（无活跃议题时静默跳过），有议题时将议题描述中的背景信息融入 commit message body，让信息更有依据。
-
-**staged 文件处理**：
-
-- 对于一个分组中的所有 staged 文件，它们已经在暂存区，执行 commit 时会被自动包含
-- 确保同一个提交中不会包含不属于本分组但已被 staged 的其他文件——分组的 staged 文件必须是其子集
+**利用议题上下文**：可运行 `python .doc-kit/cli/cli.py spec read` 读取活跃议题（无活跃议题时静默跳过），把议题背景融入 message body。
 
 每个提交完成后输出：
 
@@ -307,26 +308,22 @@ git commit -m "feat: xxx
 | 失败原因 | 处理方式 |
 |---------|---------|
 | `git add` 失败（文件不存在） | 跳过该文件，继续当前提交，输出警告 |
-| `git commit` 失败（空提交、hook 拒绝） | 输出错误信息，暂停流程，询问用户是否继续 |
-| 其他异常 | 暂停流程，输出错误信息 |
+| `git commit` 失败（pathspec 不匹配、空提交、hook 拒绝） | 输出错误信息，暂停流程，询问用户是否继续 |
+| 其它异常 | 暂停流程，输出错误信息 |
 
-### Step 3-2：可选推送
+### Step 3-2：可选推送（开发分支默认不推送）
 
-所有提交完成后，询问用户：
+> **默认不推送。** 若当前分支是 `dev-loop/<sid>`（`spec-dev-loop` 的开发分支），**循环内一律不推送**——按 dev-loop 的分支策略，评审通过后的合并与推送由人工在循环外完成。
+>
+> 其它分支：所有提交完成后**询问用户**是否推送（默认不推送）：
 
 ```
-所有提交已完成。是否推送到远程？
-  Y — git push（默认）
-  n — 仅本地提交
+所有提交已完成（当前分支：<分支名>）。是否推送到远程？
+  · 「推送」—— git push（首次推送用 git push -u origin <分支>）
+  · 「不用」—— 仅本地提交
 ```
 
-如果选 Y，执行：
-
-```bash
-git push
-```
-
-> **注意**：push 失败时只输出错误信息，不阻断流程。用户可以之后自行处理。
+推送失败时只输出错误信息、不阻断流程（用户可自行处理）。
 
 ---
 
@@ -335,14 +332,17 @@ git push
 ### Step 4-1：输出完成摘要
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ 智能提交完成
 
+当前分支: <分支名>
 全部完成 3 个提交：
   abc1234  feat: 添加依赖图面板功能
   def5678  fix: 修复依赖树展开异常
   789abcd  docs: 更新 README 使用说明
 
 推送到远程: 是 / 否
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+> 若当前分支是 `dev-loop/<sid>`，追加一句提示：**代码位于开发分支，请人工评审/验收通过后再合并回主分支**（与 `spec-dev-loop` 的收尾一致）。

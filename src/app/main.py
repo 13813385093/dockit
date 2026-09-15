@@ -11,6 +11,7 @@ init 生成 ProjectSpec 骨架与 .doc-kit/ 全部资源（含 .doc-kit/cli/）�
 install-skills 把随包携带的 skills 安装到 agent 的 skills 目录。
 """
 import argparse
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -35,6 +36,21 @@ def get_app_root() -> Path:
 def get_skills_dir() -> Path:
     """随包携带的 skills 目录（含 scripts/ 与各 spec-*/SKILL.md）。"""
     return get_app_root().parent.parent / "skills"
+
+
+def get_toolchain_version() -> str:
+    """从随包 skills/scripts/cli.py 读取工具链版本（单一事实源）。
+
+    与 init 写入 .doc-kit/toolchain.json 的版本同源，便于用户判断
+    "agent 侧技能"与"项目侧 .doc-kit/"是否配套。
+    """
+    cli_src = get_skills_dir() / "scripts" / "cli.py"
+    try:
+        m = re.search(r'^TOOLCHAIN_VERSION\s*=\s*["\']([^"\']+)["\']',
+                      cli_src.read_text(encoding="utf-8"), re.M)
+    except OSError:
+        return "unknown"
+    return m.group(1) if m else "unknown"
 
 
 def _cmd_init(project_root: Path, project_name: str | None) -> int:
@@ -63,7 +79,9 @@ def _cmd_install_skills(target: str) -> int:
         target_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(md, target_dir / "SKILL.md")
         count += 1
-    print(f"✅ 已安装 {count} 个 skills 到 {dst}")
+    print(f"✅ 已安装 {count} 个 skills 到 {dst}（工具链版本 {get_toolchain_version()}）")
+    print("   提示：项目侧的 .doc-kit/ 需另行同步——在项目根运行 doc-kit init <项目根>，"
+          "或用 cli.py tool status 查看版本是否配套。")
     return 0
 
 

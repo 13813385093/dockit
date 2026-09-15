@@ -1,6 +1,6 @@
 """议题（SessionSpec）类技能改造后的行为契约回归测试。
 
-对应《skills-review/02-议题类技能改进方案》的三条基线：
+对应议题类技能的改造基线（三条，均已固化在本测试与 SKILL.md 中）：
 
   B1 两个落盘点 —— 讨论期间不落盘；只有 spec-start（建议题）与 spec-pause（保存）写
       SessionSpec/active/。

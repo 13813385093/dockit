@@ -19,31 +19,42 @@ description: 依托 ProjectSpec 做 feature 级开发：读设计 → 骨架化 
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
 
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+
+- `data.toolchain_version` **等于** `2026.09.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
+- **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
+
+为什么必须有这一步：`init` 是把工具链**快照复制**进项目，之后两边各自演化；而新版技能配旧版 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（命令仍报"已保存"），导致关键信息凭空消失。
+
 工具调用（从项目根执行）：
 
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python .doc-kit/cli/cli.py tool status
+python .doc-kit/cli/cli.py doc structure
+python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py dev status
 python .doc-kit/cli/cli.py dev plan create --scope feature --target <功能名> --module <模块名> [--title <标题>]
 python .doc-kit/cli/cli.py dev plan read
 python .doc-kit/cli/cli.py dev plan update-section <reference> --content '<正文>'
-python .doc-kit/cli/cli.py dev plan add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
 python .doc-kit/cli/cli.py dev task list
 python .doc-kit/cli/cli.py dev task set --json '<tasks 数组>'
 python .doc-kit/cli/cli.py dev task update <task_id> --status <状态> [--note '<备注>']
-python .doc-kit/cli/cli.py dev task annotate <task_id> --note '<备注>'
-python .doc-kit/cli/cli.py dev notes append --content '<md>' [--section <章节名>]
 python .doc-kit/cli/cli.py dev align --feature <功能名> --module <模块名> --status <aligned|done> [--note '<备注>']
-python .doc-kit/cli/cli.py dev report-write --kind feature --name <功能名> --content '<md>'
+python .doc-kit/cli/cli.py dev integrate --module <模块名> --status <integrated|documented|done> [--note '<备注>']
+python .doc-kit/cli/cli.py dev notes append --content '<md>' [--section <章节名>]
+python .doc-kit/cli/cli.py dev report-write --kind <feature|module> --name <目标> --content '<md>'
 python .doc-kit/cli/cli.py dev close --reason '<原因>'
 python .doc-kit/cli/cli.py dev abort --reason '<原因>'
 python .doc-kit/cli/cli.py dev archive
-python .doc-kit/cli/cli.py doc structure
-python .doc-kit/cli/cli.py doc read <path>
 ```
 
-> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根（`--root` 是全局参数，写在命令组之前）。
-
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。
+>
+> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一行中文状态描述，`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
+>
+> 未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `review` / `dev`）之前。
 ---
 
 # spec-dev-loop — 依托文档的功能级开发循环
@@ -95,7 +106,7 @@ Phase 5  收尾：dev align → CodeNotes → 功能报告 → dev close → dev
 |------|------|--------|
 | 「当前没有活跃开发循环」 | 无进行中的循环 | 引导用户指定 feature 范围，进入 Phase 1 |
 | `phase: design` | 尚无任务清单 | 从 Phase 1 开始（读设计 → 骨架化） |
-| `phase: implement` | 有任务待实现/待验收 | 按 `suggestions` 从断点继续（pending → 派发；submitted → 验收；rejected → 重派；blocked → 找用户裁决） |
+| `phase: implement` | 有任务待实现/待验收 | 先 `python .doc-kit/cli/cli.py dev task list` 看任务状态，再按 `suggestions` 从断点继续（pending → 派发；submitted → 验收；rejected → 重派；blocked → 找用户裁决） |
 | `phase: test` | 任务已验收，待测试 | 进入 Phase 4 |
 | `phase: close` | 任务全完成 | 进入 Phase 5 |
 | 报错「多个活跃开发循环」 | 违反串行约束 | 提示用户处理 `DevSpec/active/` 后重试 |
@@ -118,7 +129,7 @@ python .doc-kit/cli/cli.py dev plan create --scope feature --target <功能名> 
 
 按渐进式披露加载最小上下文集：
 
-1. `doc structure` 查看全部文档与依赖
+1. `python .doc-kit/cli/cli.py doc structure` 查看全部文档与依赖；再用 `python .doc-kit/cli/cli.py doc read <path>` 读取下面列出的具体文档
 2. **功能文档**：`feature-design.md`（§功能描述 / §触发条件 / §适用前提 / §处理流程 / §异常路径 / §边界约束 / **§函数调用关系**）、`unit-tests.md`（GWT + 覆盖约束）、`acceptance-tests.md`（Gherkin）、`decision-log.md`
 3. **所属模块上下文（必需，不是可选阅读）**：
    - `architecture.md` **§组件划分** → **"方法落在哪个类/组件"的设计来源**，骨架阶段没有它无法决定类归属
@@ -341,7 +352,7 @@ timeout ${timeout_seconds}s <测试命令> 2>&1 | tee DevSpec/active/<sid>/evide
 
 ## 运行前检查
 
-每次进入先 `dev status` 看 `phase` 与状态分布，从对应阶段的断点继续：
+每次进入先 `python .doc-kit/cli/cli.py dev status` 看 `phase` 与状态分布，需要任务明细时用 `python .doc-kit/cli/cli.py dev task list`，需要回看计划表用 `python .doc-kit/cli/cli.py dev plan read`，从对应阶段的断点继续：
 
 ```bash
 git branch --show-current        # 应与 dev status 报告的分支一致

@@ -7,7 +7,7 @@
 
 1. **定位**：先 `doc structure` 查看现有文档，再按 §2（议题场景）或 §3（决议主题）定位 doc_type，并按 §4 判断「新增 vs 更新」。**文档间归属在此层（§2/§3）完成首次判定；能力文件的「行文规则·禁止」只作落笔前的边界提醒，不替代本层的路由判定。**
 
-> **唯一权威源**：《面向AI时代的新型项目文档体系设计与实施指南》（下称指南）是本体系的唯一权威源（Single Source of Truth）。本目录的能力文件是指南的**落笔展开**（把指南的章节结构、写作边界与格式规范转成写前须知），`src/app/templates/<文件名>` 是指南的**机器骨架**（`doc new` 复制后填充）。三者不一致时**一律以指南为准**，并同步修订能力文件与模板。
+> **唯一权威源**：《面向AI时代的新型项目文档体系设计与实施指南》（下称指南）是本体系的唯一权威源（Single Source of Truth）。本目录的能力文件是指南的**落笔展开**（把指南的章节结构、写作边界与格式规范转成写前须知），`.doc-kit/templates/<文件名>`（开发态源码位置：`src/app/templates/`）是指南的**机器骨架**（`doc new` 复制后填充）。三者不一致时**一律以指南为准**，并同步修订能力文件与模板。
 
 2. **加载**：`read_file doc-capabilities/<doc_type>.md`。
 3. **执行**：
@@ -96,7 +96,7 @@
 | `doc read <path>` | 读取单篇文档的段落级内容，返回各段落 reference（供 update / remove-section 引用） |
 | `doc update-section <reference> --content <正文>` | 更新已有段落 |
 | `doc add-section <reference> '<标题>' [--content <正文>] [--level sibling\|child]` | 新增段落 |
-| `doc new <doc_type> [--module <模块名>] [--feature <功能名>]` | 新增文档：CLI 按注册表自动定位模板（`.doc-kit/templates/`）与目标目录，目录缺失时自动创建 |
+| `doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]` | 新增文档：CLI 按注册表自动定位模板（`.doc-kit/templates/`）与目标目录，目录缺失时自动创建 |
 | `doc remove-section <reference>` | 删除段落及其子段落 |
 
 > 错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，AI 读到后直接按建议行动。文档类型未注册、目标文件已存在等场景由 CLI 返回对应错误码与修复建议（如 `new_doc.unknown_type`、`new_doc.exists`）。
