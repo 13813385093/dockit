@@ -40,7 +40,7 @@ behaviour of the former MCP tools with identical validation logic.
 项目目录解析优先级: --root > DOC_KIT_PROJECT_ROOT 环境变量 > 从 cwd 向上查找
 （含 .doc-kit/ 或 SessionSpec/ 的最近祖先目录）。
 
-退出码: 0 = 成功（含业务拒绝时输出 success=false 的 JSON）；1 = 参数或运行时错误。
+退出码: 0 = 成功；1 = 业务拒绝（输出 success=false 的 JSON）或运行时错误；2 = 参数错误（argparse：未知选项、缺必填参数）。
 """
 from __future__ import annotations
 
@@ -70,8 +70,10 @@ from frontmatter import FrontmatterParser, _parse_yaml_block  # noqa: E402
 from index import IndexEntry, IndexManager  # noqa: E402
 from spec_schema import (  # noqa: E402
     SCENARIO_DOC_TYPES,
+    SPEC_SCHEMA,
     get_schema_metadata,
     render_summary,
+    unknown_keys,
     validate as validate_spec,
 )
 
@@ -79,7 +81,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.09.2"
+TOOLCHAIN_VERSION = "2026.09.10"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -107,6 +109,46 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.09.2",
         "date": "2026-09-15",
         "note": "新增工具链版本历史与变更说明：tool status 可报告「项目落后几版 + 期间改了什么」，同步动作从此有理由、有内容"
+    },
+    {
+        "version": "2026.09.3",
+        "date": "2026-09-16",
+        "note": "阶段1：修正 plan 段落引用的建议形式（<plan.md> 占位符会被拒绝）、_fail 与 review report-write 补齐 message 字段、前言中关于错误格式与退出码的断言改为符合实现"
+    },
+    {
+        "version": "2026.09.4",
+        "date": "2026-09-16",
+        "note": "阶段2：统一落盘点表述并在前言给出三处权威定义；修正 spec-start 的非真实状态名 idle；spec-close 边界补议题链路内限定；git 前言去掉对 spec-code-review 的指名；USAGE 三处选项可选性改为与实现一致"
+    },
+    {
+        "version": "2026.09.5",
+        "date": "2026-09-16",
+        "note": "阶段3：spec-start 与 spec-archive 的路由改用 spec read 的 JSON 字段（消除对 spec status 中文散文的隐式耦合）；spec-close Step 1 改为复用 spec-pause 不再重述落盘流程；新增路由/去重/边界/描述预算四类内容契约"
+    },
+    {
+        "version": "2026.09.6",
+        "date": "2026-09-16",
+        "note": "阶段3：9 份 description 补触发条件与近亲消歧（24–65→96–137 字符）；同步更新 test_session_flow 的 pause 落盘点断言为「唯一保存通道」"
+    },
+    {
+        "version": "2026.09.7",
+        "date": "2026-09-16",
+        "note": "A1：未初始化时的终止话术改为给出可执行的初始化命令，并明确初始化由人工完成（不新增 spec-init 技能）"
+    },
+    {
+        "version": "2026.09.8",
+        "date": "2026-09-16",
+        "note": "A2：spec status 增加跨存储报告（有活跃开发循环时额外一行，含 phase）；spec write 拒绝新增的未知字段（顶层与嵌套），与 dev task set 对齐；USAGE 把两条仅供人工的命令移出并改为显式声明"
+    },
+    {
+        "version": "2026.09.9",
+        "date": "2026-09-16",
+        "note": "dev-loop 文档化 dev task annotate（不改状态的备注通道）；记录 CI 已决为不接入"
+    },
+    {
+        "version": "2026.09.10",
+        "date": "2026-09-16",
+        "note": "技能合并：spec-load 并入 spec-start（新对话单一入口：有议题走续接 Step 0b、无议题走创建）、spec-abort 并入 spec-close（作废分支）；9 份 → 7 份"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -222,8 +264,36 @@ def _generate_spec_id(topic: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 
+def _active_dev_loop_hint(project_root: Path) -> str:
+    """有活跃开发循环时给 `spec status` 追加的一行。
+
+    议题侧（`SessionSpec/`）与开发循环侧（`DevSpec/`）互不可见：spec_schema 对 DevSpec
+    零引用，`_detect_active_session` 只 glob `SessionSpec/active/*.spec.json`。因此开发循环
+    进行中开新对话时，`spec status` 会如实报告"没有活跃议题"——那句话是**真的**，但会让人
+    以为什么都没在跑（`TODO.md` §A2）。
+
+    修在这里而不是修在某份技能里：`spec status` 的职责本就是"报告现在什么在跑"，
+    放进 CLI 则 9 份技能同时受益，也不需要任何技能越界去读别人的状态。只读内存，不写盘。
+    """
+    try:
+        session = _detect_active_dev_session(project_root)
+    except ValueError:
+        return "\n⚠️ 存在多个活跃开发循环，违反串行约束：请先处理 `DevSpec/active/` 下的会话。"
+    if session is None:
+        return ""
+    return (
+        f"\n⚠️ 另有活跃开发循环 **{session.name}**（phase: {_dev_phase(_load_dev_tasks(session))}）"
+        "——开发相关请求请走 `spec-dev-loop` 续接（先 `dev status` 看进度）。"
+    )
+
+
 def cmd_spec_status(project_root: Path) -> str:
-    """检查当前议题状态并给出下一步操作指引。返回纯文本。"""
+    """检查当前议题状态并给出下一步操作指引。返回纯文本（通常一行，有开发循环时两行）。"""
+    return _spec_status_text(project_root) + _active_dev_loop_hint(project_root)
+
+
+def _spec_status_text(project_root: Path) -> str:
+    """议题侧的状态描述（原有实现）。"""
     active_dir = project_root / "SessionSpec" / "active"
     archive_dir = project_root / "SessionSpec" / "archive"
     # 先建目录再判定状态：archive/ 缺失只说明项目还没走过归档，不代表没有
@@ -303,6 +373,23 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
         except (json.JSONDecodeError, OSError):
             pass
 
+    # 未知字段校验：validate_spec 只遍历 schema 定义过的字段，从不反问"你给的键里有没有
+    # 我不认识的"，于是拼错的字段名会被 success 回执 + 原样写盘，且永远不被读到。
+    # 与 dev task set 的 TASK_ALLOWED_KEYS 校验对齐：**新增**的未知字段一律拒绝；
+    # 磁盘上已存在的历史未知字段只提示不拒绝，否则历史数据无法完成一次合法往返。
+    unknown = unknown_keys(data)
+    inherited = set(unknown_keys(existing)) if isinstance(existing, dict) else set()
+    blocking = sorted(k for k in unknown if k not in inherited)
+    if blocking:
+        return _fail(
+            f"ERROR [spec.unknown_field] spec 含未知字段 {blocking}。"
+            f" 允许的字段: {sorted(SPEC_SCHEMA)}"
+            f"；条目内允许: resolutions{list(SPEC_SCHEMA['resolutions']['item_schema'])}"
+            f" / pending_decisions{list(SPEC_SCHEMA['pending_decisions']['item_schema'])}。"
+            " 修复：字段名拼错不会报错、会被静默写盘且永不被读取，请先核对该字段是否应存在。"
+        )
+    tolerated = sorted(k for k in unknown if k in inherited)
+
     if existing is None:
         # ——— 新创建 ———
         docs_root = project_root / "ProjectSpec"
@@ -375,6 +462,13 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
         new_res = data.get("resolutions", [])
         if existing_res and not new_res:
             result += f"\n\n⚠️ **注意**：提交的 resolutions 为空，但该议题原有 {len(existing_res)} 条决议。如果是有意清空请忽略此提示。"
+
+    if tolerated:
+        result += (
+            f"\n\n⚠️ **注意**：本次提交含 {len(tolerated)} 个未知字段"
+            f"（磁盘上已存在，为兼容历史数据未拒绝）：{tolerated}。"
+            " 若非有意保留，建议清理后重新写入。"
+        )
 
     if data.get("status") == "closed":
         # 议程结清护栏：关闭时尚有未 resolved 的议程时如实提示。宁可看到这条
@@ -1019,6 +1113,7 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 
     result = {
         "success": True,
+        "message": f"评审报告已写入 {filename}",
         "data": {"file": filename, "path": str(file_path.relative_to(project_root))},
         "suggestions": [],
     }
@@ -1314,6 +1409,12 @@ def _dev_next_step_suggestions(
     if not out:
         out.append("所有任务与里程碑已完成，可 dev close --reason '<原因>' 后 dev archive 归档。")
     return out
+
+#: 建议 agent 使用的 plan.md 段落引用示例。必须是 `plan.md#<章节>` 字面量：
+#: `<plan.md>` 这类占位符会被 cmd_dev_plan_update_section 的 reference 校验拒绝。
+#: 所有 help / suggestions 都应引用本常量，避免同一示例手写多遍后漂移
+#: （回归见 tests/test_cli_self_consistency.py）。
+PLAN_REFERENCE_EXAMPLE = "plan.md#2. 约束整合"
 
 PLAN_SKELETON = """# 开发计划：{title}
 
@@ -1694,7 +1795,7 @@ def cmd_dev_plan_create(
               "scope_type": scope, "scope_target": target, "branch": branch},
         suggestions=[
             "读取范围文档：doc structure / doc read（ProjectSpec 只读）。",
-            "整合约束：dev plan update-section '<plan.md>#2. 约束整合' --content ...",
+            f"整合约束：dev plan update-section '{PLAN_REFERENCE_EXAMPLE}' --content ...",
             "确认任务边界后写入：dev task set --json '<tasks 数组>'（全量替换）。",
             f"第一个任务开始前创建开发分支：git checkout -b {branch}（从当前分支）。",
         ],
@@ -2326,8 +2427,10 @@ def _ok(message: str = "", *, data: Any = None, suggestions: list[str] | None = 
 
 
 def _fail(text: str) -> str:
+    # message 与 suggestions[0] 同文本：前者让"JSON 恒含四个字段"的约定成立，
+    # 后者是历史消费方的读取位置，两者都保留。
     return json.dumps(
-        {"success": False, "data": None, "suggestions": [text]},
+        {"success": False, "message": text, "data": None, "suggestions": [text]},
         indent=2, ensure_ascii=False,
     )
 
@@ -2424,7 +2527,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan_create_p.add_argument("--session", default=None, help="会话 ID（默认 {日期}-{范围kebab}）")
     plan_sub.add_parser("read", help="读取开发计划（段落级拍平）")
     plan_upd_p = plan_sub.add_parser("update-section", help="更新计划段落正文")
-    plan_upd_p.add_argument("reference", help="段落引用，如 <plan.md>#2. 约束整合")
+    plan_upd_p.add_argument("reference", help=f"段落引用，如 {PLAN_REFERENCE_EXAMPLE}")
     plan_upd_p.add_argument("--content", required=True, help="新的正文内容")
     plan_add_p = plan_sub.add_parser("add-section", help="新增计划段落")
     plan_add_p.add_argument("reference", help="锚点段落引用")

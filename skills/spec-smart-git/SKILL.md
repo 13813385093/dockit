@@ -1,6 +1,6 @@
 ---
 name: spec-smart-git
-description: 按标签分解待提交变更，生成规范化的 git 提交
+description: 当开发完成准备提交、或有多个不相干的改动需要分开提交时使用：按 feat/fix/docs/refactor/chore 标签把工作区变更分解为若干语义独立的提交并逐个执行。不适用于尚未开发完成、存在未解决冲突、或只是一次微调。
 ---
 
 # 最高优先级：
@@ -9,17 +9,17 @@ description: 按标签分解待提交变更，生成规范化的 git 提交
 
 | 对象 | 读写方式 |
 |------|---------|
-| `ProjectSpec/`（设计文档） | **经 CLI**：`doc structure` / `doc read` 只读；需要改文档时（仅 `spec-code-review` 的后续动作）必须先读 `_index.md` 定位 doc_type + 读能力文件 + **经用户确认**后再 `doc update-section` / `doc add-section` |
+| `ProjectSpec/`（设计文档） | **经 CLI**：`doc structure` / `doc read` 只读；需要改文档时**必须先读 `_index.md` 定位 doc_type + 读能力文件 + 经用户确认**后再 `doc update-section` / `doc add-section`（改文档是不可逆的知识资产变更） |
 | **源码、diff、工作区文件** | **直接读写**（`bash` / 文件工具）。CLI 不介入代码与工作区 |
 | git 仓库操作 | **一律用 `bash`**（CLI 不执行 git）：`git status` / `git diff` / `git log` / `git add` / `git commit` / `git push` |
 
 **例外（能力库，仅读）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取，禁止写入**——辅助判断 diff 涉及的文档类型、或按 `_index.md` §2/§3 路由文档写入位置时对照能力文件。
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案，不再执行后续步骤。
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.10` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.09.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.09.10`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -35,9 +35,11 @@ python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 ```
 
-> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
 >
-> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一行中文状态描述，`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
+> 错误文本**没有统一格式**：较新的错误写作 `ERROR [<错误码>] <原因>。修复：<建议>`，但多数历史错误是散文形式（如「未找到文档: <path>，可用 doc structure 查看所有文档路径」）。**不要用正则解析错误文本**——错误原文同时出现在 `message` 与 `suggestions[0]`，按语义阅读后行动。
+>
+> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一至两行中文状态描述（**有活跃开发循环时会额外给出一行提示**），`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
 >
 > 未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `review` / `dev`）之前。
 ---

@@ -106,11 +106,13 @@ class TestVersionBumpGuard:
         C.FINGERPRINT_FILE.write_text(json.dumps(
             {"fingerprint": "old", "toolchain_version": "2000.01.1"}), encoding="utf-8")
         monkeypatch.setattr(C, "fingerprint", lambda: ("f" * 64, 50))
-        monkeypatch.setattr(C, "toolchain_version", lambda: "2026.09.2")
+        # 必须引用"当前版本"而不是硬编码字面量：update() 第 ② 步要求版本是历史末条，
+        # 硬编码会让本测试在任何一次合法版本递增后失败。
+        monkeypatch.setattr(C, "toolchain_version", lambda: cli.TOOLCHAIN_VERSION)
         assert C.update() == 0
         data = json.loads(C.FINGERPRINT_FILE.read_text(encoding="utf-8"))
         assert data["fingerprint"] == "f" * 64
-        assert data["toolchain_version"] == "2026.09.2"
+        assert data["toolchain_version"] == cli.TOOLCHAIN_VERSION
 
 
 class TestVersionHistory:
@@ -213,11 +215,11 @@ class TestToolStatus:
         assert any("doc-kit init" in s for s in out["suggestions"])
 
     def test_tampered_copy_is_detected(self, project):
-        target = project / ".doc-kit" / "skills" / "spec-load" / "SKILL.md"
+        target = project / ".doc-kit" / "skills" / "spec-pause" / "SKILL.md"
         target.write_text(target.read_text(encoding="utf-8") + "\n# 本地改动\n", encoding="utf-8")
         out = parse(cli.cmd_tool_status(project))
         assert out["data"]["consistent"] is False
-        assert ".doc-kit/skills/spec-load/SKILL.md" in out["data"]["mismatched"]
+        assert ".doc-kit/skills/spec-pause/SKILL.md" in out["data"]["mismatched"]
         assert any("被本地改动" in s for s in out["suggestions"])
 
     def test_missing_copy_is_detected(self, project):

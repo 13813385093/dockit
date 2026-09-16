@@ -219,7 +219,7 @@ class TestAbortHasNoDocSideEffect:
         assert write_spec(cli_env, spec)["success"] is True
         assert json.loads(cli_env.spec_archive())["success"] is True
 
-        assert docs_fingerprint(project) == before, "spec-abort 不得改动 ProjectSpec"
+        assert docs_fingerprint(project) == before, "作废分支不得改动 ProjectSpec"
         archived_spec = json.loads(
             (project / "SessionSpec" / "archive" / "20260618-payment-split.spec.json").read_text(encoding="utf-8")
         )
@@ -233,7 +233,7 @@ class TestAbortHasNoDocSideEffect:
 
 
 class TestStatusRouting:
-    """spec-load / spec-archive 的路由依据。"""
+    """spec-start（续接分支）与 spec-archive 的路由依据。"""
 
     def test_status_reports_active_even_without_archive_dir(self, tmp_path):
         """回归：archive/ 尚未创建时，spec status 也必须如实报告活跃议题。
@@ -274,7 +274,7 @@ class TestStatusRouting:
 # ── 2. 技能文本契约（防止职责边界再次漂移）──
 
 DOC_WRITE_COMMANDS = ("doc new", "doc update-section", "doc add-section", "doc remove-section")
-NO_DOC_WRITE_SKILLS = ["spec-start", "spec-load", "spec-pause", "spec-abort", "spec-archive"]
+NO_DOC_WRITE_SKILLS = ["spec-start", "spec-pause", "spec-archive"]
 
 
 class TestSkillTextContract:
@@ -303,26 +303,44 @@ class TestSkillTextContract:
         assert "doc-capabilities" in text, "spec-close 必须声明能力库（_index.md + 能力文件）读取流程"
 
     def test_pause_is_the_only_landing_point(self):
+        """spec-pause 是讨论进行中唯一的保存通道，且不写 ProjectSpec。
+
+        措辞在 2026.09.5 由「唯一落盘点」改为「唯一保存通道」：原措辞与前言
+        「落盘点只有三处（spec-start / spec-pause / spec-close）」的定义冲突，
+        会让 AI 在 spec-start 里以为"落盘是 pause 的事"而漏写议程。
+        """
         text = self.skill_text("spec-pause")
-        assert "唯一落盘点" in text
+        assert "唯一保存通道" in text
         assert "不写 `ProjectSpec/`" in text
 
     def test_start_lands_agenda(self):
         text = self.skill_text("spec-start")
         assert "pending_decisions" in text and "议程" in text
 
-    def test_load_replays_agenda_readonly(self):
-        text = self.skill_text("spec-load")
-        assert "复述议程" in text
-        assert "spec read" in text and "spec status" in text
-        # 只读技能：不得出现任何写命令
-        for cmd in ("spec write", "spec archive"):
-            assert f"cli.py {cmd}" not in text
+    def test_start_resume_branch_replays_agenda_readonly(self):
+        """续接分支（原 spec-load 的职责）必须在 spec-start 内，且声明为只读。
 
-    def test_abort_archives_directly(self):
-        text = self.skill_text("spec-abort")
+        2026.09.10：`spec-load` 并入 `spec-start` —— 新对话只有一个入口，
+        有议题走续接（Step 0b）、无议题走创建；续接分支全程只读。
+        """
+        text = self.skill_text("spec-start")
+        assert "复述议程" in text
+        assert "Step 0b" in text
+        assert "只读" in text
+        assert "spec read" in text
+
+    def test_close_has_abandon_branch(self):
+        """作废分支（原 spec-abort 的职责）必须在 spec-close 内，四纪律齐全。
+
+        2026.09.10：`spec-abort` 并入 `spec-close` —— 关闭路径保留成果，
+        作废分支放弃成果，两者共用一份前言而不必各带一套。
+        """
+        text = self.skill_text("spec-close")
+        assert "作废分支" in text
         assert "spec archive" in text
-        assert "零文档副作用" in text or "不产生任何文档副作用" in text
+        assert "不写 `ProjectSpec/`" in text
+        assert "先分流" in text
+        assert "终态不可回退" in text
 
     def test_archive_is_fallback_only(self):
         text = self.skill_text("spec-archive")

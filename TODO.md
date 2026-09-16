@@ -1,9 +1,25 @@
-# 待办：技能与工具链（评审遗留）
+# 待办：技能与工具链
 
-> 来源：2026-09 技能评审（原 `skills-review/` 记录已按结论归档删除）
-> 记录时的工具链版本：**2026.09.2**（`skills/scripts/cli.py` 的 `TOOLCHAIN_VERSION`）
-> 已完成的改造（议题类技能、spec-dev-loop 骨架化、模块三评审、共享前言生成、工具链版本机制）
-> 其结论都已落进 `skills/`、`src/`、`tests/`，本文件只保留**尚未执行**的事项。
+> **本文件只记录尚未解决的问题。** 已解决的不保留——历史见 `skills/scripts/cli.py` 的
+> `TOOLCHAIN_VERSION` 版本历史（每次发布都带一句变更说明）与 git 提交记录。
+> 已判定"不改"的事项同样不保留，避免与待办混淆；将来若要重新评估，按下面的格式新开一条。
+
+## 怎么记录一个问题
+
+每条待办写四个字段。**写不出「现象」就不要记**——那说明还没到能动手的程度，先继续观察；
+**写不出「触发条件」就说明它可能不该现在做**。
+
+| 字段 | 要求 |
+|---|---|
+| **现象** | 可复现的事实：触发步骤 + 观察到的结果。实测优先于推测；没验证过的部分要标明"未验证" |
+| **影响** | 具体后果：哪一步会失败、谁会误判、是否可逆。区分「会导致错误」与「只是不便」 |
+| **触发条件** | 什么可观测的事件发生后，这条才值得动手。这是防止待办腐烂的关键字段 |
+| **建议方案** | 首选做法 + **被否掉的做法及原因**（避免下次重复讨论同一组选项） |
+
+命名：用**一句话标题**（如「技能正文里 CLI 调用的选项级校验」），**不要编号**——本文件按"解决即删除"维护，编号会随时间漂移，做不了稳定引用。
+**解决后直接删除该条目**（不要改成"已完成"留着）。
+
+---
 
 ## 相关约定（改工具链前必读）
 
@@ -11,97 +27,72 @@
 
 ```bash
 # 1 改内容 → 2 递增 cli.py 的 TOOLCHAIN_VERSION（YYYY.MM.N）
-python tests/render_skill_preamble.py                   # 3 把新版本注入 9 份 SKILL.md
+python tests/render_skill_preamble.py                   # 3 把新版本注入 7 份 SKILL.md
 python tests/check_toolchain_version.py --update --note "<一句变更说明>"   # 4 更新指纹 + 追加版本历史
-python -m pytest tests/                                 # 5 四个检具 + 全量测试
+python -m pytest tests/                                 # 5 全量测试
 ```
 
-> 完整说明见 `tests/check_toolchain_version.py` 头部注释。
+- `python -m pytest tests/` **确实覆盖全部四个检具**：`check_skill_sync`（由
+  `tests/test_skill_sync_collected.py` 包装）、`check_toolchain_version`（`test_toolchain.py`）、
+  前言生成物一致性（`test_skill_preamble.py`）、`check_doc_consistency`（`test_doc_types.py`）。
+  另有三组内容级检具同在其中：`test_cli_usage_contract.py`（USAGE 表 ↔ 真实 argparse 树）、
+  `test_cli_self_consistency.py`（CLI 自己给出的建议必须能被 CLI 自己接受）、
+  `test_skill_content_rules.py`（状态枚举、非真实状态名、前言断言、输出归属、描述预算）。
+- **本仓库不接 CI**（2026-09-16 决定）：由作者本人维护，检具的价值在"改完立刻能跑"，
+  而不在"有人替我记得跑"；多一条流水线只是给上面这套流程再加一层需要维护的配置。
 
 ---
 
-## A. 入口与路由
+## 待办
 
-### A1 缺初始化技能（原 B4）
+### 技能正文里 CLI 调用的**选项级**正确性不在检具覆盖内
 
-- **现状**：9 份 SKILL.md 的前置条件都是"未初始化即终止"，而初始化只能人工执行
-  `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>`；`skills/` 下没有初始化类技能。
-- **影响**：AI 在未初始化的项目里无法自举，只能终止流程让用户手工操作。
-- **建议**：新增 `spec-init` 技能（指导跑上述两条命令 + `tool status` 自检）；
-  或维持现状，但把终止话术写成可直接执行的命令。
+- **现象**：往 `skills/spec-dev-loop/SKILL.md` 正文写入一个不存在的选项
+  （`` `python .doc-kit/cli/cli.py dev task update T1 --status pending --bogus-flag x` ``）后，
+  `pytest tests/` 全绿——唯一失败的是版本指纹守卫，与选项无关。
+- **覆盖边界**：`check_skill_sync` 只校验**命令路径**（正则最多匹配"命令组 + 2 个单词"）；
+  `test_cli_usage_contract` 只校验 **USAGE 表**，而 USAGE 表只覆盖技能**声明**的工具清单，
+  正文里的具体调用不在其中。
+- **影响**：技能正文写错选项无人发现，AI 会照着调用并失败。属「会导致错误」一级。
+- **触发条件**：下次在技能正文里新增或修改 CLI 调用时。
+- **建议方案**：把校验对象从 USAGE 表扩展到"全部 SKILL.md 正文里的 `cli.py` 调用"——
+  抽出每个调用用到的选项，逐个对照真实 argparse 树。
+  （被否：暂无可否方案；成本不高，只是目前没做。）
 
-### A2 缺总路由（原 B5）
+### `init` 不生成 `.gitignore`（暂缓）
 
-- **现状**：`spec-load` 明确"不做 DevSpec 状态检查"（正文边界第 2 条）；开发循环进行中开新对话时，
-  没有任何技能同时看 `spec status` 与 `dev status`。
-- **影响**：有活跃开发循环时，AI 可能走错岔路（去开新议题/新循环）。
-- **建议**：把 `spec-load` 升级为总路由（加一步 dev 状态检查并复述开发进度），或新增独立 router 技能。
+- **现象**：`init` 不写 `.gitignore`；`.doc-kit/` 一旦被 `git add -A` 提交，实测
+  `git checkout <分支>` 会因"本地修改将被检出操作覆盖"直接失败，并污染 `git diff --stat`。
+- **影响**：① 分支切换失败；② `spec-dev-loop` 验收清单第 2 项（只改了声明的文件；排除规则只有
+  `DevSpec/` 与 `SessionSpec/`）会把 `.doc-kit/` 的改动当成"改了多余文件"而**误判不合格**——
+  即验收闸门出现假报警。
+- **现状缓解**：`spec-smart-git` 的忽略检查清单已含工具状态目录。
+- **触发条件**：实际遇到上述任一失败时。
+- **暂缓理由（2026-09-16 决定）**：`.gitignore` 本就该由人掌握，`.doc-kit/` 也不该提交进仓库；
+  让开发人员自己掌握没有坏处。
+- **建议方案**（真要做时）：优先改 `spec-dev-loop` 验收清单第 2 项，补 `':(exclude).doc-kit/'`
+  ——它不依赖用户是否记得忽略，比让 `init` 写 `.gitignore` 更稳。
+  （被否：让 `init` 生成/追加 `.gitignore`——把本该由人掌握的东西自动化。）
 
-## B. 检具与契约
+### 数据格式版本 + 通用迁移表（暂缓）
 
-### B1 `spec status` 缺机器可读输出（原 B8）
+- **现象**：工具链有了版本，但**数据格式**（`tasks.json`、`*.spec.json`、`plan.md` 章节名）没有版本；
+  目前只有一处手写兼容：`DEV_LEGACY_TASK_STATUSES` 把 `in-progress/unit-green/fixing` 映射到
+  `implementing/tested/rejected`（读取时映射，写操作落盘迁移）。
+- **影响**：结构再变时会重演"在途会话死锁"——旧数据配新 CLI 无法推进，`task update` 报非法迁移、
+  `task set` 补救又要求新字段。属「会导致错误」一级。
+- **触发条件**：下一次改动上述任一数据结构时。
+- **暂缓理由**：现在写迁移表等于猜；届时变更形状是已知的，建表才有意义。
+- **备注**：2026-09 的 `spec write` 未知字段校验刻意做成"拒绝**新增**未知字段、放行磁盘上已存在的"，
+  正是按这条的教训办事——不让在途会话因为新校验被卡住。
+- **建议方案**：各数据文件带 `schema_version`，CLI 读取时按迁移表升级并在输出中提示已迁移。
 
-- **现状**：`spec status` 只输出一行中文散文；`spec-load` 已改按 `spec read` 的 JSON 判定，
-  但 `spec-start` Step 0、`spec-archive` Step 1 仍读中文串。
-- **影响**：CLI 文案一改，技能路由即失效（隐式耦合）。
-- **建议**：加 `spec status --json`（`{success, data:{session_spec_id, status}}`），技能改按字段路由。
+### 工具链分发：一条命令同步（暂缓）
 
-### B2 检具覆盖不足（原 B9）
-
-- **现状**：`tests/check_skill_sync.py` 只查"命令是否存在 + 技能名一致性"；
-  "状态值/任务卡字段/占位符格式"这类检查仅存在于 dev-loop 专用测试（`tests/test_dev_loop_skill.py`）。
-- **影响**：同类问题在其它 8 份技能里不会在 CI 被拦住。
-- **建议**：把规则提升到 `check_skill_sync.py` 覆盖 9 个技能（允许值可直接从 CLI 导出：
-  `DEV_TASK_STATUSES`、`SPEC_SCHEMA`）。
-
-## C. 项目卫生
-
-### C1 `init` 不生成 `.gitignore`（原 B12）
-
-- **现状**：`init` 不写 `.gitignore`；`.doc-kit/` 一旦被 `git add -A` 提交，实测
-  `git checkout <分支>` 会因"本地修改将被检出操作覆盖"**直接失败**，并污染 `git diff --stat`
-  （会让 dev-loop 的"只改了声明的文件"验收误判）。
-- **现状缓解**：`spec-smart-git` 的忽略检查清单已加入工具状态目录。
-- **建议**：`init` 生成/追加 `.gitignore`（至少 `.doc-kit/`），或在 GUI/README 明确提示；
-  `SessionSpec/active/`、`DevSpec/active/` 是否入库由用户决定（`archive/` 里的 CodeNotes 与报告通常值得保留）。
-
-## D. 版本管理的延伸
-
-### D1 数据格式版本 + 通用迁移表
-
-- **现状**：工具链有了版本，但**数据格式**（`tasks.json`、`*.spec.json`、`plan.md` 章节名）没有版本；
-  目前只有一处手写兼容：`DEV_LEGACY_TASK_STATUSES` 把 `in-progress/unit-green/fixing`
-  映射到 `implementing/tested/rejected`（读取时映射，写操作落盘迁移）。
-- **影响**：下次结构变更仍会重演"在途会话死锁"——旧数据配新 CLI 无法推进，
-  `task update` 报非法迁移、`task set` 补救又要求新字段。
-- **建议**：各数据文件带 `schema_version`，CLI 读取时按迁移表升级并在输出中提示已迁移。
-
-### D2 工具链分发：一条命令同步（B10 后续）
-
-- **现状**：同步仍是两步——`doc-kit init <项目根>`（只刷新 `.doc-kit/`，不动 ProjectSpec）
+- **现象**：同步仍是两步——`doc-kit init <项目根>`（只刷新 `.doc-kit/`，不动 `ProjectSpec/`）
   + `doc-kit install-skills <agent 技能目录>`；已验证有效，但用户不知道要跑。
-- **建议**：新增 `doc-kit sync <项目> [--agent-dir <目录>]`，一次刷新两侧并打印版本差异摘要；
+- **影响**：不便（不是错误）：版本落后时只刷新了一侧，技能与 CLI 不配套。
+- **触发条件**：下游项目变多，或同步动作变得频繁。参考量级：2026-09-16 单日发布 8 个版本，
+  停留在旧版本的项目会在 `tool status` 看到"落后 8 版 + 8 条变更说明"。
+- **建议方案**：新增 `doc-kit sync <项目> [--agent-dir <目录>]`，一次刷新两侧并打印版本差异摘要；
   GUI 检测到项目 `toolchain.json` 版本与程序版本不一致时给出提示。
-
-### D3 接入 CI
-
-- **现状**：仓库没有任何 CI 配置（无 `.github/workflows`、`.gitlab-ci.yml`、`.gitee/`），
-  四个检具只能手动跑。
-- **建议**：接入下面五条（仓库在 Gitee 用 `.workflow/`，GitHub 用 `.github/workflows/`）：
-
-```bash
-python -m pytest tests/
-python tests/check_skill_sync.py
-python tests/check_doc_consistency.py
-python tests/check_toolchain_version.py
-python tests/render_skill_preamble.py --check
-```
-
-## E. 已评估、暂不改（保留结论，避免重复讨论）
-
-### E1 技能命名体系
-
-- **现状**：`spec-` 前缀同时指 SessionSpec（start/load/pause/close/abort/archive）、
-  DevSpec（dev-loop）、ReviewSpec（code-review）。
-- **结论**：**不改**。改名要动 9 个目录 + 检具 + `install-skills` + 用户习惯与文档，
-  收益只是"名字更清楚"；替代方案（各技能开头写明作用于哪个 Spec）已部分具备。

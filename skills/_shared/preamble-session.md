@@ -6,7 +6,9 @@
 
 **git 操作**一律用 `bash` 执行（CLI 不执行 git）。
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
+**落盘点只有三处**：`spec-start` 创建议题并写入议程、`spec-pause` 保存讨论进展、`spec-close` 收尾时统一落盘。讨论**进行中**的保存通道只有 `spec-pause`；除这三处，讨论期间不落盘，`ProjectSpec/` 项目文档统一由 `spec-close` 写入。
+
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
 **工具链版本自检（进入流程先做）**：本技能随工具链版本 `{{TOOLCHAIN_VERSION}}` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 

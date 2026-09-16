@@ -217,6 +217,34 @@ def validate(spec: dict) -> list[str]:
 # ═══════════════════════════════════════════════════════════════
 
 
+def unknown_keys(spec: dict) -> list[str]:
+    """返回 spec 中不在 SPEC_SCHEMA 里的字段路径（含嵌套条目内的字段）。
+
+    为什么需要：`validate()` 只遍历 schema **定义过的**字段，从不反问"你给我的键里
+    有没有我不认识的"。于是把 `pending_decisions` 拼成 `pendng_decisions`、或混进一个
+    拼错的键，CLI 会回 success 并**原样写盘**——那个字段永远不会被读到，而用户以为记下了。
+    `dev task set` 对此是拒绝的（见 cli.py 的 TASK_ALLOWED_KEYS 校验），本函数让两者对齐。
+
+    列表字段按 `item_schema` 递归检查条目内的键；标量元素列表（如 `next_steps`）无键可查。
+    """
+    unknown = [key for key in spec if key not in SPEC_SCHEMA]
+    for field_name, field_schema in SPEC_SCHEMA.items():
+        item_schema = field_schema.get("item_schema")
+        # 标量元素的 item_schema 形如 {"type": str, "required": True}——值不是字段定义
+        if not isinstance(item_schema, dict) or not all(isinstance(v, dict) for v in item_schema.values()):
+            continue
+        value = spec.get(field_name)
+        if not isinstance(value, list):
+            continue
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                continue
+            for key in item:
+                if key not in item_schema:
+                    unknown.append(f"{field_name}[{index}].{key}")
+    return unknown
+
+
 def get_schema_metadata() -> dict:
     """从 SPEC_SCHEMA 生成 LLM 友好的字段定义。
 

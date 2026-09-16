@@ -1,6 +1,6 @@
 ---
 name: spec-pause
-description: 把本次讨论落盘为会议纪要（讨论期间的唯一落盘点），不写 ProjectSpec、不改状态
+description: 当用户说「先保存」「就到这里」「下次继续」，或对话明显变长需要收口时使用：把本段讨论落盘为会议纪要（讨论进行中唯一的保存通道），只写 SessionSpec、不写 ProjectSpec、不改状态。要结束议题请改用 spec-close。
 ---
 # 最高优先级：
 
@@ -10,11 +10,13 @@ description: 把本次讨论落盘为会议纪要（讨论期间的唯一落盘�
 
 **git 操作**一律用 `bash` 执行（CLI 不执行 git）。
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
+**落盘点只有三处**：`spec-start` 创建议题并写入议程、`spec-pause` 保存讨论进展、`spec-close` 收尾时统一落盘。讨论**进行中**的保存通道只有 `spec-pause`；除这三处，讨论期间不落盘，`ProjectSpec/` 项目文档统一由 `spec-close` 写入。
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
-- `data.toolchain_version` **等于** `2026.09.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.10` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+
+- `data.toolchain_version` **等于** `2026.09.10`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -27,17 +29,19 @@ cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
 python .doc-kit/cli/cli.py tool status
 python .doc-kit/cli/cli.py spec read
 python .doc-kit/cli/cli.py spec schema
-python .doc-kit/cli/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
+python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --json 则从 stdin 读入
 ```
 
-> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
 >
-> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一行中文状态描述，`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
+> 错误文本**没有统一格式**：较新的错误写作 `ERROR [<错误码>] <原因>。修复：<建议>`，但多数历史错误是散文形式（如「未找到文档: <path>，可用 doc structure 查看所有文档路径」）。**不要用正则解析错误文本**——错误原文同时出现在 `message` 与 `suggestions[0]`，按语义阅读后行动。
+>
+> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一至两行中文状态描述（**有活跃开发循环时会额外给出一行提示**），`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
 >
 > 未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `review` / `dev`）之前。
 ---
 
-# spec-pause — 保存本次讨论（唯一落盘点）
+# spec-pause — 保存本次讨论（讨论期间的唯一保存通道）
 
 ## 定位
 
@@ -145,7 +149,7 @@ AI 也可根据对话上下文中已有的信息主动整理 detail 让用户确
 
 - 已保存 X 条决议，议程剩余 Y 项（未 resolved）；
 - **本次未写入任何 ProjectSpec 文档**；累计待落盘决议 N 条，将在 `spec-close` 时统一梳理并写入；
-- 下次继续：新开对话用 `spec-load` 复述议程；结束议题用 `spec-close`。
+- 下次继续：新开对话用 `spec-start` 续接（它会复述议程）；结束议题用 `spec-close`。
 
 ## 边界
 

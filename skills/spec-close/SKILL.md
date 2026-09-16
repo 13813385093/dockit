@@ -1,6 +1,6 @@
 ---
 name: spec-close
-description: 结建议题：先落盘会议纪要，再梳理 ProjectSpec 变更清单交审核并批量写入，最后归档
+description: 当用户说「讨论完了」「关闭」「收尾」（保留成果）或「这个议题算了」「作废」（放弃成果）时使用：前者落盘纪要 → 梳理决议的文档归宿 → 交审核后写入 ProjectSpec → 归档；后者只记原因直接归档，不写任何文档。
 ---
 # 最高优先级：
 
@@ -10,11 +10,13 @@ description: 结建议题：先落盘会议纪要，再梳理 ProjectSpec 变更
 
 **git 操作**一律用 `bash` 执行（CLI 不执行 git）。
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
+**落盘点只有三处**：`spec-start` 创建议题并写入议程、`spec-pause` 保存讨论进展、`spec-close` 收尾时统一落盘。讨论**进行中**的保存通道只有 `spec-pause`；除这三处，讨论期间不落盘，`ProjectSpec/` 项目文档统一由 `spec-close` 写入。
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
-- `data.toolchain_version` **等于** `2026.09.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.10` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+
+- `data.toolchain_version` **等于** `2026.09.10`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -26,18 +28,20 @@ description: 结建议题：先落盘会议纪要，再梳理 ProjectSpec 变更
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
 python .doc-kit/cli/cli.py tool status
 python .doc-kit/cli/cli.py spec read
-python .doc-kit/cli/cli.py spec write --json '<完整 spec JSON>'   # 全量写入，也可从 stdin 读入
+python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --json 则从 stdin 读入
 python .doc-kit/cli/cli.py spec archive
 python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
-python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
 python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
 ```
 
-> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，读到后直接按建议行动。
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
 >
-> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一行中文状态描述，`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
+> 错误文本**没有统一格式**：较新的错误写作 `ERROR [<错误码>] <原因>。修复：<建议>`，但多数历史错误是散文形式（如「未找到文档: <path>，可用 doc structure 查看所有文档路径」）。**不要用正则解析错误文本**——错误原文同时出现在 `message` 与 `suggestions[0]`，按语义阅读后行动。
+>
+> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一至两行中文状态描述（**有活跃开发循环时会额外给出一行提示**），`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
 >
 > 未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `review` / `dev`）之前。
 ---
@@ -57,20 +61,46 @@ python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature 
 
 ## 在哪选
 
-`active` 状态下，用户说「这个议题讨论完了」「关闭」「收尾」时；或 `spec-load` 发现议程已全部 resolved 时。
+`active` 状态下，用户说「这个议题讨论完了」「关闭」「收尾」时（走**关闭路径**）；或用户说「这个议题算了」「不讨论了」「作废」「转向别的事」时（走**作废分支**）；或议程已全部 resolved 时。
+
+## 作废分支（放弃成果，不写任何文档）
+
+当用户明确要**放弃**本次讨论成果时走本分支，**不要执行下面的 Step 1–5**。
+
+1. **先分流**：若用户其实是想**留住讨论成果**（只是不想再谈了），改走关闭路径——关闭会把决议写入 `ProjectSpec/` 后归档；作废会让本次讨论的结论永久停留在 SessionSpec 里。
+
+2. **必须取得作废原因**：`closed_reason` 是必填字段（CLI 会校验）。用户未提供时先询问，**不编造**。确认话术：
+
+```
+请确认：议题 {session_spec_id} 将作废（原因：{用户提供的原因}）。
+作废后议题直接归档，不可撤销、不可续接，请确认。
+```
+
+3. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec，设置 `status: "abandoned"`、`closed_at`（ISO 8601）、`closed_reason`（用户提供的原因）。**其余字段原样保留**——`resolutions` / `pending_decisions` / `next_steps` 是"讨论未走完"的如实记录，**不清空、不改写**。
+
+4. 调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存，再调 `python .doc-kit/cli/cli.py spec archive` 归档（归档失败时用 `spec-archive` 兜底）。
+
+**作废的四条纪律**（缺一条都可能造成不可逆损失）：
+
+- **先分流**：别把"想留住成果"当成"想作废"——两者归档后的差别是决议有没有进 `ProjectSpec/`。
+- **原因必填、不编造**：`abandoned` 必须有 `closed_reason`，CLI 会拒绝。
+- **不改写、不清空已记录的决议与议程**：保留讨论痕迹。
+- **终态不可回退**：`abandoned` 之后不能再改回 `active`；如需再议同一主题，必须开启新议题。
+
+> 本分支**不写 `ProjectSpec/`**、不做文档归属梳理——那些都是关闭路径的动作。
 
 ## 选择判断
 
-### Step 1：落盘本轮讨论（先确保上下文都进了会议纪要）
+> 以下为**关闭路径**（保留成果）。要走作废分支请回上一节。
 
-本轮对话中的内容如果还没保存，先按本节落盘（等价于 `spec-pause` 的核心流程）：
+### Step 1：确认本轮讨论已落盘
 
-1. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec
-2. 从本次对话提取变更：新决议（`detail` ≥150 字）/ 议程状态推进 / 新增议程 / 后续计划增删
-3. 组装完整 spec（全量替换）→ `python .doc-kit/cli/cli.py spec write --json '<spec_json>'`
+本步**只写会议纪要**（`SessionSpec/active/`），不写 `ProjectSpec/`。
 
-> 本步**只写会议纪要**（`SessionSpec/active/`），不写 `ProjectSpec/`。
-> 若本轮无可落盘内容（上次已 `spec-pause` 保存过），直接进入 Step 2。
+- 若本轮对话尚未落盘（上次 `spec-pause` 之后又谈出了新结论）→ **加载并执行 `spec-pause`**。落盘流程、字段要求与用户确认清单**以该技能为准**，本技能不重述——同一流程两处来源必然漂移。
+- 若本轮无可落盘内容（上次已 `spec-pause` 保存过）→ 直接进入 Step 2。
+
+> 落盘完成后回到本技能继续 Step 2。`spec-pause` 是讨论进行中的唯一保存通道（见前言「落盘点只有三处」）。
 
 ### Step 2：议程结清检查
 
@@ -122,7 +152,7 @@ python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature 
 
 ### Step 5：标终态并归档
 
-1. 组装关闭 spec：`status: "closed"`、`closed_at`（ISO 8601）、`closed_reason`（**必填**，用户未提供时先询问，不编造）
+1. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec，设置 `status: "closed"`、`closed_at`（ISO 8601）、`closed_reason`（**必填**，用户未提供时先询问，不编造）
 2. 调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存关闭状态
 3. 调 `python .doc-kit/cli/cli.py spec archive` 归档（`SessionSpec/active/` → `SessionSpec/archive/`）
 
@@ -135,7 +165,7 @@ python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature 
 
 ## 边界
 
-- **只有本技能写 `ProjectSpec/`**；`spec-start` / `spec-load` / `spec-pause` / `spec-abort` 都不写
+- **只有本技能在议题链路内写 `ProjectSpec/`**（`spec-code-review` 的后续动作经用户确认后也可写文档，见该技能 Phase 4）；`spec-start` / `spec-pause` 都不写。**本技能的作废分支也不写**——它只改状态并归档
 - 写入必须经用户审核通过（Step 3 → Step 4 的顺序不可颠倒）
 - 归档不可逆：`closed` / `abandoned` 是终态，不能回退为 `active`
 <!-- preamble-tools-exclude: doc remove-section -->

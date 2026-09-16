@@ -4,13 +4,13 @@
 
 | 对象 | 读写方式 |
 |------|---------|
-| `ProjectSpec/`（设计文档） | **经 CLI**：`doc structure` / `doc read` 只读；需要改文档时（仅 `spec-code-review` 的后续动作）必须先读 `_index.md` 定位 doc_type + 读能力文件 + **经用户确认**后再 `doc update-section` / `doc add-section` |
+| `ProjectSpec/`（设计文档） | **经 CLI**：`doc structure` / `doc read` 只读；需要改文档时**必须先读 `_index.md` 定位 doc_type + 读能力文件 + 经用户确认**后再 `doc update-section` / `doc add-section`（改文档是不可逆的知识资产变更） |
 | **源码、diff、工作区文件** | **直接读写**（`bash` / 文件工具）。CLI 不介入代码与工作区 |
 | git 仓库操作 | **一律用 `bash`**（CLI 不执行 git）：`git status` / `git diff` / `git log` / `git add` / `git commit` / `git push` |
 
 **例外（能力库，仅读）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取，禁止写入**——辅助判断 diff 涉及的文档类型、或按 `_index.md` §2/§3 路由文档写入位置时对照能力文件。
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案，不再执行后续步骤。
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
 **工具链版本自检（进入流程先做）**：本技能随工具链版本 `{{TOOLCHAIN_VERSION}}` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
