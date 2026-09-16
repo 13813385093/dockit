@@ -45,6 +45,25 @@ python -m pytest tests/                                 # 5 全量测试
 
 ## 待办
 
+### 升级时不会清理已下线的技能副本（9→7 合并后需手工删）
+
+- **现象**：`copy_skills()`（`src/app/engine/commands/init_utils.py:180`）与
+  `_cmd_install_skills()`（`src/app/main.py:68`）**都只 `glob("spec-*")` + `copy2`，不含任何删除**；
+  同文件里 `LEGACY_TEMPLATE_FILES` / `LEGACY_CAPABILITY_FILES` 两套"已下线文件"清理清单
+  **没有对应的技能版本**。而 `tool status` 只按 `.doc-kit/toolchain.json` 里记录的清单核对，
+  **多出来的陈旧文件它看不见**（只会报 `mismatched` / `missing`）。
+- **影响**：2026-09 把 9 份技能合并为 7 份后：
+  ① `<项目根>/.doc-kit/skills/` 里会残留 `spec-load/`、`spec-abort/`——**任何直接读这个目录的 agent 都会看到两份已作废的技能**；
+  ② 若 agent 侧是**复制**式安装（`install-skills <目录>` 或人工搬运），陈旧副本还会长期存在，并与合并后的技能给出**互相矛盾**的指令
+  （旧 `spec-start` 写"已有活跃议题改走 spec-load 续接"、旧 `spec-close` 写"不要成果请改用 spec-abort"）。
+- **触发条件**：每次发生技能下线、合并或改名时。（下次仍会出现，不是一次性问题。）
+- **现状缓解**：agent 侧改为**指向** `<项目根>/.doc-kit/skills`（目录软链，或 DSH 的 `customSkillDirs`），
+  而不是持有副本——此时"源里删掉即消失"，第 ② 类影响不存在；第 ① 类仍需手工删一次。
+- **建议方案**：加 `LEGACY_SKILL_DIRS = ("spec-load", "spec-abort")`（按版本累积），
+  由 `copy_skills()` 清理 `<项目根>/.doc-kit/skills/` 下的已下线目录；`_cmd_install_skills()` 同样清理，
+  给仍走复制式的场景兜底。
+  （被否：只靠文档要求人工删除——已验证会漏。）
+
 ### 技能正文里 CLI 调用的**选项级**正确性不在检具覆盖内
 
 - **现象**：往 `skills/spec-dev-loop/SKILL.md` 正文写入一个不存在的选项
