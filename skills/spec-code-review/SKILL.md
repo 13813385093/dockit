@@ -1,29 +1,50 @@
 ---
 name: spec-code-review
-description: 独立代码评审，从 git 变更出发比对设计文档，记录差异
+description: 当开发完成但关键变更尚未确认、或提交 PR 前要做一轮设计文档一致性检查时使用：从 git 变更（按评审锚点范围）出发，并排比对代码与文档、由用户逐条判定差异性质，最后写入评审报告。不适用于纯技术债清理或无文档可比的改动。
 ---
 # 最高优先级：
 
-在本次 Skill 执行过程中，任何文件读取或写入操作，**一律必须**通过 doc-kit 共享 CLI 执行（禁止直接 read_file / write_file 操作这些文件）。
+**三层边界（先看清各自走哪条路）**：
 
-**例外（能力库）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取**（仅读，禁止写入）。评审文档侧是否合规（段落结构、约束编号、行文规则）时可对照对应 `<doc_type>.md` 能力文件。
+| 对象 | 读写方式 |
+|------|---------|
+| `ProjectSpec/`（设计文档） | **经 CLI**：`doc structure` / `doc read` 只读；需要改文档时**必须先读 `_index.md` 定位 doc_type + 读能力文件 + 经用户确认**后再 `doc update-section` / `doc add-section`（改文档是不可逆的知识资产变更） |
+| **源码、diff、工作区文件** | **直接读写**（`bash` / 文件工具）。CLI 不介入代码与工作区 |
+| git 仓库操作 | **一律用 `bash`**（CLI 不执行 git）：`git status` / `git diff` / `git log` / `git add` / `git commit` / `git push` |
 
-**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「请先运行 doc-kit 初始化该项目」，终止流程，不尝试任何自举安装。
+**例外（能力库，仅读）**：能力库根 = `<项目根>/.doc-kit/skills/guidance/doc-capabilities/`（技能资产，非 ProjectSpec 文档），**允许直接 read_file 读取，禁止写入**——辅助判断 diff 涉及的文档类型、或按 `_index.md` §2/§3 路由文档写入位置时对照能力文件。
+
+**前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
+
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.10` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+
+- `data.toolchain_version` **等于** `2026.09.10`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
+- **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
+
+为什么必须有这一步：`init` 是把工具链**快照复制**进项目，之后两边各自演化；而新版技能配旧版 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（命令仍报"已保存"），导致关键信息凭空消失。
 
 工具调用（从项目根执行）：
 
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
+python .doc-kit/cli/cli.py tool status
 python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
-python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
-python .doc-kit/cli/cli.py review anchor-get
-python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>]
-python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'   # 或 --file <path> / stdin
+python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
+python .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]
+python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
+python .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin
 ```
 
-> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 字段，退出码 0 = 成功、1 = 失败。未指定 `--root` 时 CLI 从当前目录向上自动查找项目根。git 相关操作（git log / diff / rev-parse）一律使用 `bash` 工具执行。
+> 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
+>
+> 错误文本**没有统一格式**：较新的错误写作 `ERROR [<错误码>] <原因>。修复：<建议>`，但多数历史错误是散文形式（如「未找到文档: <path>，可用 doc structure 查看所有文档路径」）。**不要用正则解析错误文本**——错误原文同时出现在 `message` 与 `suggestions[0]`，按语义阅读后行动。
+>
+> 例外：`spec status` / `spec read` / `spec schema` 三个命令直接输出文本——`spec status` 是一至两行中文状态描述（**有活跃开发循环时会额外给出一行提示**），`spec read` 是议题 JSON（无活跃议题时输出中文提示），`spec schema` 是字段定义 JSON；三者失败时以「错误:」开头。
+>
+> 未指定 `--root` 时 CLI 从当前目录向上自动查找项目根；`--root` 是全局参数，必须写在命令组（`spec` / `doc` / `review` / `dev`）之前。
 ---
 
 # spec-code-review — 代码评审
@@ -42,7 +63,7 @@ python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'   #
 
 ```
 Phase 1 — 收集（AI 自动完成）
-  用户描述 → 获取锚点 → git log/diff → 扫描关联文档
+  用户描述 → 取锚点并校验 → git log/diff → 扫描关联文档
 
 Phase 2 — 展示（AI 汇总）
   AI 标注可能偏差的热点 → 用户圈定深入评审的范围
@@ -60,13 +81,11 @@ Phase 4 — 收尾
 
 ### Step 1-0：前置条件
 
-在开始任何 git 操作之前，先确认环境就绪：
-
 ```bash
-git --version >nul 2>&1 && git rev-parse --git-dir >nul 2>&1
+git --version >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1
 ```
 
-**不满足条件时**，直接输出以下文案并终止流程（不再执行后续 Steps）：
+**不满足条件时**，直接输出以下文案并终止流程：
 
 ```
 ❌ 前置条件不满足：系统未安装 git 或当前目录不是 git 仓库。
@@ -77,41 +96,39 @@ git --version >nul 2>&1 && git rev-parse --git-dir >nul 2>&1
   • cd 切换到 git 仓库目录后重试
 ```
 
-执行成功后继续到 Step 1-1。
-
 ### Step 1-1：解析用户描述
 
-从 `/spec-code-review {描述}` 中提取：
-- **关注范围**：用户指定要评审的文件、模块或功能点（如「评审 auth 模块的改动」）
-- 如描述为空或无明确指向，则向用户提问确认范围
+从 `/spec-code-review {描述}` 中提取**关注范围**（文件、模块或功能点，如「评审 auth 模块的改动」）；描述为空或无明确指向时，先向用户确认范围。
 
-> **文档排除**：本 skill 聚焦**代码变更**评审。新增的 markdown、docs/、CHANGELOG、
-> README 等纯文档类文件会自动从 git diff 中排除。如果用户明确要求评审文档
-> （如「顺便看看 README 改得对不对」），则在 git 命令中**不加入**排除规则。
+> **文档排除**：本技能聚焦**代码变更**评审。`.md`、`docs/`、`CHANGELOG`、`README` 等纯文档类文件默认从 git diff 中排除。若用户明确要求评审文档，则在 git 命令中**不加入**排除规则。
 
-### Step 1-2：获取评审锚点
+### Step 1-2：获取并校验评审锚点
 
-调 `python .doc-kit/cli/cli.py review anchor-get` 获取上次评审的 commit hash。
+调 `python .doc-kit/cli/cli.py review anchor-get`（默认读取**当前分支**的锚点）。
 
-两种情况：
+返回的 `data` 含 `branch` / `source` / `last_reviewed_commit`，按以下分支处理：
 
-```
-① 有锚点（hash 非空）
-   后续用 git log <hash>..HEAD --oneline 取增量
+| 情况 | 判定 | 处置 |
+|------|------|------|
+| `source: branch` 且 hash 非空 | 当前分支有专属锚点 | 进入**锚点校验**（下一步） |
+| `source: global` | 当前分支无专属锚点，回退到最近一次评审锚点 | 提示"该锚点可能来自其它分支"，请用户确认比对范围后仍须校验 |
+| `source: none` | 首次评审 | 询问起点：指定某个 commit，或从首个 commit 开始 |
+| 用户描述中指定了范围 | 如「从 v1.0 tag 开始评审」 | 优先采用用户指定的起点 |
 
-② 无锚点（首次评审）
-   AI 提示用户并询问起点：
-   > 尚无历史评审记录，请指定起始 commit
-   > （如 git log --oneline 中的某个 hash），
-   > 或输入 first 从首个 commit 开始。
+**锚点校验（必做）**：
+
+```bash
+git cat-file -e <锚点>^{commit}
 ```
 
-如果用户描述中明确指向某个范围（如「从 v1.0 tag 开始评审」），优先使用用户指定的起点。
+- 校验**失败** → 锚点已失效（常见原因：rebase、force-push、分支被删除或历史被改写）。此时**不要**继续用 `git log <锚点>..HEAD`（会直接报 `有歧义的参数`）。向用户说明原因，并请其指定新的起点（或用 `first` 从首个 commit 开始）。
+- 校验**通过** → 继续 Step 1-3。
+
+> 锚点按分支记录（`review anchor-set` 会自动带上当前分支），多分支并行评审互不覆盖；也可用 `--branch <分支名>` 显式指定。
 
 ### Step 1-3：获取 git 变更
 
-默认排除纯文档类文件（`.md`、`docs/`、`CHANGELOG*`、`README*`、`LICENSE*`），聚焦代码变更。
-如果用户描述中要求评审文档，则不加入排除规则。
+默认排除纯文档类文件（`.md`、`docs/`、`CHANGELOG*`、`README*`、`LICENSE*`），聚焦代码变更；用户要求评审文档时不加排除规则。
 
 ```bash
 # 提交清单（仅代码）
@@ -124,27 +141,21 @@ git diff --stat <锚点>..HEAD -- . ':(exclude)*.md' ':(exclude)docs/' ':(exclud
 git diff <锚点>..HEAD -- . ':(exclude)*.md' ':(exclude)docs/' ':(exclude)CHANGELOG*' ':(exclude)README*' ':(exclude)LICENSE*'
 ```
 
-如果用户描述中指定了关注范围，用 `-- <路径>` 取代上述排除规则：
+用户描述指定了关注范围时，用 `-- <路径>` 取代上述排除规则。
 
-```bash
-git log <锚点>..HEAD --oneline -- <路径1> <路径2>
-git diff <锚点>..HEAD -- <路径>
-```
+> **两点说明**：① 排除规则只作用于**文件**，同时改了文档与代码的提交仍会出现在清单里（它的代码部分需要评审），这是正常的；② 纯文档提交不会出现。
 
-展示提交清单给用户确认是否覆盖全部文件，或需进一步缩小。
+**空变更处理**：若提交清单为空（自锚点以来没有代码变更），**不要**产出空报告——向用户说明"自锚点以来无新增代码变更"，并询问：换一个起点重新评审 / 结束本次流程。
+
+展示提交清单给用户确认是否覆盖全部文件，或需进一步缩小范围。
 
 ### Step 1-4：读取相关设计文档
 
-调 `python .doc-kit/cli/cli.py doc structure` 获取所有文档路径和 section 标题。
+调 `python .doc-kit/cli/cli.py doc structure` 获取所有文档路径与 section 标题，按变更文件路径语义与用户关注点匹配相关文档（如 `auth.py` → `architecture.md` §认证流程、`non-functional-constraints.md` §安全约束；用户提到「接口变更」→ `inter-module-contracts.md`），再 `python .doc-kit/cli/cli.py doc read <path>` 读取完整内容。
 
-根据变更文件的路径语义和用户描述中的关注点，匹配相关文档：
-- 如 `auth.py` → 匹配 `architecture.md` 中「认证」相关段落、`non-functional-constraints.md` 中「安全」相关段落
-- 如用户描述提到「接口变更」→ 匹配 `inter-module-contracts.md`
-- 对匹配到的文档运行 `python .doc-kit/cli/cli.py doc read <path>` 获取完整内容
+> 匹配规则是启发式的——按文件名、section 标题、用户描述三者之间的语义关联，不做精确映射。
 
-> 匹配规则是启发式的 — 按文件名、section 标题、用户描述三者之间的语义关联，不做精确映射。
-
-> **能力库对照**：评审文档侧是否合规（段落结构、边界约束编号、行文规则）时，可 `read_file <项目根>/.doc-kit/skills/guidance/doc-capabilities/<doc_type>.md` 对照能力文件的「段落结构 / 行文规则」。
+> **能力库对照**：判断文档侧是否合规（段落结构、边界约束编号、行文规则）时，可读 `<项目根>/.doc-kit/skills/guidance/doc-capabilities/<doc_type>.md` 对照其「段落结构 / 行文规则」。
 
 ---
 
@@ -152,7 +163,7 @@ git diff <锚点>..HEAD -- <路径>
 
 ### Step 2-1：AI 扫描热点
 
-AI 基于 diff 文本和设计文档，做 best-effort 扫描，标注"可能存在偏差"的热点区域。输出格式：
+基于 diff 与设计文档做 best-effort 扫描，标注"可能存在偏差"的热点区域：
 
 ```
 📋 本次评审概况
@@ -170,25 +181,16 @@ AI 基于 diff 文本和设计文档，做 best-effort 扫描，标注"可能存
 🔍 AI 标注的热点区域（仅供参考，需人工确认）:
   ① token.py:14-18 — 过期时间从 30min→60min，
      与 architecture.md §认证流程「token 有效期 30 分钟」不一致
-  ② handlers.py:22-25 — 新增角色校验逻辑，
-     文档中无此约束描述
+  ② handlers.py:22-25 — 新增角色校验逻辑，文档中无此约束描述
 ```
 
-对每个热点标注风险等级：
-- 🔴 **高** — 行为变更可能影响安全、稳定性、外部接口
-- 🟡 **中** — 设计偏差，需确认是设计变更还是实现失误
-- 🟢 **低** — 文档滞后或次要差异
+风险等级：🔴 **高**（行为变更可能影响安全、稳定性、外部接口）／🟡 **中**（设计偏差，需确认是设计变更还是实现失误）／🟢 **低**（文档滞后或次要差异）。
 
-**注意**：AI 标注仅为辅助，标注可能不准确或有遗漏。判定权在用户。
+> AI 标注仅为辅助，可能不准确或有遗漏；判定权在用户。
 
 ### Step 2-2：用户选择
 
-请用户回答：
-
-> 以上 AI 标注的热点区域中，哪些需要深入比对？
-> 是否有未标注的区域需要 AI 辅助查看？
-
-用户选择后进入 Phase 3。
+询问用户：以上热点区域中哪些需要深入比对？是否有未标注的区域需要查看？用户选择后进入 Phase 3。
 
 ---
 
@@ -197,8 +199,6 @@ AI 基于 diff 文本和设计文档，做 best-effort 扫描，标注"可能存
 对用户选中的每个热点区域，逐一确认：
 
 ### Step 3-1：并排展示
-
-对于每个待确认点，AI 并排展示「文档原文」vs「代码原文」：
 
 ```
 📄 文档 — architecture.md §认证流程
@@ -222,18 +222,18 @@ C. **误报** — 代码与文档一致，AI 判断有误
 
 ### Step 3-3：记录判定
 
-将用户判定暂存在内存中（一个列表），格式：
+将判定暂存在内存（一个列表），格式：
 
 ```
 [差异简述] token 过期时间 30min→60min
 [性质]     设计变更
-[风险等级]  🟡 中
+[性质]     🟡 中
 [后续动作]  更新 architecture.md §认证流程，记录新的过期时间及理由
 ```
 
 ### Step 3-4：逐条处理
 
-重复 Step 3-1~3-3 直到所有选中的热点区域处理完毕。
+重复 Step 3-1~3-3 直到所有选中的热点处理完毕。
 
 ---
 
@@ -241,23 +241,22 @@ C. **误报** — 代码与文档一致，AI 判断有误
 
 ### Step 4-1：更新评审锚点
 
-获取 HEAD 完整 hash：
-
 ```bash
 git rev-parse HEAD
+python .doc-kit/cli/cli.py review anchor-set <commit_hash>
 ```
 
-调 `python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>]` 保存锚点。
+锚点**按当前分支记录**（多分支并行评审互不覆盖）；如评审的是其它分支，可加 `--branch <分支名>`。
 
 ### Step 4-2：汇总输出
 
-按以下 Markdown 模板组织评审报告（**所有段落必须包含**）：
+按以下模板组织评审报告：
 
 ```markdown
 # Code Review Report — {简短标题}
 
 > **评审日期**: {YYYY-MM-DD}
-> **评审范围**: {锚点}..{HEAD}
+> **评审范围**: {锚点}..{HEAD}（分支：{分支名}）
 > **用户关注**: {从描述提取的关注范围}
 
 ## 基本信息
@@ -265,6 +264,7 @@ git rev-parse HEAD
 | 项目 | 内容 |
 |------|------|
 | 评审日期 | {YYYY-MM-DD} |
+| 评审分支 | {分支名} |
 | 评审 Git 范围 | {锚点}..{HEAD} |
 | 关注范围 | {用户描述} |
 | 变更文件数 | {N} 个 |
@@ -288,7 +288,6 @@ AI 标注的 N 个潜在偏差区域：
 | # | 差异简述 | 文档位置 | 代码位置 | 风险等级 |
 |---|---------|---------|---------|---------|
 | ① | {简述} | {doc} §{段落} | {file}:{line} | 🔴/🟡/🟢 |
-| ② | {简述} | ... | ... | 🔴/🟡/🟢 |
 
 ## 深入确认项
 
@@ -297,7 +296,6 @@ AI 标注的 N 个潜在偏差区域：
 | # | 差异 | 性质 | 后续动作 |
 |---|------|------|---------|
 | ③-a | {差异简述} | 设计变更/实现偏差/文档过时 | {具体后续动作} |
-| ③-b | {差异简述} | ... | ... |
 
 ## 未深入比对项
 
@@ -306,27 +304,40 @@ AI 标注的 N 个潜在偏差区域：
 | # | 差异 | 风险等级 | 简要说明 |
 |---|------|---------|---------|
 | ① | {简述} | 🔴/🟡/🟢 | {一句话说明} |
-| ② | {简述} | ... | ... |
 
 ## 后续动作
 
 基于评审结果的可选后续步骤：
 
 1. ...
-2. ...
 ```
+
+> **段落要求（与 CLI 校验一致）**：**必填 3 段**——`# ` 标题、`## 基本信息`、`## 评审热点`；**建议 3 段**——`## 深入确认项`、`## 未深入比对项`、`## 后续动作`（缺失只产生 warning，报告仍会写入）。某段确无内容时写「无」并保留标题，便于后续检索。
 
 ### Step 4-3：写入评审报告
 
-将 Step 4-2 生成的 Markdown 报告运行 `python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'` 写入 `ReviewSpec/`。
+```bash
+python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'
+```
 
-> 文件自动命名为 `code-review-{YYYYMMDD-HHMMSS}.md`。
-> CLI 校验必填段落（`# ` 标题、`## 基本信息`、`## 评审热点`），
-> 缺失时返回 warning 但仍写入文件。
+文件自动命名为 `code-review-{YYYYMMDD-HHMMSS}.md`，写入 `ReviewSpec/`。若 CLI 返回 `warnings`（缺建议段落），照提示补齐更佳。
 
 ### Step 4-4：引导后续动作
 
-> 代码评审完成。报告已写入 ReviewSpec/{filename}，评审锚点已更新。
->
-> 如需将差异记入会议议题追踪，可调 spec-start 开启新议题。
-> 如需直接更新文档，可用 `doc update-section` 或 `doc add-section`。
+```
+代码评审完成。报告已写入 ReviewSpec/{filename}，评审锚点已更新（分支：{分支名}）。
+```
+
+按用户选择的后续动作分流：
+
+| 后续动作 | 怎么做 |
+|---------|--------|
+| 更新设计文档 | **必须走能力库路由**：读 `_index.md` §2/§3 定位 doc_type → 读对应 `<doc_type>.md` 的能力文件（段落结构 / 行文规则）→ `python .doc-kit/cli/cli.py doc read <path>` 看目标文档现状 → **把「改哪篇文档、哪个章节、写什么」整理成清单交用户确认** → 确认后执行：
+```bash
+python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
+python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+``` |
+| 记入议题追踪 | 用 `spec-start` 开启新议题（注意：创建议题会**先确认本次要讨论的议程**，议题名与议程需用户确认） |
+| 仅留档 | 无需额外动作，报告已落 `ReviewSpec/` |
+
+> 改文档是不可逆的知识资产变更：未经用户确认不要写入；文档间归属判断以 `_index.md` §2/§3 为准，能力文件的「行文规则·禁止」只作落笔前的边界提醒。

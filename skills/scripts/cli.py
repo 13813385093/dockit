@@ -5,6 +5,7 @@ Stdlib-only command line interface for skills. Each subcommand mirrors the
 behaviour of the former MCP tools with identical validation logic.
 
 用法:
+    python .doc-kit/cli/cli.py [--root <项目目录>] tool status
     python .doc-kit/cli/cli.py [--root <项目目录>] spec status
     python .doc-kit/cli/cli.py [--root <项目目录>] spec read
     python .doc-kit/cli/cli.py [--root <项目目录>] spec write --json '<spec_json>'   # 或从 stdin 读入
@@ -16,8 +17,8 @@ behaviour of the former MCP tools with identical validation logic.
     python .doc-kit/cli/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
     python .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
     python .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
-    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get
-    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>]
+    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get [--branch <分支名>]
+    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
     python .doc-kit/cli/cli.py [--root <项目目录>] dev status
     python .doc-kit/cli/cli.py [--root <项目目录>] dev plan create --scope <module|feature> --target <范围> [--module <模块>] [--title <标题>] [--session <id>]
@@ -39,11 +40,13 @@ behaviour of the former MCP tools with identical validation logic.
 项目目录解析优先级: --root > DOC_KIT_PROJECT_ROOT 环境变量 > 从 cwd 向上查找
 （含 .doc-kit/ 或 SessionSpec/ 的最近祖先目录）。
 
-退出码: 0 = 成功（含业务拒绝时输出 success=false 的 JSON）；1 = 参数或运行时错误。
+退出码: 0 = 成功；1 = 业务拒绝（输出 success=false 的 JSON）或运行时错误；2 = 参数错误（argparse：未知选项、缺必填参数）。
 """
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import os
 import re
@@ -67,13 +70,96 @@ from frontmatter import FrontmatterParser, _parse_yaml_block  # noqa: E402
 from index import IndexEntry, IndexManager  # noqa: E402
 from spec_schema import (  # noqa: E402
     SCENARIO_DOC_TYPES,
+    SPEC_SCHEMA,
     get_schema_metadata,
     render_summary,
+    unknown_keys,
     validate as validate_spec,
 )
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
+
+
+TOOLCHAIN_VERSION = "2026.09.10"
+"""工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
+
+改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
+`src/app/templates/*.md` 中任何一处，都要递增本版本号（格式 `YYYY.MM.N`）。
+
+为什么需要它：`init` 是把工具链**快照复制**进项目，之后两边各自演化；
+而一次开发同时依赖 agent 侧的 SKILL.md、项目侧的 `.doc-kit/cli/`（执行体）
+与 `.doc-kit/skills/guidance/`（写文档的规范）。三者错配的后果不对称——
+新技能配旧 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（如 `implemented_in`），
+命令报"已保存"但关键信息消失。为此：
+
+- `tests/render_skill_preamble.py` 把本常量注入 9 份 SKILL.md 的前言；
+- `init` 把本版本与各副本的 sha256 写入 `.doc-kit/toolchain.json`；
+- `tool status` 比对"技能声明的版本 / 项目记录的版本 / 当前 CLI 版本"，
+  并校验副本哈希，从而把错配从"静默"变成"显式提示"。
+"""
+
+TOOLCHAIN_HISTORY = [
+    {
+        "version": "2026.09.1",
+        "date": "2026-09-15",
+        "note": "首个版本化工具链：模块三评审修复（提交改 pathspec 形式、评审锚点按分支记录、报告段落对齐）、共享前言生成（9 份技能收敛为 3 个变体、工具清单自动派生）、spec-dev-loop 骨架化与委托实现流程、议题类技能改为「议程驱动 + 两个落盘点 + ProjectSpec 单点写入」"
+    },
+    {
+        "version": "2026.09.2",
+        "date": "2026-09-15",
+        "note": "新增工具链版本历史与变更说明：tool status 可报告「项目落后几版 + 期间改了什么」，同步动作从此有理由、有内容"
+    },
+    {
+        "version": "2026.09.3",
+        "date": "2026-09-16",
+        "note": "阶段1：修正 plan 段落引用的建议形式（<plan.md> 占位符会被拒绝）、_fail 与 review report-write 补齐 message 字段、前言中关于错误格式与退出码的断言改为符合实现"
+    },
+    {
+        "version": "2026.09.4",
+        "date": "2026-09-16",
+        "note": "阶段2：统一落盘点表述并在前言给出三处权威定义；修正 spec-start 的非真实状态名 idle；spec-close 边界补议题链路内限定；git 前言去掉对 spec-code-review 的指名；USAGE 三处选项可选性改为与实现一致"
+    },
+    {
+        "version": "2026.09.5",
+        "date": "2026-09-16",
+        "note": "阶段3：spec-start 与 spec-archive 的路由改用 spec read 的 JSON 字段（消除对 spec status 中文散文的隐式耦合）；spec-close Step 1 改为复用 spec-pause 不再重述落盘流程；新增路由/去重/边界/描述预算四类内容契约"
+    },
+    {
+        "version": "2026.09.6",
+        "date": "2026-09-16",
+        "note": "阶段3：9 份 description 补触发条件与近亲消歧（24–65→96–137 字符）；同步更新 test_session_flow 的 pause 落盘点断言为「唯一保存通道」"
+    },
+    {
+        "version": "2026.09.7",
+        "date": "2026-09-16",
+        "note": "A1：未初始化时的终止话术改为给出可执行的初始化命令，并明确初始化由人工完成（不新增 spec-init 技能）"
+    },
+    {
+        "version": "2026.09.8",
+        "date": "2026-09-16",
+        "note": "A2：spec status 增加跨存储报告（有活跃开发循环时额外一行，含 phase）；spec write 拒绝新增的未知字段（顶层与嵌套），与 dev task set 对齐；USAGE 把两条仅供人工的命令移出并改为显式声明"
+    },
+    {
+        "version": "2026.09.9",
+        "date": "2026-09-16",
+        "note": "dev-loop 文档化 dev task annotate（不改状态的备注通道）；记录 CI 已决为不接入"
+    },
+    {
+        "version": "2026.09.10",
+        "date": "2026-09-16",
+        "note": "技能合并：spec-load 并入 spec-start（新对话单一入口：有议题走续接 Step 0b、无议题走创建）、spec-abort 并入 spec-close（作废分支）；9 份 → 7 份"
+    }
+]
+"""工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
+
+用途：`tool status` 据此算出**项目落后几个版本、期间改了什么**，让"该同步"
+这件事有理由、有内容，而不只是一句"版本不一致"。
+
+维护方式：递增 `TOOLCHAIN_VERSION` 后运行
+`python tests/check_toolchain_version.py --update --note "<一句变更说明>"`，
+由脚本自动追加本列表，不要手工编辑。
+"""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -178,14 +264,44 @@ def _generate_spec_id(topic: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 
+def _active_dev_loop_hint(project_root: Path) -> str:
+    """有活跃开发循环时给 `spec status` 追加的一行。
+
+    议题侧（`SessionSpec/`）与开发循环侧（`DevSpec/`）互不可见：spec_schema 对 DevSpec
+    零引用，`_detect_active_session` 只 glob `SessionSpec/active/*.spec.json`。因此开发循环
+    进行中开新对话时，`spec status` 会如实报告"没有活跃议题"——那句话是**真的**，但会让人
+    以为什么都没在跑（`TODO.md` §A2）。
+
+    修在这里而不是修在某份技能里：`spec status` 的职责本就是"报告现在什么在跑"，
+    放进 CLI 则 9 份技能同时受益，也不需要任何技能越界去读别人的状态。只读内存，不写盘。
+    """
+    try:
+        session = _detect_active_dev_session(project_root)
+    except ValueError:
+        return "\n⚠️ 存在多个活跃开发循环，违反串行约束：请先处理 `DevSpec/active/` 下的会话。"
+    if session is None:
+        return ""
+    return (
+        f"\n⚠️ 另有活跃开发循环 **{session.name}**（phase: {_dev_phase(_load_dev_tasks(session))}）"
+        "——开发相关请求请走 `spec-dev-loop` 续接（先 `dev status` 看进度）。"
+    )
+
+
 def cmd_spec_status(project_root: Path) -> str:
-    """检查当前议题状态并给出下一步操作指引。返回纯文本。"""
+    """检查当前议题状态并给出下一步操作指引。返回纯文本（通常一行，有开发循环时两行）。"""
+    return _spec_status_text(project_root) + _active_dev_loop_hint(project_root)
+
+
+def _spec_status_text(project_root: Path) -> str:
+    """议题侧的状态描述（原有实现）。"""
     active_dir = project_root / "SessionSpec" / "active"
     archive_dir = project_root / "SessionSpec" / "archive"
-    if not active_dir.is_dir() or not archive_dir.is_dir():
-        active_dir.mkdir(parents=True, exist_ok=True)
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        return "✅ 项目已初始化，SessionSpec/ 目录已就绪。当前无活跃议题，可参考 spec-start 流程开启新议题。"
+    # 先建目录再判定状态：archive/ 缺失只说明项目还没走过归档，不代表没有
+    # 活跃议题。若在此直接返回「无活跃议题」，会与 spec read / 实际文件状态
+    # 互相矛盾（首次 status 晚于创建议题时尤其明显）。
+    first_time = not active_dir.is_dir() or not archive_dir.is_dir()
+    active_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         sid = _detect_active_session(project_root)
@@ -193,6 +309,8 @@ def cmd_spec_status(project_root: Path) -> str:
         return f"错误: {e}"
 
     if sid is None:
+        if first_time:
+            return "✅ 项目已初始化，SessionSpec/ 目录已就绪。当前无活跃议题，可参考 spec-start 流程开启新议题。"
         return "当前没有活跃议题。可参考 spec-start 流程开启新议题。"
 
     spec = _read_spec_file(project_root, sid)
@@ -254,6 +372,23 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
             existing = json.loads(spec_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
+
+    # 未知字段校验：validate_spec 只遍历 schema 定义过的字段，从不反问"你给的键里有没有
+    # 我不认识的"，于是拼错的字段名会被 success 回执 + 原样写盘，且永远不被读到。
+    # 与 dev task set 的 TASK_ALLOWED_KEYS 校验对齐：**新增**的未知字段一律拒绝；
+    # 磁盘上已存在的历史未知字段只提示不拒绝，否则历史数据无法完成一次合法往返。
+    unknown = unknown_keys(data)
+    inherited = set(unknown_keys(existing)) if isinstance(existing, dict) else set()
+    blocking = sorted(k for k in unknown if k not in inherited)
+    if blocking:
+        return _fail(
+            f"ERROR [spec.unknown_field] spec 含未知字段 {blocking}。"
+            f" 允许的字段: {sorted(SPEC_SCHEMA)}"
+            f"；条目内允许: resolutions{list(SPEC_SCHEMA['resolutions']['item_schema'])}"
+            f" / pending_decisions{list(SPEC_SCHEMA['pending_decisions']['item_schema'])}。"
+            " 修复：字段名拼错不会报错、会被静默写盘且永不被读取，请先核对该字段是否应存在。"
+        )
+    tolerated = sorted(k for k in unknown if k in inherited)
 
     if existing is None:
         # ——— 新创建 ———
@@ -328,6 +463,31 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
         if existing_res and not new_res:
             result += f"\n\n⚠️ **注意**：提交的 resolutions 为空，但该议题原有 {len(existing_res)} 条决议。如果是有意清空请忽略此提示。"
 
+    if tolerated:
+        result += (
+            f"\n\n⚠️ **注意**：本次提交含 {len(tolerated)} 个未知字段"
+            f"（磁盘上已存在，为兼容历史数据未拒绝）：{tolerated}。"
+            " 若非有意保留，建议清理后重新写入。"
+        )
+
+    if data.get("status") == "closed":
+        # 议程结清护栏：关闭时尚有未 resolved 的议程时如实提示。宁可看到这条
+        # 提示，也不允许为了关闭把待决议项谎报为 resolved（deferred / blocked
+        # 才是诚实的处置方式）。
+        unresolved = [
+            str(p.get("topic", "?"))
+            for p in data.get("pending_decisions", [])
+            if p.get("status") != "resolved"
+        ]
+        if unresolved:
+            shown = "、".join(unresolved[:5]) + ("…" if len(unresolved) > 5 else "")
+            result += (
+                f"\n\n⚠️ **注意**：关闭时尚有 {len(unresolved)} 项议程未 resolved（{shown}）。"
+                "请确认它们的 status 是否属实：已解决的用 resolved，推迟的用 deferred"
+                "（并写入 next_steps），受阻的用 blocked（在 note 中写明阻塞原因）"
+                "——不要为了关闭而谎报 resolved。"
+            )
+
     if data.get("status") == "closed":
         result += "\n\n**下一步建议**：调用 spec archive 归档已关闭的议题。"
     elif data.get("status") == "abandoned":
@@ -370,8 +530,8 @@ def cmd_spec_archive(project_root: Path) -> str:
 #  doc_structure；新增 new / remove-section）
 # ═══════════════════════════════════════════════════════════════
 
-# 18 种文档类型注册表（与 app/engine/registry.py 的 DEFAULT_TYPES 一致）。
-# doc_type → level/template；composite 标记精简模式复合类型。
+# 15 种文档类型注册表（与 app/engine/registry.py 的 DEFAULT_TYPES 一致）。
+# doc_type → level/template
 DOC_TYPE_REGISTRY = [
     # Level 0 - Top
     {"doc_type": "business_context", "level": "top", "template": "business-context.md"},
@@ -381,22 +541,21 @@ DOC_TYPE_REGISTRY = [
     {"doc_type": "inter_module_contract", "level": "top", "template": "inter-module-contracts.md"},
     {"doc_type": "stakeholders", "level": "top", "template": "stakeholders.md"},
     {"doc_type": "release_policy", "level": "top", "template": "release-policy.md"},
-    {"doc_type": "charter", "level": "top", "template": "charter.md", "composite": True},
     # Level 1 - Module
     {"doc_type": "architecture", "level": "module", "template": "architecture.md"},
     {"doc_type": "domain_model", "level": "module", "template": "domain-model.md"},
     {"doc_type": "module_manifest", "level": "module", "template": "module-manifest.md"},
     {"doc_type": "integration", "level": "module", "template": "integration.md"},
-    {"doc_type": "module_design", "level": "module", "template": "module-design.md", "composite": True},
     # Level 2 - Feature
     {"doc_type": "feature_design", "level": "feature", "template": "feature-design.md"},
     {"doc_type": "decision_log", "level": "feature", "template": "decision-log.md"},
     {"doc_type": "unit_test", "level": "feature", "template": "unit-tests.md"},
     {"doc_type": "acceptance_test", "level": "feature", "template": "acceptance-tests.md"},
-    {"doc_type": "feature_package", "level": "feature", "template": "feature-package.md", "composite": True},
 ]
 
-
+# 注册表条目必需、且必须为真值的字段：只有 doc_type 的残缺条目不参与加载，
+# 否则会顶替整个内置注册表，并让 cmd_doc_new 里的 defn["level"] 抛 KeyError
+_REQUIRED_TYPE_FIELDS = ("level", "template")
 
 
 def _parse_module_path(module: str) -> tuple[str, str | None]:
@@ -541,7 +700,20 @@ def cmd_doc_add_section(project_root: Path, reference: str, heading: str, conten
 
 
 def _load_registry(project_root: Path) -> dict | None:
-    """从 .doc-kit/registry.yaml 加载 doc_type 注册表；缺失或解析失败返回 None（回退内置）。"""
+    """从 .doc-kit/registry.yaml 加载 doc_type 注册表。
+
+    结构非法（顶层非映射、types 非列表）、条目缺 level/template 必需键、
+    文件缺失、解析失败或结果为空均返回 None（回退内置注册表）。
+
+    刻意**不**按名字过滤「已下线的文档类型」：项目内 .doc-kit/registry.yaml
+    陈旧时应照原样加载，让异常保持可见，由人工重跑 init 同步；而不是在代码里
+    写死黑名单静默掩盖（项目内那份旧 CLI / 旧能力库 / 旧模板并不会因此消失）。
+
+    结构判定在此显式做出，不再依赖 _parse_yaml_block 对非法输入抛异常被
+    except 兜住。这里刻意**不支持**顶层裸列表格式：本函数用的
+    _parse_yaml_block 是手写迷你解析器，本来就解析不了裸列表；裸列表
+    registry.yaml 一律返回 None，回退内置注册表。
+    """
     reg_path = project_root / ".doc-kit" / "registry.yaml"
     if not reg_path.exists():
         return None
@@ -549,11 +721,20 @@ def _load_registry(project_root: Path) -> dict | None:
         raw = _parse_yaml_block(reg_path.read_text(encoding="utf-8"))
     except Exception:
         return None
-    types = raw.get("types") or []
+    if not isinstance(raw, dict):
+        return None
+    types = raw.get("types")
+    if not isinstance(types, list):
+        return None
     result: dict[str, dict] = {}
     for t in types:
-        if isinstance(t, dict) and t.get("doc_type"):
-            result[t["doc_type"]] = {k: v for k, v in t.items() if v is not None}
+        if not isinstance(t, dict) or not t.get("doc_type"):
+            continue
+        # 缺 level/template 必需键的残缺条目跳过，避免顶替整个内置注册表，
+        # 也避免 cmd_doc_new 里 defn["level"] 抛 KeyError
+        if not all(t.get(k) for k in _REQUIRED_TYPE_FIELDS):
+            continue
+        result[t["doc_type"]] = {k: v for k, v in t.items() if v is not None}
     return result or None
 
 
@@ -575,9 +756,6 @@ def cmd_doc_new(
             f"修复：从已注册类型中选择其一（{candidates}），详见 doc-capabilities/_index.md §1。"
         )
     level = defn["level"]
-    # 复合性是体系固有属性（engine 用 property 判定，registry.yaml 未必带 composite 字段），
-    # 因此以内置集合兜底：defn 显式声明或属于内置复合类型即视为复合
-    is_composite = defn.get("composite", False) or doc_type in {"charter", "module_design", "feature_package"}
 
     # —— 参数与层级匹配校验 ——
     if level == "module" and not module:
@@ -602,13 +780,6 @@ def cmd_doc_new(
     if not docs_root.is_dir():
         return _fail("ERROR [new_doc.no_docs] 未找到 ProjectSpec/ 目录。修复：先运行项目初始化。")
 
-    # —— 精简模式：仅允许复合类型 ——
-    if (docs_root / "charter.md").exists() and not is_composite:
-        return _fail(
-            f"ERROR [new_doc.minimal_profile] 项目处于精简模式（charter.md 存在），不能创建独立基础文档 '{doc_type}'。"
-            "修复：写入 charter.md 对应章节，或先执行文档拆分（§3.7）。"
-        )
-
     # —— 计算目标路径 ——
     if level == "top":
         target = docs_root / defn["template"]
@@ -617,29 +788,10 @@ def cmd_doc_new(
         module_dir = docs_root / f"module-{main_module}"
         if sub_path:
             module_dir = module_dir / sub_path
-        if not module_dir.is_dir():
-            if is_composite:
-                # 复合类型（模块骨架）允许自动创建目录
-                module_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                return _fail(
-                    f"ERROR [new_doc.module_not_found] 模块 '{module}' 不存在（期望目录 "
-                    f"{module_dir.relative_to(project_root).as_posix()}）。修复：先创建模块骨架，"
-                    f"如 doc new module_design --module {main_module}。"
-                )
         if level == "module":
             target = module_dir / defn["template"]
         else:
             feature_dir = module_dir / "features" / feature
-            if not feature_dir.is_dir():
-                if is_composite:
-                    feature_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    return _fail(
-                        f"ERROR [new_doc.feature_not_found] 功能 '{feature}' 不存在（期望目录 "
-                        f"{feature_dir.relative_to(project_root).as_posix()}）。修复：先创建功能骨架，"
-                        f"如 doc new feature_package --module {module} --feature {feature}。"
-                    )
             target = feature_dir / defn["template"]
 
     rel_target = str(target.relative_to(project_root).as_posix())
@@ -769,9 +921,12 @@ def cmd_doc_structure(project_root: Path) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 REVIEW_STATE_DEFAULTS = {
+    # 兼容字段：始终记录"最近一次"评审（旧版本只有这三个字段）
     "last_reviewed_commit": None,
     "last_reviewed_at": None,
     "review_history": [],
+    # 按分支记录锚点：多分支并行评审不再互相覆盖
+    "branches": {},
 }
 
 
@@ -780,16 +935,18 @@ def _review_state_path(project_root: Path) -> Path:
 
 
 def _read_review_state(project_root: Path) -> dict:
+    # 注意：REVIEW_STATE_DEFAULTS 含可变容器（review_history / branches），
+    # 必须 deepcopy——浅拷贝会让多个项目共享同一个 dict/list，造成状态跨项目泄漏。
     path = _review_state_path(project_root)
     if not path.exists():
-        return dict(REVIEW_STATE_DEFAULTS)
+        return copy.deepcopy(REVIEW_STATE_DEFAULTS)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         for k, v in REVIEW_STATE_DEFAULTS.items():
             data.setdefault(k, v)
         return data
     except (json.JSONDecodeError, OSError):
-        return dict(REVIEW_STATE_DEFAULTS)
+        return copy.deepcopy(REVIEW_STATE_DEFAULTS)
 
 
 def _write_review_state(project_root: Path, state: dict) -> None:
@@ -798,44 +955,122 @@ def _write_review_state(project_root: Path, state: dict) -> None:
     path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def cmd_review_anchor_get(project_root: Path) -> str:
-    """获取上一次 code review 的 git 提交锚点。"""
+def _current_git_branch(project_root: Path) -> str:
+    """读取当前 git 分支名（只读 .git/HEAD，不执行 git 命令）。
+
+    支持：常规仓库（.git/ 目录）、worktree/submodule（.git 是内含
+    "gitdir: <路径>" 的文件）。读不到时返回空串——调用方据此走"无分支"
+    的兼容路径，不报错。
+    """
+    git_path = project_root / ".git"
+    try:
+        if git_path.is_file():
+            content = git_path.read_text(encoding="utf-8", errors="replace").strip()
+            if content.startswith("gitdir:"):
+                target = content.split(":", 1)[1].strip()
+                git_dir = (project_root / target).resolve() if not Path(target).is_absolute() else Path(target)
+            else:
+                return ""
+        elif git_path.is_dir():
+            git_dir = git_path
+        else:
+            return ""
+        head = (git_dir / "HEAD").read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    if head.startswith("ref: refs/heads/"):
+        return head[len("ref: refs/heads/"):].strip()
+    return ""  # detached HEAD
+
+
+def cmd_review_anchor_get(project_root: Path, branch: str = "") -> str:
+    """获取指定分支（默认当前分支）上一次 code review 的 git 提交锚点。"""
     state = _read_review_state(project_root)
+    branches = state.get("branches", {}) or {}
+    target = branch.strip() or _current_git_branch(project_root)
+    entry = branches.get(target) if target else None
+
+    if entry:
+        commit = entry.get("commit")
+        return _ok(
+            data={
+                "branch": target,
+                "last_reviewed_commit": commit,
+                "last_reviewed_at": entry.get("at"),
+                "source": "branch",
+                "branches": branches,
+                "review_history": state.get("review_history", []),
+            },
+            suggestions=[
+                f"分支 {target} 上次评审锚点: {commit}",
+                f"先校验锚点是否仍存在：git cat-file -e {commit}^{{commit}}（rebase / force-push 后可能已失效）",
+                f"可用 git log {commit}..HEAD --oneline 查看新增提交。",
+            ],
+        )
+
     commit = state.get("last_reviewed_commit")
     if not commit:
         return _ok(
-            data={"last_reviewed_commit": None, "last_reviewed_at": None, "review_history": []},
-            suggestions=["尚无评审记录，将从头开始评审所有提交。"],
+            data={
+                "branch": target,
+                "last_reviewed_commit": None,
+                "last_reviewed_at": None,
+                "source": "none",
+                "branches": branches,
+                "review_history": [],
+            },
+            suggestions=["尚无评审记录，将从头开始评审所有提交（或由用户指定起始 commit）。"],
         )
     return _ok(
         data={
+            "branch": target,
             "last_reviewed_commit": commit,
             "last_reviewed_at": state.get("last_reviewed_at"),
+            "source": "global",
+            "branches": branches,
             "review_history": state.get("review_history", []),
         },
         suggestions=[
-            f"上次评审锚点: {commit}",
-            f"可用 git log {commit}..HEAD --oneline 查看新增提交。",
+            f"分支 {target or '(未识别)'} 无专属锚点，回退到最近一次评审锚点: {commit}",
+            "该锚点可能来自其它分支：请确认比对范围，或先校验 git cat-file -e <锚点>^{commit}。",
         ],
     )
 
 
-def cmd_review_anchor_set(project_root: Path, commit_hash: str, session_spec_id: str = "") -> str:
-    """保存本次 code review 的 git 提交锚点。"""
+def cmd_review_anchor_set(
+    project_root: Path, commit_hash: str, session_spec_id: str = "", branch: str = ""
+) -> str:
+    """保存本次 code review 的 git 提交锚点（按分支记录，兼容旧的全局字段）。"""
     if not commit_hash or not commit_hash.strip():
         return _fail("commit_hash 不能为空")
     commit_hash = commit_hash.strip()
+    target = branch.strip() or _current_git_branch(project_root)
     state = _read_review_state(project_root)
+    now = datetime.now(timezone.utc).isoformat()
     state["last_reviewed_commit"] = commit_hash
-    state["last_reviewed_at"] = datetime.now(timezone.utc).isoformat()
-    record = {"commit": commit_hash, "time": state["last_reviewed_at"]}
+    state["last_reviewed_at"] = now
+    record = {"commit": commit_hash, "time": now}
     if session_spec_id:
         record["session"] = session_spec_id
+    if target:
+        record["branch"] = target
+        entry = {"commit": commit_hash, "at": now}
+        if session_spec_id:
+            entry["session"] = session_spec_id
+        state.setdefault("branches", {})[target] = entry
     state.setdefault("review_history", []).append(record)
     _write_review_state(project_root, state)
+    scope = f"分支 {target}" if target else "全局（未能识别当前分支）"
     return _ok(
-        data={"last_reviewed_commit": commit_hash, "last_reviewed_at": state["last_reviewed_at"]},
-        suggestions=[f"评审锚点已更新为 {commit_hash}。下次 code review 将从此 commit 开始。"],
+        data={
+            "branch": target,
+            "last_reviewed_commit": commit_hash,
+            "last_reviewed_at": now,
+            "branches": state.get("branches", {}),
+        },
+        suggestions=[
+            f"{scope}的评审锚点已更新为 {commit_hash}。下次 code review 将从此 commit 开始。"
+        ],
     )
 
 
@@ -878,6 +1113,7 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 
     result = {
         "success": True,
+        "message": f"评审报告已写入 {filename}",
         "data": {"file": filename, "path": str(file_path.relative_to(project_root))},
         "suggestions": [],
     }
@@ -890,6 +1126,160 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  tool 子命令（工具链版本与副本一致性）
+# ═══════════════════════════════════════════════════════════════
+
+TOOLCHAIN_MANIFEST = ".doc-kit/toolchain.json"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    try:
+        h.update(path.read_bytes())
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+
+def _version_key(version: str) -> tuple:
+    """版本比较用键（YYYY.MM.N → 整数元组；非数字段退化为字符串）。"""
+    parts = []
+    for seg in str(version).split("."):
+        parts.append(int(seg) if seg.isdigit() else -1)
+    return tuple(parts)
+
+
+def pending_toolchain_changes(recorded: str | None) -> tuple[int, list[dict], bool]:
+    """返回 (落后版本数, 落后期间的变更条目, 项目版本是否早于历史起点)。
+
+    - 落后 0 且 known=True：项目版本 == 当前版本；
+    - known=False：项目版本不在历史上（早于历史起点，或版本号异常），
+     此时把整段历史都当作"可能相关"，由调用方决定怎么提示。
+    """
+    versions = [h.get("version") for h in TOOLCHAIN_HISTORY]
+    if not recorded or recorded not in versions:
+        return (-1, list(TOOLCHAIN_HISTORY), False)
+    idx = versions.index(recorded)
+    pending = TOOLCHAIN_HISTORY[idx + 1:]
+    return (len(pending), pending, True)
+
+
+def cmd_tool_status(project_root: Path) -> str:
+    """报告工具链版本与项目内副本的一致性。
+
+    init 会把工具链快照复制进项目。此后仓库与项目各自演化，若不同步会出现
+    「新技能 + 旧 CLI」：旧 CLI 会静默丢弃不认识的字段，命令却报成功。
+    本命令把这种错配变成显式提示。
+    """
+    manifest_path = project_root / TOOLCHAIN_MANIFEST
+    if not manifest_path.exists():
+        return _ok(
+            message="## ⚠️ 未找到工具链记录文件",
+            data={
+                "toolchain_version": TOOLCHAIN_VERSION,
+                "recorded_version": None,
+                "manifest": TOOLCHAIN_MANIFEST,
+                "stale": True,
+                "consistent": False,
+                "reason": "no_manifest",
+                "checked": 0,
+                "mismatched": [],
+                "missing": [],
+            },
+            suggestions=[
+                "本项目由旧版 init 生成（没有 .doc-kit/toolchain.json），无法校验副本一致性。",
+                f"请重跑：doc-kit init <项目根>（把 .doc-kit/ 刷新到 {TOOLCHAIN_VERSION}，不会改动 ProjectSpec/）",
+                "并为 agent 侧重跑：doc-kit install-skills <agent 技能目录>，然后重新开始本次流程。",
+            ],
+        )
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        return _fail(f"ERROR [tool.bad_manifest] 读取 {TOOLCHAIN_MANIFEST} 失败: {e}。修复：重跑 doc-kit init 重新生成。")
+
+    recorded = manifest.get("toolchain_version")
+    files: dict = manifest.get("files", {}) or {}
+    mismatched, missing = [], []
+    for rel, digest in sorted(files.items()):
+        target = project_root / rel
+        if not target.exists():
+            missing.append(rel)
+        elif _sha256_file(target) != digest:
+            mismatched.append(rel)
+
+    stale = recorded != TOOLCHAIN_VERSION
+    consistent = (not stale) and not mismatched and not missing
+    behind, pending, version_known = pending_toolchain_changes(recorded)
+
+    lines = ["## 工具链状态", ""]
+    lines.append(f"**本 CLI 版本**: {TOOLCHAIN_VERSION}")
+    lines.append(f"**项目记录版本**: {recorded or '（未记录）'}")
+    lines.append(f"**记录时间**: {manifest.get('generated_at', '（未知）')}")
+    if stale and behind > 0:
+        lines.append(f"**落后**: {behind} 个版本")
+    elif stale and recorded and not version_known:
+        lines.append("**落后**: 版本号不在历史记录中（早于历史起点）")
+    if stale and pending:
+        lines.append("")
+        lines.append("**该项目版本之后发布的内容**:")
+        for item in pending[-8:]:
+            lines.append(f"- `{item.get('version')}`（{item.get('date', '—')}）：{item.get('note', '（无说明）')}")
+    lines.append(f"**副本校验**: {len(files) - len(mismatched) - len(missing)}/{len(files)} 一致")
+    if mismatched:
+        lines.append(f"**被改动/不一致**: {', '.join(mismatched[:5])}" + ("…" if len(mismatched) > 5 else ""))
+    if missing:
+        lines.append(f"**缺失**: {', '.join(missing[:5])}" + ("…" if len(missing) > 5 else ""))
+
+    suggestions = []
+    if stale:
+        suggestions.append(
+            f"项目记录的工具链版本（{recorded}）与当前 CLI（{TOOLCHAIN_VERSION}）不一致："
+            "技能文本与项目副本可能不同步——新版技能配旧版 CLI 时，旧 CLI 会静默丢弃未知字段。"
+        )
+        if behind > 0:
+            suggestions.append(f"本项目落后 {behind} 个版本，期间变更：")
+            for item in pending[-8:]:
+                suggestions.append(f"  · {item.get('version')}：{item.get('note', '（无说明）')}")
+        elif recorded and not version_known:
+            suggestions.append("项目版本早于历史记录起点，无法列出逐版差异；建议直接同步到当前版本。")
+    if mismatched:
+        suggestions.append(
+            "存在被本地改动或半更新的副本（见上）。除非是有意定制，否则建议重跑 init 覆盖。"
+        )
+    if missing:
+        suggestions.append("存在缺失副本（可能是手工删除或 init 中断）。建议重跑 init 补齐。")
+
+    if suggestions:
+        suggestions.append(
+            "同步方式：doc-kit init <项目根>（只刷新 .doc-kit/，不改动 ProjectSpec/）"
+            " + doc-kit install-skills <agent 技能目录>；完成后重新开始本次流程。"
+        )
+    else:
+        suggestions.append("工具链一致，可继续。")
+
+    return _ok(
+        message="\n".join(lines),
+        data={
+            "toolchain_version": TOOLCHAIN_VERSION,
+            "recorded_version": recorded,
+            "manifest": TOOLCHAIN_MANIFEST,
+            "generated_at": manifest.get("generated_at"),
+            "stale": stale,
+            "consistent": consistent,
+            "behind_versions": behind if behind > 0 else 0,
+            "pending_changes": pending if stale else [],
+            "recorded_version_known": version_known,
+            "checked": len(files),
+            "mismatched": mismatched,
+            "missing": missing,
+        },
+        suggestions=suggestions,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
 #  DevSpec（spec-dev-loop 开发执行循环）子命令
 # ═══════════════════════════════════════════════════════════════
 #  DevSpec 是开发循环的工作区（DevSpec/active/<session>/），与 ProjectSpec
@@ -897,13 +1287,28 @@ def cmd_review_report_write(project_root: Path, report_markdown: str) -> str:
 #  入口——开发循环内 ProjectSpec 只读，发现的设计问题只记录到 CodeNotes /
 #  报告，修改由评审/会议在循环外完成（有版本痕迹地修改）。
 
-DEV_TASK_STATUSES = ["pending", "in-progress", "implemented", "unit-green", "done", "fixing"]
+DEV_TASK_STATUSES = [
+    "pending", "implementing", "submitted", "accepted", "tested", "done", "rejected", "blocked",
+]
+"""任务状态（骨架化 + 委托实现流程）。
+
+pending      骨架已确认，待实现
+implementing 子代理/主代理实现中
+submitted    产出已交回，待主代理验收
+accepted     主代理验收通过（签名/注释承诺/文件范围/编译/冒烟）
+tested       该任务的 GWT 用例真实通过
+done         已提交
+rejected     验收或测试不通过（note 必带失败证据），可重派
+blocked      发现设计缺口/签名需变更，待用户裁决
+"""
 DEV_TASK_TRANSITIONS = {
-    "pending": {"in-progress"},
-    "in-progress": {"implemented", "fixing"},
-    "implemented": {"unit-green", "fixing"},
-    "unit-green": {"done", "fixing"},
-    "fixing": {"in-progress"},
+    "pending": {"implementing"},
+    "implementing": {"submitted", "rejected", "blocked"},
+    "submitted": {"accepted", "rejected"},
+    "accepted": {"tested", "rejected"},
+    "tested": {"done", "rejected"},
+    "rejected": {"implementing"},
+    "blocked": {"implementing", "rejected"},
     "done": set(),
 }
 DEV_FEATURE_STATUSES = ["tasks-done", "aligned", "done"]
@@ -916,6 +1321,101 @@ DEV_MODULE_TRANSITIONS = {
     "done": set(),
 }
 
+DEV_PHASE_LABELS = {
+    "design": "设计与骨架化",
+    "implement": "逐方法实现与验收",
+    "test": "单元测试与验收测试",
+    "close": "收尾归档",
+}
+"""循环阶段标签。阶段由 tasks.json 派生（不落库），避免与任务状态漂移。"""
+
+
+def _dev_phase(tasks: list[dict]) -> str:
+    """由任务状态派生当前阶段：design → implement → test → close。"""
+    if not tasks:
+        return "design"
+    statuses = [t.get("status", "pending") for t in tasks]
+    if all(s == "done" for s in statuses):
+        return "close"
+    if all(s in ("accepted", "tested", "done") for s in statuses):
+        return "test"
+    return "implement"
+
+
+def _dev_next_step_suggestions(
+    phase: str, tasks: list[dict], features: dict, modules: dict
+) -> list[str]:
+    """按阶段给出可执行的下一步（仅在循环内提议，不越界改 ProjectSpec）。"""
+    out: list[str] = []
+    if phase == "design":
+        return [
+            "尚无任务清单：完成 Phase 1（读设计 + 代码考古 + 约束整合）后进入 Phase 2 骨架化，"
+            "再 dev task set 写入（每个方法必须带 implemented_in）。"
+        ]
+    if phase == "implement":
+        blocked = [t for t in tasks if t.get("status") == "blocked"]
+        if blocked:
+            return [
+                f"有 {len(blocked)} 个任务处于 blocked（设计缺口或签名变更待裁决）："
+                f"先与用户确认处置后再继续（如 {blocked[0].get('task_id')}）。"
+            ]
+        submitted = [t for t in tasks if t.get("status") == "submitted"]
+        if submitted:
+            out.append(
+                f"待验收 {len(submitted)} 个：主代理逐项验收后 "
+                f"dev task update {submitted[0]['task_id']} --status accepted"
+                "（不通过则 --status rejected --note '<失败证据>'）。"
+            )
+        rejected = [t for t in tasks if t.get("status") == "rejected"]
+        if rejected:
+            out.append(
+                f"有 {len(rejected)} 个 rejected：补简报/修正后重派 → "
+                f"dev task update {rejected[0]['task_id']} --status implementing。"
+            )
+        nxt = next((t for t in tasks if t.get("status") == "pending"), None)
+        if nxt:
+            out.append(
+                f"按拓扑序取下一个任务：dev task update {nxt['task_id']} --status implementing 后派发实现。"
+            )
+    elif phase == "test":
+        accepted = [t for t in tasks if t.get("status") == "accepted"]
+        tested = [t for t in tasks if t.get("status") == "tested"]
+        if accepted:
+            out.append(
+                f"待测试 {len(accepted)} 个：按 unit-tests.md 的 GWT 用例真实运行，"
+                f"通过后 dev task update {accepted[0]['task_id']} --status tested，再 --status done。"
+            )
+        if tested:
+            out.append(
+                f"已 tested {len(tested)} 个：提交后 dev task update {tested[0]['task_id']} --status done。"
+            )
+        if not accepted:
+            out.append(
+                "单元测试已通过：执行验收测试（acceptance-tests.md 的 Gherkin）与回归，"
+                "再 dev align --feature <功能名> --module <模块> --status aligned。"
+            )
+    elif phase == "close":
+        unaligned = [f for f, info in features.items() if info.get("status") in (None, "tasks-done")]
+        for fname in unaligned:
+            out.append(
+                f"功能 {fname} 任务已全部完成，下一步："
+                f"dev align --feature {fname} --module <模块> --status aligned。"
+            )
+        unin = [m for m in modules if modules[m].get("status") in (None, "features-done")]
+        if unin and not unaligned:
+            out.append(
+                f"模块 {unin[0]} 功能已全部对齐，下一步：dev integrate --module {unin[0]} --status integrated。"
+            )
+    if not out:
+        out.append("所有任务与里程碑已完成，可 dev close --reason '<原因>' 后 dev archive 归档。")
+    return out
+
+#: 建议 agent 使用的 plan.md 段落引用示例。必须是 `plan.md#<章节>` 字面量：
+#: `<plan.md>` 这类占位符会被 cmd_dev_plan_update_section 的 reference 校验拒绝。
+#: 所有 help / suggestions 都应引用本常量，避免同一示例手写多遍后漂移
+#: （回归见 tests/test_cli_self_consistency.py）。
+PLAN_REFERENCE_EXAMPLE = "plan.md#2. 约束整合"
+
 PLAN_SKELETON = """# 开发计划：{title}
 
 ## 1. 范围与目标
@@ -927,9 +1427,15 @@ PLAN_SKELETON = """# 开发计划：{title}
 <!-- 将散落在 ProjectSpec 各文档的相关约束整合于此，逐条注明来源引用（如 feature-design@<功能名>:C-101）。
 ProjectSpec 在开发循环内只读，此处仅整合不修改。 -->
 
-## 3. 任务清单
+## 2.5 代码风格快照
 
-<!-- 由 CLI 从 tasks.json 自动渲染（dev task set / dev task update 后自动刷新）。 -->
+<!-- 代码考古产物（Phase 1 Step 3.5）：从目标模块存量代码提取的命名约定、错误处理模式、
+日志格式、现有工具类/中间件。本节的每条都是实现阶段的强制风格约束，子代理简报必带。 -->
+
+## 3. 骨架与任务清单
+
+<!-- 由 CLI 从 tasks.json 自动渲染（dev task set / dev task update 后自动刷新）。
+列含义：任务 / 方法(类) / 实现文件 / 覆盖约束 / 状态。骨架信息（类、方法、落点）在 Phase 2 骨架化时确定。 -->
 
 ## 4. 变更记录
 
@@ -1032,7 +1538,21 @@ def _save_dev_spec(session_dir: Path, dev_spec: dict) -> None:
     )
 
 
-def _load_dev_tasks(session_dir: Path) -> list[dict]:
+DEV_LEGACY_TASK_STATUSES = {
+    "in-progress": "implementing",
+    "unit-green": "tested",
+    "fixing": "rejected",
+}
+"""旧版任务状态 → 新版状态（骨架化流程上线前的会话迁移）。
+
+旧 CLI 写到一半的会话（如 status=in-progress）在新状态机下会卡死：
+task update 报非法迁移，task set 补救又要求 implemented_in。读取时统一映射，
+任何一次写操作都会把映射结果落盘，从而让在途会话平滑升级。
+"""
+
+
+def _load_dev_tasks_raw(session_dir: Path) -> list[dict]:
+    """读取 tasks.json 原文（不做状态映射）。"""
     p = session_dir / "tasks.json"
     if not p.exists():
         return []
@@ -1041,6 +1561,24 @@ def _load_dev_tasks(session_dir: Path) -> list[dict]:
         return data.get("tasks", [])
     except (json.JSONDecodeError, OSError):
         return []
+
+
+def _normalize_legacy_task_statuses(tasks: list[dict]) -> int:
+    """就地映射旧状态，返回被映射的任务数。"""
+    mapped = 0
+    for t in tasks:
+        cur = t.get("status", "pending")
+        if cur in DEV_LEGACY_TASK_STATUSES:
+            t["status"] = DEV_LEGACY_TASK_STATUSES[cur]
+            mapped += 1
+    return mapped
+
+
+def _load_dev_tasks(session_dir: Path) -> list[dict]:
+    """读取任务清单（自动映射旧版状态，让在途会话可继续）。"""
+    tasks = _load_dev_tasks_raw(session_dir)
+    _normalize_legacy_task_statuses(tasks)
+    return tasks
 
 
 def _dev_scope_path(project_root: Path, scope: str, target: str, module: str | None) -> Path | None:
@@ -1083,26 +1621,40 @@ def cmd_dev_status(project_root: Path) -> str:
             suggestions=["可参考 spec-dev-loop 流程：dev plan create --scope <module|feature> --target <范围> 开启新循环。"],
         )
     dev_spec = _load_dev_spec(session_dir)
-    tasks = _load_dev_tasks(session_dir)
+    raw_tasks = _load_dev_tasks_raw(session_dir)
+    legacy_count = sum(1 for t in raw_tasks if t.get("status") in DEV_LEGACY_TASK_STATUSES)
+    tasks = [dict(t) for t in raw_tasks]
+    _normalize_legacy_task_statuses(tasks)
     sid = dev_spec.get("session_id", session_dir.name)
     branch = dev_spec.get("branch", "") or ""
     total = len(tasks)
     done = sum(1 for t in tasks if t.get("status") == "done")
+    phase = _dev_phase(tasks)
+    counts = {s: sum(1 for t in tasks if t.get("status", "pending") == s) for s in DEV_TASK_STATUSES}
     lines = [
         "## ✅ 当前活跃开发循环",
         "",
         f"**会话**: {sid}",
         f"**范围**: {dev_spec.get('scope_type')} {dev_spec.get('scope_target')} · {dev_spec.get('title', '')}",
+        f"**阶段**: {DEV_PHASE_LABELS[phase]}（{phase}）",
         f"**任务进度**: {done}/{total} done",
     ]
+    if tasks:
+        counters = " · ".join(f"{s} {counts[s]}" for s in DEV_TASK_STATUSES if counts[s])
+        lines.append(f"**状态分布**: {counters}")
     if branch:
         lines.append(f"**开发分支**: {branch}")
     if tasks:
         lines.append("")
-        lines.append("| 任务 | 标题 | 状态 |")
-        lines.append("|------|------|------|")
+        lines.append("| 任务 | 方法 | 文件 | 状态 |")
+        lines.append("|------|------|------|------|")
         for t in tasks:
-            lines.append(f"| {t.get('task_id')} | {t.get('title', '')} | {t.get('status', 'pending')} |")
+            impl = t.get("implemented_in") or {}
+            path = impl.get("path", "") if isinstance(impl, dict) else str(impl)
+            symbol = t.get("symbol") or ", ".join(t.get("functions", [])[:2]) or "—"
+            lines.append(
+                f"| {t.get('task_id')} | {symbol} | {path or '—'} | {t.get('status', 'pending')} |"
+            )
     features = dev_spec.get("features", {})
     modules = dev_spec.get("modules", {})
     if features:
@@ -1121,18 +1673,18 @@ def cmd_dev_status(project_root: Path) -> str:
         suggestions.append(
             f"分支检查：git branch --show-current 应为 {branch}；不一致则 git checkout {branch}（或按 plan.md §6 记录的分支名）。"
         )
-    next_task = next((t for t in tasks if t.get("status") == "pending"), None)
-    if next_task:
-        suggestions.append(f"下一步：dev task update {next_task['task_id']} --status in-progress 开始任务。")
-    else:
-        unaligned = [f for f, info in features.items() if info.get("status") in (None, "tasks-done")]
-        for fname in unaligned:
-            suggestions.append(f"功能 {fname} 任务已全部完成，下一步：dev align --feature {fname} --module <模块> --status aligned。")
-        unin = [m for m in modules if modules[m].get("status") in (None, "features-done")]
-        if unin and not unaligned:
-            suggestions.append(f"模块 {unin[0]} 功能已全部对齐，下一步：dev integrate --module {unin[0]} --status integrated。")
-    if not suggestions:
-        suggestions.append("所有任务与里程碑已完成，可 dev close --reason '<原因>' 后 dev archive 归档。")
+    if legacy_count:
+        suggestions.append(
+            f"检测到 {len(raw_tasks)} 个任务中含旧版状态（已自动映射为 {DEV_LEGACY_TASK_STATUSES}）："
+            "继续开发即可，任何一次 dev task update 都会把映射结果落盘完成迁移。"
+        )
+    missing_loc = [t.get("task_id") for t in tasks if not (t.get("implemented_in") or {}).get("path")]
+    if missing_loc:
+        suggestions.append(
+            f"有 {len(missing_loc)} 个任务缺少 implemented_in（实现落点）："
+            "子代理派发需要它，请用 dev task set 补齐（Phase 2 骨架化产物）。"
+        )
+    suggestions.extend(_dev_next_step_suggestions(phase, tasks, features, modules))
 
     return _ok(
         message="\n".join(lines),
@@ -1143,6 +1695,9 @@ def cmd_dev_status(project_root: Path) -> str:
             "title": dev_spec.get("title"),
             "status": dev_spec.get("status"),
             "branch": branch,
+            "phase": phase,
+            "legacy_status_migrated": legacy_count,
+            "status_counts": counts,
             "tasks": tasks,
             "features": features,
             "modules": modules,
@@ -1174,7 +1729,7 @@ def cmd_dev_plan_create(
         expected = _dev_scope_hint(scope, target, module)
         return _fail(
             f"ERROR [dev_plan.scope_not_found] 范围不存在（期望目录 {expected}）。"
-            "修复：确认范围在 ProjectSpec/ 下的路径，或先创建模块/功能骨架。"
+            "修复：确认范围在 ProjectSpec/ 下的路径，或先用 doc new 创建该模块/功能的文档。"
         )
 
     active_dir = _dev_active_dir(project_root)
@@ -1240,7 +1795,7 @@ def cmd_dev_plan_create(
               "scope_type": scope, "scope_target": target, "branch": branch},
         suggestions=[
             "读取范围文档：doc structure / doc read（ProjectSpec 只读）。",
-            "整合约束：dev plan update-section '<plan.md>#2. 约束整合' --content ...",
+            f"整合约束：dev plan update-section '{PLAN_REFERENCE_EXAMPLE}' --content ...",
             "确认任务边界后写入：dev task set --json '<tasks 数组>'（全量替换）。",
             f"第一个任务开始前创建开发分支：git checkout -b {branch}（从当前分支）。",
         ],
@@ -1365,15 +1920,29 @@ def cmd_dev_plan_add_section(project_root: Path, reference: str, heading: str, c
 
 
 def _render_task_table(tasks: list[dict]) -> str:
-    rows = ["| 任务 | 标题 | 函数 | 覆盖约束 | 状态 |", "|------|------|------|---------|------|"]
+    rows = ["| 任务 | 方法（类） | 实现文件 | 覆盖约束 | 状态 |", "|------|-----------|---------|---------|------|"]
     for t in tasks:
         fns = ", ".join(
             f"**{f}**（入口）" if f == t.get("entry_function") else f
             for f in t.get("functions", [])
         )
+        cls = t.get("cls") or ""
+        symbol = t.get("symbol") or ""
+        if symbol and cls:
+            method = f"`{cls}.{symbol}`"
+        elif symbol:
+            method = f"`{symbol}`"
+        else:
+            method = fns or "—"
+        if fns and symbol:
+            method = f"{method}<br/>{fns}"
+        impl = t.get("implemented_in") or {}
+        path = impl.get("path", "") if isinstance(impl, dict) else str(impl)
+        lang = impl.get("lang", "") if isinstance(impl, dict) else ""
+        loc = f"`{path}`" + (f" ({lang})" if lang else "") if path else "—"
         cons = ", ".join(t.get("constraint_ids", [])) or "—"
         rows.append(
-            f"| {t.get('task_id','')} | {t.get('title','')} | {fns or '—'} | {cons} | {t.get('status','pending')} |"
+            f"| {t.get('task_id','')} | {method} | {loc} | {cons} | {t.get('status','pending')} |"
         )
     return "\n".join(rows)
 
@@ -1392,9 +1961,15 @@ def _refresh_plan_tasks(project_root: Path, session_dir: Path, tasks: list[dict]
     rel = str(plan_path.relative_to(project_root).as_posix())
     doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     table = _render_task_table(tasks)
-    heading = "3. 任务清单"
+    heading = "3. 骨架与任务清单"
     section = doc.get_section(f"{rel}#{heading}")
     if section is None:
+        # 向后兼容旧会话（旧骨架的章节名为 "3. 任务清单"）
+        legacy = doc.get_section(f"{rel}#3. 任务清单")
+        if legacy is not None:
+            legacy.content = table
+            plan_path.write_text(doc.to_markdown(), encoding="utf-8")
+            return
         doc.insert_section(rel, heading, table)
     else:
         section.content = table
@@ -1404,24 +1979,67 @@ def _refresh_plan_tasks(project_root: Path, session_dir: Path, tasks: list[dict]
 TASK_ALLOWED_KEYS = (
     "task_id", "title", "module", "feature", "functions", "entry_function",
     "signature", "gwt_refs", "constraint_ids", "status", "deviation", "notes",
+    # 骨架化（Phase 2）确定的结构信息：类/方法归属、实现落点、调用关系、能力注释
+    "cls", "symbol", "implemented_in", "calls", "capability_notes", "merge_reason",
+    # 委托实现（Phase 3）的派发参数
+    "timeout_seconds", "max_attempts", "attempts",
+)
+
+_TASK_LIST_FIELDS = ("functions", "gwt_refs", "constraint_ids", "calls", "capability_notes")
+_TASK_STR_FIELDS = (
+    "module", "feature", "entry_function", "signature", "title", "deviation", "notes",
+    "cls", "symbol", "merge_reason",
 )
 
 
 def _clean_task(raw: dict, index: int) -> tuple[dict | None, str | None]:
-    """校验并清洗单条任务。返回 (cleaned, error)。"""
+    """校验并清洗单条任务。返回 (cleaned, error)。
+
+    未知字段一律**报错**（不再静默丢弃）：历史上 timeout_seconds 与
+    implemented_in 都曾因静默丢弃而"写了没生效"，这类坑必须在写入时就暴露。
+    """
     tid = raw.get("task_id")
     if not tid or not str(tid).strip():
         return None, f"tasks[{index}] 缺少 task_id"
     tid = str(tid).strip()
+
+    unknown = [k for k in raw if k not in TASK_ALLOWED_KEYS]
+    if unknown:
+        return None, (
+            f"task '{tid}' 含未知字段 {unknown}。允许的字段: {list(TASK_ALLOWED_KEYS)}。"
+            "（未知字段不再被静默忽略——如需新增字段请先扩展 CLI schema）"
+        )
+
     if not raw.get("title") or not str(raw["title"]).strip():
         return None, f"tasks[{index}]（{tid}）缺少 title"
     status = raw.get("status", "pending")
     if status not in DEV_TASK_STATUSES:
         return None, f"task '{tid}' status '{status}' 不合法。允许: {DEV_TASK_STATUSES}"
+
+    # 实现落点：骨架化的核心产物，子代理派发必需
+    impl = raw.get("implemented_in")
+    if impl is None or (isinstance(impl, dict) and not str(impl.get("path", "")).strip()):
+        return None, (
+            f"task '{tid}' 缺少 implemented_in.path（实现落点）。"
+            "修复：Phase 2 骨架化时确定每个方法的源码文件，形如 "
+            '{"path": "src/order/service.go", "lang": "go"}。'
+        )
+    if isinstance(impl, str):
+        if not impl.strip():
+            return None, f"task '{tid}' implemented_in 不能为空"
+        impl = {"path": impl.strip()}
+    elif not isinstance(impl, dict):
+        return None, f"task '{tid}' implemented_in 必须是对象或路径字符串"
+    else:
+        impl = {"path": str(impl["path"]).strip()}
+        if impl.get("lang") or raw["implemented_in"].get("lang"):
+            impl["lang"] = str(raw["implemented_in"].get("lang", "")).strip()
+
     item: dict = {k: raw[k] for k in TASK_ALLOWED_KEYS if k in raw}
     item["task_id"] = tid
     item["status"] = status
-    for k in ("functions", "gwt_refs", "constraint_ids"):
+    item["implemented_in"] = impl
+    for k in _TASK_LIST_FIELDS:
         v = item.get(k)
         if v is None:
             item[k] = []
@@ -1429,9 +2047,20 @@ def _clean_task(raw: dict, index: int) -> tuple[dict | None, str | None]:
             item[k] = [str(x) for x in v]
         else:
             return None, f"task '{tid}' 字段 {k} 必须是数组"
-    for k in ("module", "feature", "entry_function", "signature", "title", "deviation", "notes"):
+    for k in _TASK_STR_FIELDS:
         if k in item and item[k] is not None and not isinstance(item[k], str):
             item[k] = str(item[k])
+    # 派发参数：数值 + 默认值
+    for k, default in (("timeout_seconds", 300), ("max_attempts", 2), ("attempts", 0)):
+        v = item.get(k, default)
+        try:
+            item[k] = int(v)
+        except (TypeError, ValueError):
+            return None, f"task '{tid}' 字段 {k} 必须是整数"
+    if item["timeout_seconds"] <= 0:
+        return None, f"task '{tid}' timeout_seconds 必须为正整数"
+    if item["max_attempts"] < 0:
+        return None, f"task '{tid}' max_attempts 不能为负"
     return item, None
 
 
@@ -1492,7 +2121,10 @@ def cmd_dev_task_set(project_root: Path, tasks_json: str) -> str:
     return _ok(
         message=f"## ✅ 任务清单已保存（{len(cleaned)} 个任务）",
         data={"count": len(cleaned)},
-        suggestions=["plan.md §3 已同步。进入 LOOP：dev task update <id> --status in-progress。"],
+        suggestions=[
+            "plan.md §3 已同步（骨架与任务清单）。"
+            "下一步：创建开发分支后，按拓扑序 dev task update <id> --status implementing 开始派发实现。"
+        ],
     )
 
 
@@ -1511,7 +2143,9 @@ def cmd_dev_task_update(project_root: Path, task_id: str, status: str, note: str
     if status not in DEV_TASK_TRANSITIONS.get(cur, set()):
         return _fail(
             f"ERROR [dev_task.invalid_transition] 状态 {cur} → {status} 不合法。修复：按状态机推进"
-            "（pending → in-progress → implemented → unit-green → done；失败 → fixing → in-progress）。"
+            "（骨架确认后 pending → implementing → submitted（交回待验收）→ accepted（主代理验收通过）"
+            " → tested（GWT 真实通过）→ done；验收/测试不通过 → rejected（可重派）；"
+            "发现设计缺口或签名需变更 → blocked（待用户裁决））。"
         )
     target["status"] = status
     if note:
@@ -1793,8 +2427,10 @@ def _ok(message: str = "", *, data: Any = None, suggestions: list[str] | None = 
 
 
 def _fail(text: str) -> str:
+    # message 与 suggestions[0] 同文本：前者让"JSON 恒含四个字段"的约定成立，
+    # 后者是历史消费方的读取位置，两者都保留。
     return json.dumps(
-        {"success": False, "data": None, "suggestions": [text]},
+        {"success": False, "message": text, "data": None, "suggestions": [text]},
         indent=2, ensure_ascii=False,
     )
 
@@ -1827,6 +2463,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cli.py", description="doc-kit skills CLI")
     parser.add_argument("--root", help="doc-kit 项目根目录（默认从 cwd 向上查找）")
     sub = parser.add_subparsers(dest="group", required=True)
+
+    tool = sub.add_parser("tool", help="工具链版本与副本一致性")
+    tool_sub = tool.add_subparsers(dest="command", required=True)
+    tool_sub.add_parser("status", help="报告工具链版本、项目副本一致性与同步建议")
 
     # ── spec ──
     spec = sub.add_parser("spec", help="议题（SessionSpec）操作")
@@ -1862,10 +2502,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     review = sub.add_parser("review", help="代码评审锚点与报告")
     review_sub = review.add_subparsers(dest="command", required=True)
-    review_sub.add_parser("anchor-get", help="获取评审锚点")
-    anchor_set_p = review_sub.add_parser("anchor-set", help="保存评审锚点")
+    anchor_get_p = review_sub.add_parser("anchor-get", help="获取评审锚点（默认当前分支）")
+    anchor_get_p.add_argument("--branch", default="", help="指定分支名（默认读取 .git/HEAD）")
+    anchor_set_p = review_sub.add_parser("anchor-set", help="保存评审锚点（按分支记录）")
     anchor_set_p.add_argument("commit_hash", help="本次评审到的完整 commit hash")
     anchor_set_p.add_argument("--session", default="", help="关联的议题 ID（可选）")
+    anchor_set_p.add_argument("--branch", default="", help="指定分支名（默认读取 .git/HEAD）")
     report_p = review_sub.add_parser("report-write", help="写入评审报告到 ReviewSpec/")
     report_p.add_argument("--content", help="报告 Markdown；未提供时从 --file 或 stdin 读取")
     report_p.add_argument("--file", help="报告 Markdown 文件路径")
@@ -1885,7 +2527,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan_create_p.add_argument("--session", default=None, help="会话 ID（默认 {日期}-{范围kebab}）")
     plan_sub.add_parser("read", help="读取开发计划（段落级拍平）")
     plan_upd_p = plan_sub.add_parser("update-section", help="更新计划段落正文")
-    plan_upd_p.add_argument("reference", help="段落引用，如 <plan.md>#2. 约束整合")
+    plan_upd_p.add_argument("reference", help=f"段落引用，如 {PLAN_REFERENCE_EXAMPLE}")
     plan_upd_p.add_argument("--content", required=True, help="新的正文内容")
     plan_add_p = plan_sub.add_parser("add-section", help="新增计划段落")
     plan_add_p.add_argument("reference", help="锚点段落引用")
@@ -1900,7 +2542,7 @@ def build_parser() -> argparse.ArgumentParser:
     task_set_p.add_argument("--json", required=True, help="完整 tasks 数组 JSON；或 {\"tasks\": [...]}")
     task_upd_p = task_sub.add_parser("update", help="任务状态迁移")
     task_upd_p.add_argument("task_id", help="任务 ID")
-    task_upd_p.add_argument("--status", required=True, help="目标状态：pending/in-progress/implemented/unit-green/done/fixing")
+    task_upd_p.add_argument("--status", required=True, help="目标状态：" + "/".join(DEV_TASK_STATUSES))
     task_upd_p.add_argument("--note", default="", help="附加备注（追加到 notes）")
     task_ann_p = task_sub.add_parser("annotate", help="给任务追加备注（不改变状态）")
     task_ann_p.add_argument("task_id", help="任务 ID")
@@ -1948,7 +2590,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
-        if args.group == "spec":
+        if args.group == "tool":
+            if args.command == "status":
+                _emit(cmd_tool_status(project_root))
+        elif args.group == "spec":
             if args.command == "status":
                 _emit(cmd_spec_status(project_root))
             elif args.command == "read":
@@ -1975,9 +2620,9 @@ def main(argv: list[str] | None = None) -> None:
                 _emit(cmd_doc_remove_section(project_root, args.reference))
         elif args.group == "review":
             if args.command == "anchor-get":
-                _emit(cmd_review_anchor_get(project_root))
+                _emit(cmd_review_anchor_get(project_root, args.branch))
             elif args.command == "anchor-set":
-                _emit(cmd_review_anchor_set(project_root, args.commit_hash, args.session))
+                _emit(cmd_review_anchor_set(project_root, args.commit_hash, args.session, args.branch))
             elif args.command == "report-write":
                 content = args.content
                 from_file = False

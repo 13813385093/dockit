@@ -12,7 +12,7 @@ superseded_by:                   # 替代文档列表（废弃且存在替代时
   - doc: <替代文档>
     module: <所属模块>
 archived_at:                     # 归档日期（status=archived 时必填）
-depends_on: []                # 顶层入口文档，无文档依赖；引用其他文档需在此声明（见 §3.5.7）
+depends_on: []                # 顶层文档：可依赖 T-02 technical-framework.md、T-04 global-policies.md；引用其他文档需在此声明（见 §3.5.7、§3.6.1）
 ---
 
 # 模块间契约
@@ -22,6 +22,8 @@ depends_on: []                # 顶层入口文档，无文档依赖；引用其
 这是 AI 生成代码和人工评审的唯一事实依据。
 与 module-manifest.md 的分工：module-manifest 声明能力「是否存在、由谁提供」，
 本文档定义能力「长什么样、出错怎么办」；同一能力在两份文档中的名称必须保持一致。
+**签名**归 module-manifest.md §Exports，本文档只定义字段级请求/响应、错误语义与接口级约束。
+**事件名**须与 module-manifest.md §Exports（类型 = event）的名称逐一对应。
 全局架构模式、安全策略等跨模块设计决策请参考 global-policies.md。
 -->
 
@@ -53,8 +55,8 @@ depends_on: []                # 顶层入口文档，无文档依赖；引用其
 ```
 
 **约束**：
-- [MUST] C-101 超时 ≤ 500ms
-- [SHOULD] S-101 实现指数退避重试，最多 3 次
+- [MUST] C-601 超时 ≤ 500ms
+- [SHOULD] S-601 实现指数退避重试，最多 3 次
 
 ## 共享事件定义
 

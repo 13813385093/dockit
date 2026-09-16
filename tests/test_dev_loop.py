@@ -58,9 +58,14 @@ TASKS_JSON = json.dumps([
         "title": "扫描并取消超时订单（入口）",
         "module": "order",
         "feature": "order-timeout-cancel",
+        "cls": "OrderTimeoutService",
+        "symbol": "cancelExpiredOrders",
+        "implemented_in": {"path": "src/order/timeout_service.go", "lang": "go"},
+        "calls": ["findExpiredOrders", "cancelOrder"],
+        "capability_notes": ["扫描周期 5 分钟；取消成功后释放库存"],
         "functions": ["cancelExpiredOrders", "findExpiredOrders", "cancelOrder", "releaseStock"],
         "entry_function": "cancelExpiredOrders",
-        "signature": "(ctx context.Context) error",
+        "signature": "cancelExpiredOrders(ctx context.Context) error",
         "gwt_refs": ["unit-tests.md#测试用例：超时订单被扫描"],
         "constraint_ids": ["C-101", "C-102"],
     },
@@ -69,11 +74,17 @@ TASKS_JSON = json.dumps([
         "title": "释放库存",
         "module": "order",
         "feature": "order-timeout-cancel",
+        "cls": "OrderTimeoutService",
+        "symbol": "releaseStock",
+        "implemented_in": {"path": "src/order/stock.go", "lang": "go"},
         "functions": ["releaseStock"],
-        "signature": "(order Order) error",
+        "signature": "releaseStock(order Order) error",
         "constraint_ids": ["C-102"],
     },
 ], ensure_ascii=False)
+
+# 新状态机的合法推进链（骨架 → 实现 → 交回 → 验收 → 测试 → 完成）
+TASK_CHAIN = ("implementing", "submitted", "accepted", "tested", "done")
 
 
 def _create_feature_session(cli_env):
@@ -171,7 +182,7 @@ class TestDevPlanTasks:
         result = _parse(cli_env.dev_plan_read())
         assert result["success"] is True
         headings = [s["heading"] for s in result["data"]["sections"]]
-        assert "1. 范围与目标" in headings and "2. 约束整合" in headings and "3. 任务清单" in headings
+        assert "1. 范围与目标" in headings and "2. 约束整合" in headings and "3. 骨架与任务清单" in headings
         # 更新约束整合段落（reference 支持裸 plan.md 前缀）
         upd = _parse(cli_env.dev_plan_update_section(
             "plan.md#2. 约束整合",
@@ -186,7 +197,7 @@ class TestDevPlanTasks:
         _make_project(tmp_project)
         _create_feature_session(cli_env)
         result = _parse(cli_env.dev_plan_read())
-        sec3 = next(s for s in result["data"]["sections"] if s["heading"] == "3. 任务清单")
+        sec3 = next(s for s in result["data"]["sections"] if s["heading"] == "3. 骨架与任务清单")
         assert "| T1 |" in sec3["content"]
         assert "cancelExpiredOrders" in sec3["content"]
         assert "C-101" in sec3["content"]
@@ -219,21 +230,47 @@ class TestDevTaskTransitions:
 
     def test_valid_transition_chain(self, tmp_project, cli_env):
         self._ready(tmp_project, cli_env)
-        for status in ("in-progress", "implemented", "unit-green", "done"):
+        for status in TASK_CHAIN:
             result = _parse(cli_env.dev_task_update("T1", status, note=f"step {status}"))
             assert result["success"] is True, result
         tasks = _parse(cli_env.dev_task_list())["data"]["tasks"]
         assert tasks[0]["status"] == "done"
         assert "[20" in tasks[0]["notes"]  # 备注带日期前缀
 
-    def test_fixing_loop(self, tmp_project, cli_env):
+    def test_rejected_loop(self, tmp_project, cli_env):
+        """验收不通过 → rejected（带失败证据）→ 重派 implementing。"""
         self._ready(tmp_project, cli_env)
-        cli_env.dev_task_update("T1", "in-progress")
-        # 测试失败 → fixing
-        fix = _parse(cli_env.dev_task_update("T1", "fixing", note="单元测试失败：C-101 未满足"))
+        cli_env.dev_task_update("T1", "implementing")
+        cli_env.dev_task_update("T1", "submitted")
+        # 验收不通过 → rejected
+        fix = _parse(cli_env.dev_task_update("T1", "rejected", note="单元测试失败：C-101 未满足"))
         assert fix["success"] is True
-        # fixing → in-progress 重新开发
-        assert _parse(cli_env.dev_task_update("T1", "in-progress"))["success"] is True
+        # rejected → implementing 重新实现
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+
+    def test_blocked_requires_user_decision_then_resumes(self, tmp_project, cli_env):
+        """设计缺口/签名变更 → blocked，裁决后回到 implementing 或 rejected。"""
+        self._ready(tmp_project, cli_env)
+        cli_env.dev_task_update("T1", "implementing")
+        blocked = _parse(cli_env.dev_task_update("T1", "blocked", note="签名需变更：需增加 tenantID 参数"))
+        assert blocked["success"] is True
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+
+    def test_submitted_cannot_jump_to_done(self, tmp_project, cli_env):
+        """submitted 必须经 accepted 才能推进（防止绕过主代理验收）。"""
+        self._ready(tmp_project, cli_env)
+        cli_env.dev_task_update("T1", "implementing")
+        cli_env.dev_task_update("T1", "submitted")
+        result = _parse(cli_env.dev_task_update("T1", "done"))
+        assert result["success"] is False
+        assert "invalid_transition" in result["suggestions"][0]
+
+    def test_testing_requires_acceptance_first(self, tmp_project, cli_env):
+        """测试闸门在验收之后：未 accepted 不得置 tested。"""
+        self._ready(tmp_project, cli_env)
+        cli_env.dev_task_update("T1", "implementing")
+        result = _parse(cli_env.dev_task_update("T1", "tested"))
+        assert result["success"] is False
 
     def test_invalid_transition(self, tmp_project, cli_env):
         self._ready(tmp_project, cli_env)
@@ -247,7 +284,7 @@ class TestDevTaskTransitions:
     def test_invalid_status_and_unknown_task(self, tmp_project, cli_env):
         self._ready(tmp_project, cli_env)
         assert _parse(cli_env.dev_task_update("T1", "bogus"))["success"] is False
-        assert _parse(cli_env.dev_task_update("T99", "in-progress"))["success"] is False
+        assert _parse(cli_env.dev_task_update("T99", "implementing"))["success"] is False
 
     def test_annotate_keeps_status(self, tmp_project, cli_env):
         self._ready(tmp_project, cli_env)
@@ -260,13 +297,97 @@ class TestDevTaskTransitions:
     def test_task_set_validation(self, tmp_project, cli_env):
         self._ready(tmp_project, cli_env)
         bad = _parse(cli_env.dev_task_set(json.dumps([
-            {"task_id": "T1", "title": "x", "status": "bogus"}])))
+            {"task_id": "T1", "title": "x", "status": "bogus",
+             "implemented_in": {"path": "a.go"}}])))
         assert bad["success"] is False
         dup = _parse(cli_env.dev_task_set(json.dumps([
-            {"task_id": "T1", "title": "a"}, {"task_id": "T1", "title": "b"}])))
+            {"task_id": "T1", "title": "a", "implemented_in": {"path": "a.go"}},
+            {"task_id": "T1", "title": "b", "implemented_in": {"path": "b.go"}}])))
         assert dup["success"] is False
         missing = _parse(cli_env.dev_task_set(json.dumps([{"task_id": "T1"}])))
         assert missing["success"] is False
+
+    def test_unknown_task_field_is_rejected(self, tmp_project, cli_env):
+        """未知字段必须报错而非静默丢弃（timeout_seconds / implemented_in 的历史坑）。"""
+        self._ready(tmp_project, cli_env)
+        result = _parse(cli_env.dev_task_set(json.dumps([
+            {"task_id": "T1", "title": "x", "implemented_in": {"path": "a.go"},
+             "typo_field": 1}])))
+        assert result["success"] is False
+        assert "typo_field" in result["suggestions"][0]
+
+    def test_implemented_in_is_required(self, tmp_project, cli_env):
+        """实现落点是骨架化的核心产物，缺失即拒绝。"""
+        self._ready(tmp_project, cli_env)
+        result = _parse(cli_env.dev_task_set(json.dumps([{"task_id": "T1", "title": "x"}])))
+        assert result["success"] is False
+        assert "implemented_in" in result["suggestions"][0]
+
+    def test_implemented_in_persisted_and_rendered(self, tmp_project, cli_env):
+        """落点进入 tasks.json 与 plan.md，供子代理简报使用。"""
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        tasks = _parse(cli_env.dev_task_list())["data"]["tasks"]
+        assert tasks[0]["implemented_in"]["path"] == "src/order/timeout_service.go"
+        assert tasks[0]["cls"] == "OrderTimeoutService"
+        assert tasks[0]["symbol"] == "cancelExpiredOrders"
+        assert tasks[0]["calls"] == ["findExpiredOrders", "cancelOrder"]
+        plan = _parse(cli_env.dev_plan_read())
+        sec3 = next(s for s in plan["data"]["sections"] if s["heading"] == "3. 骨架与任务清单")
+        assert "src/order/timeout_service.go" in sec3["content"]
+        assert "cancelExpiredOrders" in sec3["content"]
+
+    def test_dispatch_params_defaulted(self, tmp_project, cli_env):
+        """派发参数（超时/重试上限/已试次数）落库，不再被静默丢弃。"""
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        tasks = _parse(cli_env.dev_task_list())["data"]["tasks"]
+        assert tasks[0]["timeout_seconds"] == 300
+        assert tasks[0]["max_attempts"] == 2
+        assert tasks[0]["attempts"] == 0
+
+    def test_style_snapshot_section_exists(self, tmp_project, cli_env):
+        """§2.5 代码风格快照必须存在于骨架里（否则 Phase 1 Step 3.5 指令必然失败）。"""
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        result = _parse(cli_env.dev_plan_read())
+        headings = [s["heading"] for s in result["data"]["sections"]]
+        assert "2.5 代码风格快照" in headings
+        upd = _parse(cli_env.dev_plan_update_section(
+            "plan.md#2.5 代码风格快照", "错误返回 errors.New(...)；日志 log.WithField(...)"))
+        assert upd["success"] is True
+
+    def test_status_reports_phase_and_counts(self, tmp_project, cli_env):
+        """阶段由任务状态派生：design → implement → test → close。"""
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["phase"] == "implement"
+        assert st["data"]["status_counts"]["pending"] == 2
+        # T1 走完全程，T2 仍 pending → 阶段仍是 implement
+        for status in TASK_CHAIN:
+            assert _parse(cli_env.dev_task_update("T1", status))["success"] is True
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["phase"] == "implement"
+        assert st["data"]["status_counts"]["done"] == 1
+        # T2 验收通过 → 全部任务是 accepted/tested/done → 进入测试阶段
+        for status in ("implementing", "submitted", "accepted"):
+            assert _parse(cli_env.dev_task_update("T2", status))["success"] is True
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["phase"] == "test"
+        assert any("GWT" in s for s in st["suggestions"])
+        # 全部 done → 收尾阶段
+        for status in ("tested", "done"):
+            assert _parse(cli_env.dev_task_update("T2", status))["success"] is True
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["phase"] == "close"
+
+    def test_status_phase_design_without_tasks(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _parse(cli_env.dev_plan_create("feature", "order-timeout-cancel", module="order"))
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["phase"] == "design"
+        assert any("骨架化" in s for s in st["suggestions"])
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -276,7 +397,7 @@ class TestDevTaskTransitions:
 class TestDevMilestones:
     def _finish_all_tasks(self, cli_env):
         for tid in ("T1", "T2"):
-            for status in ("in-progress", "implemented", "unit-green", "done"):
+            for status in TASK_CHAIN:
                 assert _parse(cli_env.dev_task_update(tid, status))["success"] is True
 
     def test_align_requires_tasks_done(self, tmp_project, cli_env):
@@ -393,7 +514,7 @@ class TestProjectSpecReadOnly:
             "plan.md#2. 约束整合", "- [MUST] C-101 扫描周期 ≤ 5 分钟（来源 feature-design §边界约束）")
         cli_env.dev_plan_add_section("plan.md#5. 完成标准", "补充说明", "--content 占位")
         for tid in ("T1", "T2"):
-            for status in ("in-progress", "implemented", "unit-green", "done"):
+            for status in TASK_CHAIN:
                 cli_env.dev_task_update(tid, status, note=f"{tid} {status}")
         cli_env.dev_task_annotate("T1", "记录偏差")
         cli_env.dev_align("order-timeout-cancel", "order", "aligned")
@@ -404,7 +525,7 @@ class TestProjectSpecReadOnly:
         cli_env.dev_integrate("order", "documented")
         cli_env.dev_integrate("order", "done")
         # 再触发一次失败路径（也不得写入 ProjectSpec）
-        cli_env.dev_task_update("T1", "fixing")  # done → fixing 不合法，失败
+        cli_env.dev_task_update("T1", "rejected")  # done → rejected 不合法，失败
         cli_env.dev_align("order-timeout-cancel", "order", "aligned")  # done → aligned 不合法，失败
         cli_env.dev_integrate("order", "integrated")  # done → integrated 不合法，失败
         cli_env.dev_close("模块完成")

@@ -1,13 +1,18 @@
-"""mcp_server 纯函数单元测试。
+"""docmodel / cli 纯函数单元测试。
+
+被测对象是 `skills/scripts/docmodel.py` 与 `skills/scripts/cli.py` 中不触碰
+文件系统的纯逻辑（原 MCP 服务器的数据处理层，现由 skills CLI 复用）。
+仓库中并不存在 `mcp_server` 模块，故本文件按实际被测模块命名为
+`test_docmodel.py`。
 
 测试目标（无文件IO）：
-  - safe_join              —— 路径安全拼接
-  - _simplify_depends_on   —— 依赖路径简化
-  - _parse_sections        —— Markdown → Section 列表
-  - _generate_spec_id      —— 议题 ID 生成
-  - DocMeta / DocNode      —— 数据类序列化
-  - DocContent             —— 查询 / 变更 / 序列化
-  - DocStructure           —— 查询方法
+  - safe_join              —— 路径安全拼接（docmodel）
+  - _simplify_depends_on   —— 依赖路径简化（docmodel）
+  - _parse_sections        —— Markdown → Section 列表（docmodel）
+  - _generate_spec_id      —— 议题 ID 生成（cli）
+  - DocMeta / DocNode      —— 数据类序列化（docmodel）
+  - DocContent             —— 查询 / 变更 / 序列化（docmodel）
+  - DocStructure           —— 查询方法（docmodel）
 """
 
 import pytest
