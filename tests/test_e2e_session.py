@@ -22,7 +22,7 @@ def test_full_session_lifecycle(tmp_project, cli_env):
         {"path": "business-context.md",
          "doc_type": "business_context", "module": "project-charter",
          "level": "top", "version": "0.1.0", "status": "active",
-         "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00"},
+         "depends_on": []},
     ])
     detail_150 = "话" * 150  # 满足 ≥150 字要求
 

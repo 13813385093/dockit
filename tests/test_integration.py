@@ -70,10 +70,10 @@ class TestDocStructure:
         make_index(tmp_project, [
             {"path": "a.md", "doc_type": "a", "module": "m",
              "level": "top", "version": "1.0", "status": "active",
-             "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00"},
+             "depends_on": []},
             {"path": "b.md", "doc_type": "b", "module": "m",
              "level": "top", "version": "1.0", "status": "active",
-             "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00"},
+             "depends_on": []},
         ])
         result = json.loads(cli_env.doc_structure())
         assert result["success"] is True
@@ -84,6 +84,137 @@ class TestDocStructure:
         # cli_env 的 tmp_project 没有 index.json
         result = json.loads(cli_env.doc_structure())
         assert result["success"] is False
+
+
+class TestDocReindex:
+    """doc reindex 全量重建 .doc-kit/index.json（纯 AI 流程的索引维护入口）"""
+
+    def test_rebuilds_from_scratch_and_preserves_depends_on(self, tmp_project, cli_env):
+        """index.json 缺失时也能从 ProjectSpec/ 全量重建，并保留 depends_on。"""
+        make_md(tmp_project, "ProjectSpec/business-context.md",
+                "---\ndoc_type: business_context\nmodule: project-charter\n"
+                "level: top\nversion: 1.0.0\n---\n# 业务背景")
+        make_md(tmp_project, "ProjectSpec/module-m/architecture.md",
+                "---\ndoc_type: architecture\nmodule: m\nlevel: module\n"
+                "version: 1.0.0\ndepends_on:\n"
+                "  - doc: ProjectSpec/business-context.md\n"
+                "    module: project-charter\n    version: 1.0.0\n"
+                "---\n# 架构")
+        assert not (tmp_project / ".doc-kit" / "index.json").exists()
+
+        result = json.loads(cli_env.doc_reindex())
+        assert result["success"] is True
+        assert result["data"]["documents"] == 2
+
+        index = json.loads(
+            (tmp_project / ".doc-kit" / "index.json").read_text(encoding="utf-8")
+        )
+        by_path = {d["path"]: d for d in index["documents"]}
+        assert set(by_path) == {
+            "ProjectSpec/business-context.md",
+            "ProjectSpec/module-m/architecture.md",
+        }
+        arch = by_path["ProjectSpec/module-m/architecture.md"]
+        assert arch["module"] == "m"
+        assert arch["level"] == "module"
+        assert arch["depends_on"] == [
+            {"doc": "ProjectSpec/business-context.md", "module": "project-charter",
+             "version": "1.0.0"}
+        ]
+
+    def test_rebuild_drops_stale_entries(self, tmp_project, cli_env):
+        """重建以磁盘为准：index 里已不存在的陈旧条目应被清除。"""
+        make_index(tmp_project, [
+            {"path": "ProjectSpec/gone.md", "doc_type": "x", "module": "",
+             "level": "top", "version": "1.0.0", "status": "active",
+             "depends_on": []},
+        ])
+        make_md(tmp_project, "ProjectSpec/here.md",
+                "---\ndoc_type: business_context\nlevel: top\nversion: 1.0.0\n"
+                "---\n# H")
+
+        json.loads(cli_env.doc_reindex())
+        index = json.loads(
+            (tmp_project / ".doc-kit" / "index.json").read_text(encoding="utf-8")
+        )
+        assert [d["path"] for d in index["documents"]] == ["ProjectSpec/here.md"]
+
+    def test_structure_works_after_reindex(self, tmp_project, cli_env):
+        """重建后 doc structure 能读到全部文档（此前因索引缺失而失败）。"""
+        make_md(tmp_project, "ProjectSpec/a.md",
+                "---\ndoc_type: a\nlevel: top\nversion: 1.0.0\n---\n# A")
+        assert json.loads(cli_env.doc_structure())["success"] is False
+        cli_env.doc_reindex()
+        result = json.loads(cli_env.doc_structure())
+        assert result["success"] is True
+        assert set(result["data"]["doc_map"]) == {"ProjectSpec/a.md"}
+
+    def test_saved_index_has_no_timestamp_fields(self, tmp_project, cli_env):
+        """保存的 index.json 不含 mtime / built_at——否则 App 刷新会污染 git。"""
+        make_md(tmp_project, "ProjectSpec/a.md",
+                "---\ndoc_type: a\nlevel: top\nversion: 1.0.0\n---\n# A")
+        cli_env.doc_reindex()
+        index = json.loads(
+            (tmp_project / ".doc-kit" / "index.json").read_text(encoding="utf-8")
+        )
+        assert set(index) == {"version", "documents"}
+        assert all("mtime" not in doc for doc in index["documents"])
+
+    def test_save_is_content_deterministic(self, tmp_project, cli_env):
+        """内容未变时重复重建得到逐字节相同的 index.json（无生成时刻字段）。"""
+        make_md(tmp_project, "ProjectSpec/a.md",
+                "---\ndoc_type: a\nlevel: top\nversion: 1.0.0\n---\n# A")
+        path = tmp_project / ".doc-kit" / "index.json"
+        cli_env.doc_reindex()
+        first = path.read_bytes()
+        cli_env.doc_reindex()
+        assert path.read_bytes() == first
+
+    def test_loads_legacy_index_with_removed_fields(self, tmp_project, cli_env):
+        """老项目 index.json 里遗留的 mtime / built_at 不应导致加载崩溃。"""
+        make_md(tmp_project, "ProjectSpec/a.md",
+                "---\ndoc_type: a\nlevel: top\nversion: 1.0.0\n---\n# A")
+        path = tmp_project / ".doc-kit" / "index.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "version": 1,
+            "built_at": "2026-01-01T00:00:00+00:00",
+            "documents": [{
+                "path": "ProjectSpec/a.md", "doc_type": "a", "module": "",
+                "level": "top", "version": "1.0.0", "status": "active",
+                "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00",
+            }],
+        }, indent=2), encoding="utf-8")
+        result = json.loads(cli_env.doc_structure())
+        assert result["success"] is True
+        assert set(result["data"]["doc_map"]) == {"ProjectSpec/a.md"}
+
+    def test_app_index_manager_omits_and_tolerates_timestamps(self, tmp_path):
+        """App 侧 IndexManager 同样：加载容错旧字段，保存不再写时刻字段。"""
+        from src.app.engine.index import IndexManager
+
+        path = tmp_path / "index.json"
+        path.write_text(json.dumps({
+            "version": 1,
+            "built_at": "2026-01-01T00:00:00+00:00",
+            "documents": [{
+                "path": "ProjectSpec/a.md", "doc_type": "a", "module": "",
+                "level": "top", "version": "1.0.0", "status": "active",
+                "depends_on": [], "mtime": "2026-01-01T00:00:00+00:00",
+            }],
+        }, indent=2), encoding="utf-8")
+        mgr = IndexManager(path)
+        assert [e.path for e in mgr.list_entries()] == ["ProjectSpec/a.md"]
+
+        docs = tmp_path / "ProjectSpec"
+        docs.mkdir()
+        make_md(tmp_path, "ProjectSpec/a.md",
+                "---\ndoc_type: a\nlevel: top\nversion: 1.0.0\n---\n# A")
+        mgr.rebuild(docs)
+        mgr.save()
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert set(saved) == {"version", "documents"}
+        assert all("mtime" not in doc for doc in saved["documents"])
 
 
 # ═══════════════════════════════════════════════════════════════

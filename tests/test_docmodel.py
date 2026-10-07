@@ -121,14 +121,13 @@ class TestDocMeta:
     def test_to_dict(self):
         from docmodel import DocMeta
         meta = DocMeta(doc_type="arch", module="core", level="top",
-                       version="1.0", status="active", mtime="2026-01-01")
+                       version="1.0", status="active")
         d = meta.to_dict()
         assert d["doc_type"] == "arch"
         assert d["module"] == "core"
         assert d["level"] == "top"
         assert d["version"] == "1.0"
         assert d["status"] == "active"
-        assert d["mtime"] == "2026-01-01"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -140,7 +139,7 @@ class TestDocNode:
 
     def test_to_dict(self):
         from docmodel import DocMeta, DocNode
-        meta = DocMeta("arch", "core", "top", "1.0", "active", "")
+        meta = DocMeta("arch", "core", "top", "1.0", "active")
         node = DocNode(path="p.md", name="p.md", meta=meta,
                        section=["H1", "H2"], depends_on=["a.md"])
         d = node.to_dict()
@@ -159,7 +158,7 @@ class TestDocContent:
     @pytest.fixture
     def content(self):
         from docmodel import DocMeta, DocContent
-        meta = DocMeta("test", "m", "top", "1.0", "active", "")
+        meta = DocMeta("test", "m", "top", "1.0", "active")
         body = "# Title\n\n## H1\ncontent1\n\n### H2\ncontent2\n\n## H3\ncontent3"
         return DocContent.from_body("doc.md", meta, body)
 
@@ -326,7 +325,7 @@ class TestDocStructure:
             ("ProjectSpec/c.md", "arch", "modX", "module"),
             ("ProjectSpec/d.md", "feature_design", "modX", "feature"),
         ]:
-            meta = DocMeta(dt, mod, lvl, "1.0", "active", "")
+            meta = DocMeta(dt, mod, lvl, "1.0", "active")
             ds.doc_map[p] = DocNode(p, Path(p).name, meta, [], [])
         return ds
 
@@ -344,7 +343,7 @@ class TestDocStructure:
 
     def test_get_dependency_chain_simple(self, structure):
         from docmodel import DocMeta, DocNode
-        meta = DocMeta("arch", "core", "top", "1.0", "active", "")
+        meta = DocMeta("arch", "core", "top", "1.0", "active")
         structure.doc_map["ProjectSpec/e.md"] = DocNode(
             "ProjectSpec/e.md", "e.md", meta, [], ["ProjectSpec/a.md", "ProjectSpec/b.md"])
         chain = structure.get_dependency_chain("ProjectSpec/e.md")
@@ -358,7 +357,7 @@ class TestDocStructure:
     def test_get_dependency_chain_dedup(self, structure):
         """共享依赖不应重复"""
         from docmodel import DocMeta, DocNode
-        meta = DocMeta("arch", "core", "top", "1.0", "active", "")
+        meta = DocMeta("arch", "core", "top", "1.0", "active")
         # e -> a, b; f -> a (共享 a)
         structure.doc_map["ProjectSpec/e.md"] = DocNode("ProjectSpec/e.md", "e.md", meta, [], ["ProjectSpec/a.md"])
         structure.doc_map["ProjectSpec/f.md"] = DocNode("ProjectSpec/f.md", "f.md", meta, [], ["ProjectSpec/a.md"])

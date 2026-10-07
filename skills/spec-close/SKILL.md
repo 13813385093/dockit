@@ -14,9 +14,9 @@ description: 当用户说「讨论完了」「关闭」「收尾」（保留成�
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.09.10` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.1` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.09.10`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.10.1`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -35,6 +35,7 @@ python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
 python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
 python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
+python .doc-kit/cli/cli.py doc reindex
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
@@ -149,6 +150,7 @@ python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature 
 2. 再逐条 `doc update-section` / `doc add-section` 写入正文
 3. 逐条记录结果（成功 / 失败 + 错误码 `ERROR [<错误码>] …。修复：<建议>`），**失败项记录后继续执行其余条目**（条目之间相互独立）
 4. 末尾汇总：「成功 N 条 / 失败 M 条；失败清单与建议」，失败项交用户决定重试或人工处理
+5. 写入结束后调 `python .doc-kit/cli/cli.py doc reindex` **全量重建 `.doc-kit/index.json`**：纯 AI 流程没有桌面 App 自动维护索引，若不重建，后续 `doc structure` / `doc read` 读到的目录与依赖结构会与磁盘脱节（新建文档缺失、`depends_on` 为空）。本步幂等，只要 Step 4 有写入就执行一次
 
 ### Step 5：标终态并归档
 
@@ -160,7 +162,7 @@ python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature 
 
 <!-- preamble-tools-exclude: spec status -->
 - 议题状态为 `closed` 并移至 `SessionSpec/archive/`；下次 `spec status` 返回「没有活跃议题」
-- 项目文档已按清单更新；如需再次讨论，必须开启新议题（`spec-start`）
+- 项目文档已按清单更新，`.doc-kit/index.json` 已重建；如需再次讨论，必须开启新议题（`spec-start`）
 - 若上次关闭后归档未完成，用 `spec-archive` 兜底补归档
 
 ## 边界

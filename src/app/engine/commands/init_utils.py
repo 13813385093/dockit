@@ -104,7 +104,6 @@ def build_index(project_docs: Path, project_root: Path, created_files: list[Path
                 version=str(meta.get("version", "0.0.0")),
                 status=meta.get("status", "active"),
                 depends_on=meta.get("depends_on", []),
-                mtime=FrontmatterParser.now_iso(),
             )
             mgr.add_entry(entry)
         except Exception:

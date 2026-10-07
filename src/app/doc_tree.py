@@ -668,7 +668,6 @@ class DocTreePanel(QWidget):
                 version=str(meta.get("version", "0.1.0")),
                 status=meta.get("status", "active"),
                 depends_on=meta.get("depends_on", []),
-                mtime=now,
             )
             self._index.add_entry(entry)
         self._index.save()
@@ -741,7 +740,6 @@ class DocTreePanel(QWidget):
                 version=str(meta.get("version", "0.1.0")),
                 status=meta.get("status", "active"),
                 depends_on=meta.get("depends_on", []),
-                mtime=now,
             )
             self._index.add_entry(entry)
         self._index.save()

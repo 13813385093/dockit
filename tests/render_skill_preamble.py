@@ -58,6 +58,7 @@ USAGE: dict[str, str] = {
     "doc update-section": "python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'",
     "doc add-section": "python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]",
     "doc new": "python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]",
+    "doc reindex": "python .doc-kit/cli/cli.py doc reindex",
     "review anchor-get": "python .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]",
     "review anchor-set": "python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]",
     "review report-write": "python .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin",

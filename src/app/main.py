@@ -1,4 +1,4 @@
-"""doc-kit UI 入口点。
+"""doc_kit 入口点。
 
 用法:
     python main.py                          # 启动 GUI
@@ -121,8 +121,8 @@ def main():
         sys.exit(exit_code)
 
     app = QApplication(sys.argv)
-    app.setApplicationName("DocKit Studio")
-    app.setOrganizationName("DocKit Studio")
+    app.setApplicationName("doc_kit")
+    app.setOrganizationName("doc_kit")
     
     app_root = get_app_root()
     icon_path = app_root / "resources" / "icons" / "dropbox.png"

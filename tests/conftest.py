@@ -32,7 +32,6 @@ def make_index(project: Path, documents: list[dict]) -> Path:
     index_path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "version": 1,
-        "built_at": "2026-01-01T00:00:00+00:00",
         "documents": documents,
     }
     index_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -121,6 +120,7 @@ def cli_env(tmp_project):
         add_section=lambda ref, heading, content="", level="sibling": cli.cmd_doc_add_section(
             root, ref, heading, content, level),
         doc_structure=lambda: cli.cmd_doc_structure(root),
+        doc_reindex=lambda: cli.cmd_doc_reindex(root),
         # ── dev（spec-dev-loop）──
         dev_status=lambda: cli.cmd_dev_status(root),
         dev_plan_create=lambda scope, target, module=None, title=None, session=None: cli.cmd_dev_plan_create(

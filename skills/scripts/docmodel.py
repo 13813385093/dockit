@@ -92,7 +92,6 @@ class DocMeta:
     level: str
     version: str
     status: str
-    mtime: str
 
     def to_dict(self) -> dict:
         return {
@@ -101,7 +100,6 @@ class DocMeta:
             "level": self.level,
             "version": self.version,
             "status": self.status,
-            "mtime": self.mtime,
         }
 
 
@@ -321,7 +319,6 @@ class DocStructure:
                 level=entry.level,
                 version=entry.version,
                 status=entry.status,
-                mtime=entry.mtime,
             )
             self.doc_map[entry.path] = DocNode(
                 path=entry.path,

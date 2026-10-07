@@ -17,6 +17,7 @@ behaviour of the former MCP tools with identical validation logic.
     python .doc-kit/cli/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
     python .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
     python .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc reindex
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
@@ -81,7 +82,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.09.10"
+TOOLCHAIN_VERSION = "2026.10.1"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -149,6 +150,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.09.10",
         "date": "2026-09-16",
         "note": "技能合并：spec-load 并入 spec-start（新对话单一入口：有议题走续接 Step 0b、无议题走创建）、spec-abort 并入 spec-close（作废分支）；9 份 → 7 份"
+    },
+    {
+        "version": "2026.10.1",
+        "date": "2026-10-07",
+        "note": "新增 doc reindex 命令（把 App 侧 IndexManager.rebuild 搬进 CLI，spec-close 写盘后调用一次）；并移除 index.json 的 mtime / built_at 生成时刻字段——内容未变时 App 刷新不再产生 diff，加载时兼容旧字段"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -589,11 +595,9 @@ def cmd_doc_read(project_root: Path, doc_path: str) -> str:
 
     index = _load_index(project_root)
     index_depends_on: list[str] = []
-    index_mtime = ""
     if index:
         entry = index.get_entry(rel_path)
         if entry:
-            index_mtime = entry.mtime
             index_depends_on = _simplify_depends_on(entry.depends_on)
 
     doc_meta = DocMeta(
@@ -602,7 +606,6 @@ def cmd_doc_read(project_root: Path, doc_path: str) -> str:
         level=meta_dict.get("level", ""),
         version=meta_dict.get("version", ""),
         status=meta_dict.get("status", "active"),
-        mtime=index_mtime,
     )
     content = DocContent.from_body(rel_path, doc_meta, body, raw_frontmatter=meta_dict)
     data = content.to_dict()
@@ -640,7 +643,7 @@ def cmd_doc_update_section(project_root: Path, reference: str, content: str) -> 
     doc_meta = DocMeta(
         doc_type=meta_dict.get("doc_type", ""), module=meta_dict.get("module", ""),
         level=meta_dict.get("level", ""), version=meta_dict.get("version", ""),
-        status=meta_dict.get("status", "active"), mtime="",
+        status=meta_dict.get("status", "active"),
     )
     doc_content = DocContent.from_body(file_rel, doc_meta, body, raw_frontmatter=meta_dict)
     section = doc_content.get_section(reference)
@@ -680,7 +683,7 @@ def cmd_doc_add_section(project_root: Path, reference: str, heading: str, conten
     doc_meta = DocMeta(
         doc_type=meta_dict.get("doc_type", ""), module=meta_dict.get("module", ""),
         level=meta_dict.get("level", ""), version=meta_dict.get("version", ""),
-        status=meta_dict.get("status", "active"), mtime="",
+        status=meta_dict.get("status", "active"),
     )
     if level not in ("sibling", "child"):
         return _fail("level 参数仅支持 'sibling' 或 'child'")
@@ -841,7 +844,6 @@ def cmd_doc_new(
             version=str(meta_dict.get("version") or "0.1.0"),
             status=str(meta_dict.get("status") or "active"),
             depends_on=[],
-            mtime=datetime.now().strftime("%Y-%m-%d"),
         )
         index.add_entry(entry)
         index.save()
@@ -877,7 +879,7 @@ def cmd_doc_remove_section(project_root: Path, reference: str) -> str:
     doc_meta = DocMeta(
         doc_type=meta_dict.get("doc_type", ""), module=meta_dict.get("module", ""),
         level=meta_dict.get("level", ""), version=meta_dict.get("version", ""),
-        status=meta_dict.get("status", "active"), mtime="",
+        status=meta_dict.get("status", "active"),
     )
     doc_content = DocContent.from_body(file_rel, doc_meta, body, raw_frontmatter=meta_dict)
     try:
@@ -912,6 +914,26 @@ def cmd_doc_structure(project_root: Path) -> str:
     return _ok(
         data={"doc_map": doc_map_dict},
         suggestions=["获取文档完整内容请调用 doc read <doc_map中的path值>，如 doc read ProjectSpec/business-context.md"],
+    )
+
+
+def cmd_doc_reindex(project_root: Path) -> str:
+    """全量重建 .doc-kit/index.json —— 扫描 ProjectSpec/ 下所有文档的 frontmatter。
+
+    桌面 App 每次加载项目都会 rebuild 索引；纯 AI 流程没有 App，索引无人维护，
+    于是 doc structure / doc read 读取的目录与依赖结构会与磁盘脱节（新建文档缺失、
+    depends_on 为空）。本命令把 App 侧 ``IndexManager.rebuild`` 的同一职责搬进 CLI，
+    由 spec-close 在批量写入 ProjectSpec 之后调用一次，使索引重新与磁盘一致。
+    幂等：可反复调用，每次都从磁盘现状整体重建。
+    """
+    index_path = project_root / ".doc-kit" / "index.json"
+    mgr = IndexManager(index_path)
+    count = mgr.rebuild(project_root / "ProjectSpec")
+    mgr.save()
+    return _ok(
+        message=f"## ✅ 索引已重建\n\n共收录 {count} 篇文档",
+        data={"documents": count},
+        suggestions=["可调用 doc structure 验证目录与依赖结构已与磁盘一致。"],
     )
 
 
@@ -1840,7 +1862,7 @@ def cmd_dev_plan_read(project_root: Path) -> str:
         meta_dict, body = FrontmatterParser.parse(text)
     except Exception:
         meta_dict, body = {}, text
-    doc_meta = DocMeta("", "", "", "", "active", "")
+    doc_meta = DocMeta("", "", "", "", "active")
     rel = str(plan_path.relative_to(project_root).as_posix())
     content = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     sections = [
@@ -1872,7 +1894,7 @@ def cmd_dev_plan_update_section(project_root: Path, reference: str, content: str
         meta_dict, body = FrontmatterParser.parse(text)
     except Exception:
         meta_dict, body = {}, text
-    doc_meta = DocMeta("", "", "", "", "active", "")
+    doc_meta = DocMeta("", "", "", "", "active")
     rel = str(plan_path.relative_to(project_root).as_posix())
     doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     ref = _parse_dev_plan_reference(reference, rel)
@@ -1903,7 +1925,7 @@ def cmd_dev_plan_add_section(project_root: Path, reference: str, heading: str, c
         meta_dict, body = FrontmatterParser.parse(text)
     except Exception:
         meta_dict, body = {}, text
-    doc_meta = DocMeta("", "", "", "", "active", "")
+    doc_meta = DocMeta("", "", "", "", "active")
     rel = str(plan_path.relative_to(project_root).as_posix())
     doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     ref = _parse_dev_plan_reference(reference, rel)
@@ -1957,7 +1979,7 @@ def _refresh_plan_tasks(project_root: Path, session_dir: Path, tasks: list[dict]
         meta_dict, body = FrontmatterParser.parse(text)
     except Exception:
         meta_dict, body = {}, text
-    doc_meta = DocMeta("", "", "", "", "active", "")
+    doc_meta = DocMeta("", "", "", "", "active")
     rel = str(plan_path.relative_to(project_root).as_posix())
     doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     table = _render_task_table(tasks)
@@ -2289,7 +2311,7 @@ def cmd_dev_notes_append(project_root: Path, content: str, section: str | None =
         meta_dict, body = FrontmatterParser.parse(text)
     except Exception:
         meta_dict, body = {}, text
-    doc_meta = DocMeta("", "", "", "", "active", "")
+    doc_meta = DocMeta("", "", "", "", "active")
     rel = str(notes_path.relative_to(project_root).as_posix())
     doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
     sec = doc.get_section(f"{rel}#{heading}")
@@ -2499,6 +2521,7 @@ def build_parser() -> argparse.ArgumentParser:
     doc_new_p.add_argument("--author", default=None, help="文档负责人（可选；留空则交人工维护）")
     doc_rm_p = doc_sub.add_parser("remove-section", help="删除段落及其全部子段落")
     doc_rm_p.add_argument("reference", help="段落引用，如 ProjectSpec/arch.md#模块概述")
+    doc_sub.add_parser("reindex", help="全量重建 .doc-kit/index.json（扫描 ProjectSpec/ 的 frontmatter）")
 
     review = sub.add_parser("review", help="代码评审锚点与报告")
     review_sub = review.add_subparsers(dest="command", required=True)
@@ -2618,6 +2641,8 @@ def main(argv: list[str] | None = None) -> None:
                 _emit(cmd_doc_new(project_root, args.doc_type, args.module, args.feature, args.author))
             elif args.command == "remove-section":
                 _emit(cmd_doc_remove_section(project_root, args.reference))
+            elif args.command == "reindex":
+                _emit(cmd_doc_reindex(project_root))
         elif args.group == "review":
             if args.command == "anchor-get":
                 _emit(cmd_review_anchor_get(project_root, args.branch))

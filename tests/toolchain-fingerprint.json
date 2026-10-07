@@ -1,6 +1,6 @@
 {
-  "toolchain_version": "2026.09.10",
-  "fingerprint": "b4fbbd66f5f6b75553d1b7d5cd571eb512d94ba9cfd94475ebb937aa15656d74",
+  "toolchain_version": "2026.10.1",
+  "fingerprint": "61b8b27e33a4c348aa2db73f5345bc788b2b3f75883ec675b0dd177bd80e73d3",
   "files": 48,
   "note": "由 tests/check_toolchain_version.py --update 生成；工具链内容或版本变更后需同步更新"
 }

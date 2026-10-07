@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("doc-kit UI")
+        self.setWindowTitle("doc_kit")
         
         # 当前项目状态
         self._project_root: Path | None = None
@@ -412,7 +412,7 @@ class MainWindow(QMainWindow):
         tool_menu.addAction(check_act)
 
         help_menu = menubar.addMenu("帮助(&H)")
-        about_act = QAction("关于 doc-kit UI", self)
+        about_act = QAction("关于 doc_kit", self)
         about_act.triggered.connect(self._on_about)
         help_menu.addAction(about_act)
 
@@ -650,7 +650,6 @@ class MainWindow(QMainWindow):
                 version=str(meta.get("version", "0.1.0")),
                 status=meta.get("status", "active"),
                 depends_on=meta.get("depends_on", []),
-                mtime=now,
             )
             self._index.add_entry(entry)
         self._index.save()
@@ -717,7 +716,6 @@ class MainWindow(QMainWindow):
                 version=str(meta.get("version", "0.1.0")),
                 status=meta.get("status", "active"),
                 depends_on=meta.get("depends_on", []),
-                mtime=now,
             )
             self._index.add_entry(entry)
         self._index.save()
@@ -811,8 +809,8 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_about(self):
         QMessageBox.about(
-            self, "关于 doc-kit UI",
-            "doc-kit UI v1.1.0\n\n"
+            self, "关于 doc_kit",
+            "doc_kit v1.1.0\n\n"
             "面向AI时代的新型项目文档体系配套管理工具。\n\n"
             "版权所有 (C) 2026\n\n"
             "本软件采用 MIT 许可证授权。\n"
