@@ -138,6 +138,7 @@ def test_every_usage_command_exists():
 CLI_ONLY_COMMANDS: dict[str, str] = {
     "doc remove-section": "删除段落是破坏性操作，spec-close 明确把它划出职责；仅供人工使用",
     "dev plan add-section": "plan.md 骨架由 PLAN_SKELETON 固定，技能无需新建段落；仅供人工使用",
+    "doc lint": "门禁命令，供人工/CI 直接调用；skill 集成待模型层落地后评估",
 }
 
 

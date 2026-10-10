@@ -18,6 +18,7 @@ behaviour of the former MCP tools with identical validation logic.
     python .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
     python .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
     python .doc-kit/cli/cli.py [--root <项目目录>] doc reindex
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc lint [--baseline <file>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
@@ -67,7 +68,7 @@ from docmodel import (  # noqa: E402
     _simplify_depends_on,
     safe_join,
 )
-from frontmatter import FrontmatterParser, _parse_yaml_block  # noqa: E402
+from frontmatter import FrontmatterParser, _parse_yaml_block, read_document  # noqa: E402
 from index import IndexEntry, IndexManager  # noqa: E402
 from spec_schema import (  # noqa: E402
     SCENARIO_DOC_TYPES,
@@ -82,7 +83,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.10.1"
+TOOLCHAIN_VERSION = "2026.10.2"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -155,6 +156,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.10.1",
         "date": "2026-10-07",
         "note": "新增 doc reindex 命令（把 App 侧 IndexManager.rebuild 搬进 CLI，spec-close 写盘后调用一次）；并移除 index.json 的 mtime / built_at 生成时刻字段——内容未变时 App 刷新不再产生 diff，加载时兼容旧字段"
+    },
+    {
+        "version": "2026.10.2",
+        "date": "2026-10-10",
+        "note": "新增 doc lint 规格完整性门禁（R1/R3/R4/R5/R7/R8/R9/R10/R11/R12，只读、支持 lint.yaml 配置与 JSON baseline）；doc reindex 回报 skipped；能力库 _index.md 补「权威分层与引用纪律」节"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -925,15 +931,503 @@ def cmd_doc_reindex(project_root: Path) -> str:
     depends_on 为空）。本命令把 App 侧 ``IndexManager.rebuild`` 的同一职责搬进 CLI，
     由 spec-close 在批量写入 ProjectSpec 之后调用一次，使索引重新与磁盘一致。
     幂等：可反复调用，每次都从磁盘现状整体重建。
+
+    解析失败的文档**不再无声吞掉**：在 ``data.skipped`` 回报清单，message 提示。
+    本命令仍是**写操作**（重建索引），但与门禁职责分离——对账由只读的 ``doc lint``
+    负责（R11）；此处 skipped 非致命，不改退出码。
     """
     index_path = project_root / ".doc-kit" / "index.json"
     mgr = IndexManager(index_path)
     count = mgr.rebuild(project_root / "ProjectSpec")
     mgr.save()
+    skipped = list(getattr(mgr, "skipped", []))
+    message = f"## ✅ 索引已重建\n\n共收录 {count} 篇文档"
+    if skipped:
+        shown = "、".join(skipped[:5]) + ("…" if len(skipped) > 5 else "")
+        message += (
+            f"\n\n⚠️ 有 {len(skipped)} 篇文档 frontmatter 解析失败、未入索引：{shown}"
+            "。请运行 doc lint 查看 R11 明细。"
+        )
     return _ok(
-        message=f"## ✅ 索引已重建\n\n共收录 {count} 篇文档",
-        data={"documents": count},
+        message=message,
+        data={"documents": count, "skipped": skipped, "skipped_count": len(skipped)},
         suggestions=["可调用 doc structure 验证目录与依赖结构已与磁盘一致。"],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+#  doc lint —— 规格完整性门禁（只读）
+# ═══════════════════════════════════════════════════════════════
+#
+# 规则语义见 skills/guidance/doc-capabilities/_index.md §5 与
+# SpecGovernance/spec-check-rules.md（luca 参考实现，出货后退役）。
+# 硬门禁只收零 false-positive 的客观项；模糊项降 warning；语义层不进门禁。
+#
+# v1 规则（零项目参数）：
+#   R1 (warning) frontmatter 必填字段齐备且非空
+#   R3 (error)   限定引用可解析（目标文档存在且定义了该编号）
+#   R4 (warning) 跨包裸写编号（同包 = 同 module + 同 feature；顶层/模块层不互认同包）
+#   R5 (error)   同文档约束编号唯一
+#   R7 (error)   无模板占位符（模式集从 .doc-kit/templates 派生）
+#   R8 (error)   depends_on 版本与目标一致（含目标不存在）
+#   R9 (error)   锚点 {#C-xxx}C-xxx 的锚名与编号一致
+#   R10 (warning) registry 声明的必选顶层文档缺失
+#   R11 (error)  frontmatter 必须可解析（不可降级/停用）
+#   R12 (error)  表格行之间不得夹空行
+# v2（需参数化）：R4 命名空间策略可配置化、R2 版本/日期诚实、R6 implemented_in 路径存在。
+
+_RULE_LEVELS: dict[str, str] = {
+    "R1": "warning",
+    "R3": "error",
+    "R4": "warning",
+    "R5": "error",
+    "R7": "error",
+    "R8": "error",
+    "R9": "error",
+    "R10": "warning",
+    "R11": "error",
+    "R12": "error",
+}
+
+#: 不可降级 / 不可停用的规则（"自己的文档无法解析"是不可协商底线）
+_LOCKED_RULES = {"R11"}
+
+#: baseline key 取"具体违规标识"的规则；其余规则 key 为空、按文件级吸收
+_BASELINE_KEYED_RULES = {"R4"}
+
+_REQUIRED_FM_KEYS = ("doc_type", "module", "level", "version", "last_updated", "status")
+
+# 限定引用：doc-type@module(.feature):C-xxx / :S-xxx（doc-type 用连字符或下划线）
+_QUALIFIED_REF_RE = re.compile(
+    r"(?P<dt>[a-z][a-z_-]+)@(?P<mod>[a-z0-9-]+)"
+    r"(?:\.(?P<feat>[a-z0-9-]+))?:(?P<id>[CS]-\d+)"
+)
+# 裸写编号：前面不能再是标识符字符（避免命中 `LG-101` 之类）
+_ANY_ID_RE = re.compile(r"(?<![A-Za-z0-9-])([CS]-\d+)")
+# 文档内"定义"的编号：表格单元格（可带 {#C-xxx} 锚点）或锚点本身
+_DEFINED_CELL_RE = re.compile(r"\|\s*(?:\{#([CS]-\d+)\})?([CS]-\d+)\s*\|")
+_ANCHOR_RE = re.compile(r"\{#([CS]-\d+)\}")
+_ANCHOR_PAIR_RE = re.compile(r"\{#([CS]-\d+)\}([CS]-\d+)")
+
+#: 模板占位符（当项目内无 .doc-kit/templates 时的兜底形态集）
+_FALLBACK_PLACEHOLDERS = ("<替代文档>", "<所属模块>", "<源码目录>", "<语言>")
+_PLACEHOLDER_VAR_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _mask_code_and_comments(text: str) -> str:
+    """把 fenced code block 与 HTML 注释替换为等长空白（保留换行与行号）。
+
+    硬门禁的前提：规则不得被代码块/注释里的示例误伤。替换为**等长空白**而非删除，
+    使 findings 报告的行号仍是原文行号。
+    """
+    def _blank(m: re.Match) -> str:
+        return re.sub(r"[^\n]", " ", m.group(0))
+
+    masked = re.sub(r"<!--.*?-->", _blank, text, flags=re.DOTALL)
+    lines = masked.split("\n")
+    in_fence = False
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        is_fence = stripped.startswith("```") or stripped.startswith("~~~")
+        if in_fence or is_fence:
+            lines[i] = " " * len(line)
+        if is_fence:
+            in_fence = not in_fence
+    return "\n".join(lines)
+
+
+class _LintDoc:
+    """lint 的只读文档视图：raw text + 解析结果 + 屏蔽代码/注释后的文本 + 已定义编号。"""
+
+    def __init__(self, project_root: Path, path: Path) -> None:
+        self.path = path
+        self.rel = str(path.relative_to(project_root).as_posix())
+        self.text, self.meta, self.error = read_document(path)
+        meta = self.meta or {}
+        self.doc_type = str(meta.get("doc_type", "") or "")
+        self.module = str(meta.get("module", "") or "")
+        self.level = str(meta.get("level", "") or "")
+        self.feature = str(meta.get("feature", "") or "")
+        self.version = str(meta.get("version", "") or "")
+        self.last_updated = str(meta.get("last_updated", "") or "")
+        self.status = str(meta.get("status", "") or "")
+        self.masked = _mask_code_and_comments(self.text)
+        self.defined_ids: set[str] = set()
+        for anchor, cell in _DEFINED_CELL_RE.findall(self.masked):
+            self.defined_ids.add(anchor or cell)
+        for anchor in _ANCHOR_RE.findall(self.masked):
+            self.defined_ids.add(anchor)
+
+
+def _placeholder_patterns(project_root: Path) -> list[str]:
+    """R7 的占位符形态集：从模板 **frontmatter** 派生 `<...>` 具体 token；`$identifier` 另行匹配。
+
+    只取 frontmatter 里的 `<...>`（如 `superseded_by` 的 `<替代文档>`、`implemented_in`
+    的 `<源码目录>`）：这些是"整值未填"型占位符，残留即静默腐化。模板**正文**里的
+    `<功能名>` 之类是行文示例（合法引用），若一并纳入会产生误报——硬门禁零误报优先。
+
+    优先从项目内 ``.doc-kit/templates/`` 派生（含用户自定义模板）；无则回退到仓库内
+    ``src/app/templates/``（开发/测试态），再不行用内置兜底形态集。
+    """
+    tokens: set[str] = set()
+    candidates = [project_root / ".doc-kit" / "templates"]
+    repo_templates = Path(__file__).resolve().parents[2] / "src" / "app" / "templates"
+    if repo_templates.is_dir():
+        candidates.append(repo_templates)
+    for tdir in candidates:
+        if not tdir.is_dir():
+            continue
+        for tmpl in sorted(tdir.glob("*.md")):
+            try:
+                body = tmpl.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fm = re.match(r"^---\s*\n(.*?)\n---", body, re.DOTALL)
+            if fm:
+                tokens.update(re.findall(r"<[^<>\n]{1,40}>", fm.group(1)))
+        if tokens:
+            break
+    if not tokens:
+        tokens.update(_FALLBACK_PLACEHOLDERS)
+    return sorted(tokens)
+
+
+def _lint_registry(project_root: Path) -> dict[str, dict]:
+    return _load_registry(project_root) or {d["doc_type"]: d for d in DOC_TYPE_REGISTRY}
+
+
+def _lint_spec_paths(project_root: Path, registry: dict[str, dict]) -> list[Path] | None:
+    """规格文档 = ProjectSpec/ 下文件名 ∈ registry 模板文件名集合的 *.md。
+
+    刻意**不**用"是否在 index.json 里"判定：reindex 会跳过解析失败的文档，
+    用它判定会让 R11 永远看不到坏文档（循环失效）。
+    """
+    docs_root = project_root / "ProjectSpec"
+    if not docs_root.is_dir():
+        return None
+    templates = {d.get("template") for d in registry.values() if d.get("template")}
+    return [p for p in sorted(docs_root.rglob("*.md")) if p.name in templates]
+
+
+def _lint_doc_type_for_stem(stem: str, registry: dict[str, dict]) -> str:
+    for d in registry.values():
+        tpl = str(d.get("template") or "")
+        if tpl.endswith(".md") and tpl[:-3] == stem:
+            return str(d.get("doc_type") or stem)
+    return stem.replace("-", "_")
+
+
+def _lint_resolve_target(docs: list["_LintDoc"], doc_type: str, module: str, feature: str | None) -> "_LintDoc | None":
+    for d in docs:
+        if d.doc_type != doc_type or d.module != module:
+            continue
+        if feature is None:
+            if d.level == "module" or not d.feature:
+                return d
+        elif d.feature == feature:
+            return d
+    return None
+
+
+def _load_lint_config(project_root: Path) -> tuple[bool, str, bool, dict[str, str], list[dict]]:
+    """读取 .doc-kit/lint.yaml（仅用迷你解析器支持的子集）。
+
+    返回 ``(enabled, baseline_rel, baseline_configured, severities, overrides)``。
+    ``baseline_configured`` 为真才在缺文件时告警——项目压根没配 baseline 时不应报警。
+    """
+    cfg_path = project_root / ".doc-kit" / "lint.yaml"
+    cfg: dict = {}
+    if cfg_path.exists():
+        try:
+            raw = _parse_yaml_block(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                cfg = raw
+        except Exception:
+            cfg = {}
+
+    enabled = cfg.get("lint_enabled", True)
+    if not isinstance(enabled, bool):
+        enabled = True
+    baseline_configured = bool(cfg.get("lint_baseline"))
+    baseline = str(cfg.get("lint_baseline") or ".doc-kit/lint-baseline.json")
+
+    severities = dict(_RULE_LEVELS)
+    overrides: list[dict] = []
+    rules = cfg.get("lint_rules") or []
+    order = {"off": 0, "warning": 1, "error": 2}
+    if isinstance(rules, list):
+        for item in rules:
+            if not isinstance(item, dict):
+                continue
+            rule = str(item.get("rule") or "").strip()
+            level = str(item.get("level") or "").strip()
+            if rule not in _RULE_LEVELS or level not in order:
+                continue
+            if level == _RULE_LEVELS[rule]:
+                continue
+            if rule in _LOCKED_RULES:
+                overrides.append({"rule": rule, "from": _RULE_LEVELS[rule], "to": level,
+                                  "applied": False, "reason": f"{rule} 不可降级/停用"})
+                continue
+            if order[level] > order[_RULE_LEVELS[rule]]:
+                overrides.append({"rule": rule, "from": _RULE_LEVELS[rule], "to": level,
+                                  "applied": False, "reason": "只允许降级或停用，禁止升级"})
+                continue
+            severities[rule] = level
+            overrides.append({"rule": rule, "from": _RULE_LEVELS[rule], "to": level, "applied": True})
+    return enabled, baseline, baseline_configured, severities, overrides
+
+
+def _load_lint_baseline(project_root: Path, rel: str) -> tuple[set[tuple[str, str, str]], bool]:
+    """读取 baseline JSON。返回 (集合, missing)。支持 {"entries":[...]} 或顶层列表。"""
+    path = project_root / rel
+    if not path.exists():
+        return set(), True
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set(), True
+    entries = data.get("entries") if isinstance(data, dict) else data
+    keys: set[tuple[str, str, str]] = set()
+    for e in entries or []:
+        if not isinstance(e, dict):
+            continue
+        rule = e.get("rule")
+        key = e.get("key", "")
+        if rule and (e.get("file") is not None):
+            keys.add((str(rule), str(e.get("file") or ""), str(key if key is not None else "")))
+    return keys, False
+
+
+def _required_top_doc_types(project_root: Path, registry: dict[str, dict]) -> set[str]:
+    """从 .doc-kit 能力库 _index.md §1 解析"必选且顶层"的 doc_type。
+
+    仅取顶层必选（business_context 等）：模块/功能层的必选性是**按作用域**的
+    （有模块才要求 architecture），在无模块的项目上不该报表。
+    """
+    idx = project_root / ".doc-kit" / "skills" / "guidance" / "doc-capabilities" / "_index.md"
+    if not idx.exists():
+        return set()
+    required: set[str] = set()
+    for line in idx.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\|\s*`([a-z_]+)`\s*\|\s*[a-z0-9\-]+\.md\s*\|\s*([^|]*)\|", line)
+        if not m:
+            continue
+        doc_type, mark = m.group(1), m.group(2)
+        if "✅" in mark and (registry.get(doc_type) or {}).get("level") == "top":
+            required.add(doc_type)
+    return required
+
+
+def _lint_findings(project_root: Path, docs: list[_LintDoc], registry: dict[str, dict]) -> tuple[list[tuple[str, str, str, str]], dict]:
+    """返回 (findings, metrics)。findings 元素 = (rule, file, key, message)。"""
+    findings: list[tuple[str, str, str, str]] = []
+    metrics = {
+        "documents": len(docs),
+        "total_lines": sum(d.text.count("\n") + 1 for d in docs),
+        "qualified_refs": 0,
+        "qualified_refs_bad": 0,
+        "bare_id_suspects": 0,
+    }
+
+    patterns = _placeholder_patterns(project_root)
+
+    # ---- R11 frontmatter 可解析（其余规则跳过不可解析文档）----
+    for d in docs:
+        if d.error is not None:
+            findings.append(("R11", d.rel, "", f"[R11] {d.rel}: frontmatter 解析失败：{d.error}"))
+
+    parseable = [d for d in docs if d.error is None]
+
+    for d in parseable:
+        # ---- R1 必填字段 ----
+        for k in _REQUIRED_FM_KEYS:
+            if not str((d.meta or {}).get(k, "") or "").strip():
+                findings.append(("R1", d.rel, "", f"[R1] {d.rel}: 缺少或为空 frontmatter 字段 `{k}`"))
+
+        # ---- R5 同文档编号唯一 ----
+        seen: dict[str, int] = {}
+        for raw in d.masked.split("\n"):
+            m = re.match(r"\|\s*(?:\{#([CS]-\d+)\})?([CS]-\d+)\s*\|", raw)
+            if m:
+                cid = m.group(1) or m.group(2)
+                seen[cid] = seen.get(cid, 0) + 1
+        dup = sorted(k for k, v in seen.items() if v > 1)
+        if dup:
+            findings.append(("R5", d.rel, "", f"[R5] {d.rel}: 同文档重复约束编号 {dup}"))
+
+        # ---- R9 锚点与编号一致 ----
+        for raw in d.masked.split("\n"):
+            for a, b in _ANCHOR_PAIR_RE.findall(raw):
+                if a != b:
+                    findings.append(("R9", d.rel, "", f"[R9] {d.rel}: 锚点 `{{#{a}}}{b}` 的锚名与编号不一致"))
+
+        # ---- R7 模板占位符 ----
+        for token in patterns:
+            if token in d.masked:
+                findings.append(("R7", d.rel, "", f"[R7] {d.rel}: 残留模板占位符 `{token}`"))
+        for var in sorted(set(_PLACEHOLDER_VAR_RE.findall(d.masked))):
+            findings.append(("R7", d.rel, "", f"[R7] {d.rel}: 残留模板占位符 `{var}`"))
+
+        # ---- R12 表格断裂（表行之间夹空行）----
+        lines = d.masked.split("\n")
+        for i in range(1, len(lines) - 1):
+            if (lines[i].strip() == "" and lines[i - 1].lstrip().startswith("|")
+                    and lines[i + 1].lstrip().startswith("|")):
+                findings.append(("R12", d.rel, "", f"[R12] {d.rel}: 表格行之间夹空行（约第 {i + 1} 行）"))
+                break
+
+        # ---- R8 depends_on 版本一致 ----
+        deps = (d.meta or {}).get("depends_on")
+        if isinstance(deps, list):
+            for dep in deps:
+                if not isinstance(dep, dict):
+                    continue
+                dep_doc = dep.get("doc")
+                if not dep_doc:
+                    continue
+                dep_rel = str(dep_doc)
+                target = next((x for x in parseable if x.rel == dep_rel), None)
+                if target is None:
+                    target = next(
+                        (x for x in parseable if x.rel.endswith("/" + dep_rel) or x.rel == f"ProjectSpec/{dep_rel}"),
+                        None,
+                    )
+                if target is None:
+                    findings.append(("R8", d.rel, "", f"[R8] {d.rel}: depends_on 目标不存在 {dep_doc}"))
+                elif target.version and dep.get("version") and str(target.version) != str(dep["version"]):
+                    findings.append((
+                        "R8", d.rel, "",
+                        f"[R8] {d.rel}: depends_on {dep_doc} version={dep.get('version')} 与目标 {target.version} 不一致",
+                    ))
+
+    # ---- R3 限定引用可解析 ----
+    for d in parseable:
+        for m in _QUALIFIED_REF_RE.finditer(d.masked):
+            metrics["qualified_refs"] += 1
+            doc_type = _lint_doc_type_for_stem(m.group("dt"), registry)
+            target = _lint_resolve_target(parseable, doc_type, m.group("mod"), m.group("feat"))
+            if target is None:
+                metrics["qualified_refs_bad"] += 1
+                findings.append(("R3", d.rel, "", f"[R3] {d.rel}: 限定引用目标文档不存在：{m.group(0)}"))
+            elif m.group("id") not in target.defined_ids:
+                metrics["qualified_refs_bad"] += 1
+                findings.append((
+                    "R3", d.rel, "",
+                    f"[R3] {d.rel}: 限定引用目标约束不存在：{m.group(0)}（{target.rel} 未定义该编号）",
+                ))
+
+    # ---- R4 跨包裸写编号（warning）----
+    for d in parseable:
+        own = set(d.defined_ids)
+        if d.feature:
+            package = set(own)
+            for o in parseable:
+                if o.feature and o.module == d.module and o.feature == d.feature:
+                    package |= o.defined_ids
+        else:
+            # 顶层/模块层不再互认同包：跨文档引用一律需全限定
+            package = set(own)
+        reported: set[str] = set()
+        for m in _ANY_ID_RE.finditer(d.masked):
+            cid = m.group(1)
+            start = m.start(1)
+            if start > 0 and d.masked[start - 1] == ":":
+                continue  # 已全限定 `...:C-xxx`
+            if cid in package:
+                continue
+            metrics["bare_id_suspects"] += 1  # 计"出现次数"（与参考实现口径一致）
+            if cid in reported:
+                continue  # findings/baseline 按 (file, id) 去重
+            reported.add(cid)
+            findings.append((
+                "R4", d.rel, cid,
+                f"[R4] {d.rel}: 疑似跨文档裸写编号 {cid}（跨文档引用应全限定为 doc-type@module(.feature):{cid}）",
+            ))
+
+    # ---- R10 registry 声明的必选顶层文档缺失 ----
+    required = _required_top_doc_types(project_root, registry)
+    present = {d.doc_type for d in parseable}
+    missing = sorted(t for t in required if t not in present)
+    if missing:
+        findings.append(("R10", "", "", f"[R10] registry 声明的必选顶层文档缺失：{missing}"))
+
+    return findings, metrics
+
+
+def cmd_doc_lint(project_root: Path, baseline_path: str | None = None) -> str:
+    """规格完整性门禁（只读）。有 error → success=false、退出码 1；仅 warning → 退出码 0。"""
+    enabled, baseline_rel, baseline_configured, severities, overrides = _load_lint_config(project_root)
+    if baseline_path:
+        baseline_rel = baseline_path
+        baseline_configured = True
+
+    if not enabled:
+        data = {
+            "metrics": {"documents": 0, "errors": 0, "warnings": 0, "baselined": 0},
+            "errors": [], "warnings": [], "overrides_applied": overrides,
+        }
+        return _ok("doc lint 已按 .doc-kit/lint.yaml 停用（lint_enabled=false）", data=data, suggestions=[])
+
+    registry = _lint_registry(project_root)
+    paths = _lint_spec_paths(project_root, registry)
+    if paths is None:
+        return _fail(
+            "ERROR [lint.no_docs] 未找到 ProjectSpec/ 目录。修复：先创建项目规格文档。",
+            data={"metrics": {}, "errors": [], "warnings": []},
+            suggestions=[],
+        )
+
+    docs = [_LintDoc(project_root, p) for p in paths]
+    findings, metrics = _lint_findings(project_root, docs, registry)
+
+    baseline_keys, baseline_missing = _load_lint_baseline(project_root, baseline_rel)
+    if not baseline_configured:
+        baseline_missing = False  # 未配置 baseline：缺文件是正常状态，不告警
+
+    errors: list[dict] = []
+    warnings: list[dict] = []
+    baselined = 0
+    rules_off: list[str] = []
+    for rule, file, key, message in findings:
+        sev = severities.get(rule, "warning")
+        if sev == "off":
+            if rule not in rules_off:
+                rules_off.append(rule)
+            continue
+        if (rule, file, key) in baseline_keys:
+            baselined += 1
+            continue
+        entry = {"rule": rule, "file": file, "key": key, "message": message}
+        (errors if sev == "error" else warnings).append(entry)
+
+    if baseline_missing:
+        warnings.append({
+            "rule": "config", "file": baseline_rel, "key": "",
+            "message": f"[config] 已配置 baseline 但文件不存在：{baseline_rel}（按空 baseline 处理）",
+        })
+
+    metrics.update({
+        "errors": len(errors),
+        "warnings": len(warnings),
+        "baselined": baselined,
+    })
+    data = {
+        "metrics": metrics,
+        "errors": errors,
+        "warnings": warnings,
+        "overrides_applied": overrides,
+        "rules_off": rules_off,
+        "baseline": {"path": baseline_rel, "missing": baseline_missing, "absorbed": baselined},
+    }
+
+    summary = f"规格门禁：{len(errors)} error / {len(warnings)} warning（baseline 吸收 {baselined}）"
+    if errors:
+        return _fail(summary, data=data, suggestions=[])
+    return _ok(
+        summary,
+        data=data,
+        suggestions=["doc lint 只读；存量违规可用 .doc-kit/lint-baseline.json 吸收，配置见 .doc-kit/lint.yaml。"],
     )
 
 
@@ -2448,11 +2942,18 @@ def _ok(message: str = "", *, data: Any = None, suggestions: list[str] | None = 
     )
 
 
-def _fail(text: str) -> str:
+def _fail(text: str, *, data: Any = None, suggestions: list[str] | None = None) -> str:
     # message 与 suggestions[0] 同文本：前者让"JSON 恒含四个字段"的约定成立，
     # 后者是历史消费方的读取位置，两者都保留。
+    # 显式传入 suggestions（如 doc lint 用 []）时按传入值返回，便于把 findings
+    # 全部放进 data，而不把上千条明细灌进 message/suggestions。
     return json.dumps(
-        {"success": False, "message": text, "data": None, "suggestions": [text]},
+        {
+            "success": False,
+            "message": text,
+            "data": data,
+            "suggestions": suggestions if suggestions is not None else [text],
+        },
         indent=2, ensure_ascii=False,
     )
 
@@ -2522,6 +3023,8 @@ def build_parser() -> argparse.ArgumentParser:
     doc_rm_p = doc_sub.add_parser("remove-section", help="删除段落及其全部子段落")
     doc_rm_p.add_argument("reference", help="段落引用，如 ProjectSpec/arch.md#模块概述")
     doc_sub.add_parser("reindex", help="全量重建 .doc-kit/index.json（扫描 ProjectSpec/ 的 frontmatter）")
+    doc_lint_p = doc_sub.add_parser("lint", help="规格完整性门禁（只读；有 error 时退出码 1）")
+    doc_lint_p.add_argument("--baseline", default=None, help="baseline JSON 路径（默认取 .doc-kit/lint.yaml 的 lint_baseline）")
 
     review = sub.add_parser("review", help="代码评审锚点与报告")
     review_sub = review.add_subparsers(dest="command", required=True)
@@ -2643,6 +3146,8 @@ def main(argv: list[str] | None = None) -> None:
                 _emit(cmd_doc_remove_section(project_root, args.reference))
             elif args.command == "reindex":
                 _emit(cmd_doc_reindex(project_root))
+            elif args.command == "lint":
+                _emit(cmd_doc_lint(project_root, args.baseline))
         elif args.group == "review":
             if args.command == "anchor-get":
                 _emit(cmd_review_anchor_get(project_root, args.branch))

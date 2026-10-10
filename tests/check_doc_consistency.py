@@ -13,7 +13,8 @@
     4. skills/guidance/doc-capabilities/ 中不存在空文件或未注册能力文件；
     5. 上述两目录中不残留已下线类型的文件；
     6. 模板与能力文件中不残留旧章节号引用（§3.9 系）；
-    7. 指南中不存在重复的小节编号（如两个 §3.8.1）。
+    7. 指南中不存在重复的小节编号（如两个 §3.8.1）；
+    8. _index.md 含「权威分层与引用纪律」节（文档模型第三级：谁拥有哪类事实、指针方向）。
 """
 
 from __future__ import annotations
@@ -214,6 +215,13 @@ def check() -> list[str]:
             errors.append(f"指南存在重复小节编号: {dups}")
     else:
         errors.append(f"未找到指南文件: {GUIDE.name}")
+
+    # ── 8. _index.md 必须含「权威分层与引用纪律」节（文档模型第三级）──
+    index_text = INDEX_MD.read_text(encoding="utf-8")
+    if "权威分层与引用纪律" not in index_text:
+        errors.append("_index.md 缺少「权威分层与引用纪律」节（文档模型第三级）")
+    elif "禁止反向" not in index_text:
+        errors.append("_index.md 的权威分层节缺少指针方向规则（feature → module → top，禁止反向）")
 
     return errors
 

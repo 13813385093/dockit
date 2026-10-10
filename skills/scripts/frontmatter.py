@@ -9,6 +9,7 @@ Mirrors the parse()/dump() API of the original PyYAML-based implementation.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 
@@ -166,6 +167,28 @@ def dump(meta: dict, body: str) -> str:
             lines.append(f"{key}: {v}" if v else f"{key}:")
     yaml_text = "\n".join(lines)
     return f"---\n{yaml_text}\n---\n\n{body}"
+
+
+def read_document(path: "str | Path") -> tuple[str, dict | None, str | None]:
+    """只读地读取一篇 Markdown 文档并解析其 frontmatter。
+
+    返回 ``(text, meta, error)``：解析成功时 ``error is None``、``meta`` 为 dict；
+    失败时 ``meta is None``、``error`` 为原因字符串。**绝不抛异常、绝不写盘**。
+    ``doc lint``（R11）与 ``doc reindex`` 共用本函数，保证"解析失败不再被静默吞掉"
+    的判断口径一致。
+    """
+    p = Path(path)
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError as e:
+        return "", None, f"读取失败: {e}"
+    try:
+        meta, _ = parse(text)
+    except FrontmatterParseError as e:
+        return text, None, str(e)
+    except Exception as e:  # 解析器未预料到的错误也不应让调用方崩溃
+        return text, None, str(e)
+    return text, meta, None
 
 
 class FrontmatterParser:

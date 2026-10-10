@@ -37,6 +37,7 @@ class IndexManager:
     def __init__(self, index_path: Path):
         self.index_path = index_path
         self._entries: dict[str, IndexEntry] = {}
+        self.skipped: list[str] = []
         if index_path.exists():
             self._load()
 
@@ -91,31 +92,33 @@ class IndexManager:
         纯 AI 流程（不启动桌面 App）没有别的角色会维护 index.json，故由 CLI
         的 doc reindex 命令承担同一职责：逐篇读取 frontmatter，把
         doc_type / module / level / version / status / depends_on 汇总进索引。
-        单篇解析失败只跳过该篇，不中断整体重建。
+        解析失败的单篇**不再无声吞掉**：记入 ``self.skipped``（相对路径清单），
+        由调用方回报给用户；重建本身仍继续、不中断。
         """
         self._entries = {}
+        self.skipped = []
         if not docs_root.exists():
             return 0
 
-        from frontmatter import FrontmatterParser
+        from frontmatter import read_document
 
         count = 0
         for md_file in sorted(docs_root.rglob("*.md")):
-            try:
-                meta, _ = FrontmatterParser.parse(md_file.read_text(encoding="utf-8"))
-                rel_path = str(md_file.relative_to(docs_root.parent)).replace("\\", "/")
-                entry = IndexEntry(
-                    path=rel_path,
-                    doc_type=meta.get("doc_type", "unknown"),
-                    module=meta.get("module", ""),
-                    level=meta.get("level", ""),
-                    version=str(meta.get("version", "0.0.0")),
-                    status=meta.get("status", "active"),
-                    depends_on=meta.get("depends_on", []),
-                )
-                self._entries[rel_path] = entry
-                count += 1
-            except Exception:
+            rel_path = str(md_file.relative_to(docs_root.parent)).replace("\\", "/")
+            _text, meta, err = read_document(md_file)
+            if err is not None or meta is None:
+                self.skipped.append(rel_path)
                 continue
+            entry = IndexEntry(
+                path=rel_path,
+                doc_type=meta.get("doc_type", "unknown"),
+                module=meta.get("module", ""),
+                level=meta.get("level", ""),
+                version=str(meta.get("version", "0.0.0")),
+                status=meta.get("status", "active"),
+                depends_on=meta.get("depends_on", []),
+            )
+            self._entries[rel_path] = entry
+            count += 1
 
         return count
