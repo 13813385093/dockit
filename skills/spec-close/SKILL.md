@@ -14,9 +14,9 @@ description: 当用户说「讨论完了」「关闭」「收尾」（保留成�
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.3` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.10.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.10.3`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -36,6 +36,7 @@ python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
 python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
 python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
 python .doc-kit/cli/cli.py doc reindex
+python .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
@@ -51,11 +52,11 @@ python .doc-kit/cli/cli.py doc reindex
 
 ## 定位
 
-结束整个议题。五步走：
+结束整个议题。六步走：
 
 ```
 ① 落盘本轮讨论（会议纪要） → ② 议程结清检查 → ③ 梳理 ProjectSpec 变更清单（用户审核）
-   → ④ 批量写入 ProjectSpec → ⑤ 标终态并归档
+   → ④ 批量写入 ProjectSpec → ⑤ 文档一致性复核（doc lint 门禁） → ⑥ 标终态并归档
 ```
 
 本技能是议题链路中**唯一写 `ProjectSpec/` 的技能**：整个讨论期间攒下的决议，在这里一次性梳理、审核、落盘。议题关闭后不可续接，需开启新议题。
@@ -66,7 +67,7 @@ python .doc-kit/cli/cli.py doc reindex
 
 ## 作废分支（放弃成果，不写任何文档）
 
-当用户明确要**放弃**本次讨论成果时走本分支，**不要执行下面的 Step 1–5**。
+当用户明确要**放弃**本次讨论成果时走本分支，**不要执行下面的 Step 1–6**。
 
 1. **先分流**：若用户其实是想**留住讨论成果**（只是不想再谈了），改走关闭路径——关闭会把决议写入 `ProjectSpec/` 后归档；作废会让本次讨论的结论永久停留在 SessionSpec 里。
 
@@ -152,7 +153,21 @@ python .doc-kit/cli/cli.py doc reindex
 4. 末尾汇总：「成功 N 条 / 失败 M 条；失败清单与建议」，失败项交用户决定重试或人工处理
 5. 写入结束后调 `python .doc-kit/cli/cli.py doc reindex` **全量重建 `.doc-kit/index.json`**：纯 AI 流程没有桌面 App 自动维护索引，若不重建，后续 `doc structure` / `doc read` 读到的目录与依赖结构会与磁盘脱节（新建文档缺失、`depends_on` 为空）。本步幂等，只要 Step 4 有写入就执行一次
 
-### Step 5：标终态并归档
+### Step 5：文档一致性复核（`doc lint` 门禁）
+
+Step 4 写入完成（含末尾 `doc reindex`）后、归档前，运行规格门禁复核本次写入结果：
+
+```bash
+python .doc-kit/cli/cli.py doc lint --summary
+```
+
+- `success=true` → 通过，进入 Step 6。
+- `success=false`（存在**未被 baseline 吸收**的 error）→ **阻断关闭**：把 `message` 与 `data.errors`（≤20 条）摘要展示给用户，请其修正后重跑本步；**不要**继续 Step 6。
+- **仅 `warning` 不阻断**。若项目已配置 `.doc-kit/lint.yaml` / baseline，存量违规已被吸收，`success` 只反映**本次写入新增**的问题。
+
+> 用 `--summary` 而非完整输出：未配 baseline 的项目可能有数百条 findings，完整 JSON 会灌进上下文；`--summary` 只给 `metrics` 与 error 摘要。
+
+### Step 6：标终态并归档
 
 1. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec，设置 `status: "closed"`、`closed_at`（ISO 8601）、`closed_reason`（**必填**，用户未提供时先询问，不编造）
 2. 调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存关闭状态

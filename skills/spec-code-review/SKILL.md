@@ -16,9 +16,9 @@ description: 当开发完成但关键变更尚未确认、或提交 PR 前要做
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.3` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.10.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.10.3`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -33,6 +33,7 @@ python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
 python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
+python .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]
 python .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]
 python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
 python .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin
@@ -72,7 +73,7 @@ Phase 3 — 确认（人主导）
   AI 并排展示代码 vs 文档 → 用户判断差异性质 → 收集判定
 
 Phase 4 — 收尾
-  更新评审锚点 → 汇总输出 → 写入报告 → 引导后续动作
+  更新评审锚点 → 汇总输出 → 写入报告 → 文档一致性检查（提示）→ 引导后续动作
 ```
 
 ---
@@ -322,7 +323,15 @@ python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'
 
 文件自动命名为 `code-review-{YYYYMMDD-HHMMSS}.md`，写入 `ReviewSpec/`。若 CLI 返回 `warnings`（缺建议段落），照提示补齐更佳。
 
-### Step 4-4：引导后续动作
+### Step 4-4：文档一致性检查（提示，非阻断）
+
+```bash
+python .doc-kit/cli/cli.py doc lint --summary
+```
+
+本次评审可能只改代码、不写 `ProjectSpec/`（报告写入 `ReviewSpec/`）。此步**仅提示**：若 `success=false`（存在未被 baseline 吸收的 error），把 `message` 与 `data.errors`（≤20 条）摘要作为「后续动作」的参考一并展示给用户，**不阻断评审、不改评审结论**。需要时可在「后续动作」里按能力库路由修正文档（见 Step 4-5）。
+
+### Step 4-5：引导后续动作
 
 ```
 代码评审完成。报告已写入 ReviewSpec/{filename}，评审锚点已更新（分支：{分支名}）。

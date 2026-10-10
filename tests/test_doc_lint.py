@@ -430,6 +430,46 @@ def test_exit_code_zero_on_warnings_only(tmp_path):
     assert json.loads(done.stdout)["success"] is True
 
 
+# ── --summary 精简输出 ─────────────────────────────────────
+
+def test_summary_omits_warnings_detail(tmp_path):
+    proj = _project(tmp_path)
+    _doc(proj, "ProjectSpec/business-context.md", "参见 C-101。")
+    payload = _lint(proj, None, True)
+    assert payload["success"] is True
+    data = payload["data"]
+    assert "warnings" not in data, "summary 模式不应带 warnings 明细"
+    assert data["metrics"]["warnings"] == 1
+    assert data["errors"] == []
+
+
+def test_summary_reports_errors_with_messages(tmp_path):
+    proj = _project(tmp_path)
+    _write(proj, "ProjectSpec/business-context.md", "# no frontmatter\n")
+    payload = _lint(proj, None, True)
+    assert payload["success"] is False
+    assert payload["data"]["errors"] and "message" in payload["data"]["errors"][0]
+    assert "warnings" not in payload["data"]
+
+
+def test_summary_truncates_errors_to_20(tmp_path):
+    proj = _project(tmp_path)
+    for i in range(25):
+        _write(proj, f"ProjectSpec/module-m{i}/architecture.md", "# no frontmatter\n")
+    payload = _lint(proj, None, True)
+    assert payload["success"] is False
+    assert payload["data"]["metrics"]["errors"] == 25
+    assert len(payload["data"]["errors"]) == 20
+    assert payload["data"].get("errors_truncated") is True
+
+
+def test_default_output_keeps_warnings_detail(tmp_path):
+    proj = _project(tmp_path)
+    _doc(proj, "ProjectSpec/business-context.md", "参见 C-101。")
+    payload = _lint(proj)
+    assert payload["data"]["warnings"], "默认输出必须保留 warnings 明细"
+
+
 # ── reindex 回报 skipped ───────────────────────────────────
 
 def test_reindex_reports_skipped(tmp_path):

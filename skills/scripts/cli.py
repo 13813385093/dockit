@@ -18,7 +18,7 @@ behaviour of the former MCP tools with identical validation logic.
     python .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
     python .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
     python .doc-kit/cli/cli.py [--root <项目目录>] doc reindex
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc lint [--baseline <file>]
+    python .doc-kit/cli/cli.py [--root <项目目录>] doc lint [--baseline <file>] [--summary]
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
     python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
@@ -83,7 +83,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.10.2"
+TOOLCHAIN_VERSION = "2026.10.3"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -161,6 +161,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.10.2",
         "date": "2026-10-10",
         "note": "新增 doc lint 规格完整性门禁（R1/R3/R4/R5/R7/R8/R9/R10/R11/R12，只读、支持 lint.yaml 配置与 JSON baseline）；doc reindex 回报 skipped；能力库 _index.md 补「权威分层与引用纪律」节"
+    },
+    {
+        "version": "2026.10.3",
+        "date": "2026-10-10",
+        "note": "doc lint 接入 spec-code-review(提示)/spec-close(阻断新增 error) 收尾；新增 doc lint --summary 精简输出；doc lint 从 CLI_ONLY 迁入 USAGE"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -1355,8 +1360,13 @@ def _lint_findings(project_root: Path, docs: list[_LintDoc], registry: dict[str,
     return findings, metrics
 
 
-def cmd_doc_lint(project_root: Path, baseline_path: str | None = None) -> str:
-    """规格完整性门禁（只读）。有 error → success=false、退出码 1；仅 warning → 退出码 0。"""
+def cmd_doc_lint(project_root: Path, baseline_path: str | None = None, summary: bool = False) -> str:
+    """规格完整性门禁（只读）。有 error → success=false、退出码 1；仅 warning → 退出码 0。
+
+    ``summary=True`` 时输出精简版（供技能收尾把结果读进 agent 上下文）：``data`` 只含
+    ``metrics`` 与最多 20 条 ``errors[].message``，**不含 warnings 明细**。默认（无
+    ``--summary``）保持完整输出（供 pre-commit / CI）。
+    """
     enabled, baseline_rel, baseline_configured, severities, overrides = _load_lint_config(project_root)
     if baseline_path:
         baseline_rel = baseline_path
@@ -1420,12 +1430,17 @@ def cmd_doc_lint(project_root: Path, baseline_path: str | None = None) -> str:
         "rules_off": rules_off,
         "baseline": {"path": baseline_rel, "missing": baseline_missing, "absorbed": baselined},
     }
+    if summary:
+        # 精简版：只带 metrics 与 errors 摘要（≤20），不灌 warnings 明细进 agent 上下文
+        data = {"metrics": metrics, "errors": errors[:20]}
+        if len(errors) > 20:
+            data["errors_truncated"] = True
 
-    summary = f"规格门禁：{len(errors)} error / {len(warnings)} warning（baseline 吸收 {baselined}）"
+    text = f"规格门禁：{len(errors)} error / {len(warnings)} warning（baseline 吸收 {baselined}）"
     if errors:
-        return _fail(summary, data=data, suggestions=[])
+        return _fail(text, data=data, suggestions=[])
     return _ok(
-        summary,
+        text,
         data=data,
         suggestions=["doc lint 只读；存量违规可用 .doc-kit/lint-baseline.json 吸收，配置见 .doc-kit/lint.yaml。"],
     )
@@ -3025,6 +3040,7 @@ def build_parser() -> argparse.ArgumentParser:
     doc_sub.add_parser("reindex", help="全量重建 .doc-kit/index.json（扫描 ProjectSpec/ 的 frontmatter）")
     doc_lint_p = doc_sub.add_parser("lint", help="规格完整性门禁（只读；有 error 时退出码 1）")
     doc_lint_p.add_argument("--baseline", default=None, help="baseline JSON 路径（默认取 .doc-kit/lint.yaml 的 lint_baseline）")
+    doc_lint_p.add_argument("--summary", action="store_true", help="精简输出：仅 metrics + ≤20 条 errors 摘要，不含 warnings 明细（供技能收尾）")
 
     review = sub.add_parser("review", help="代码评审锚点与报告")
     review_sub = review.add_subparsers(dest="command", required=True)
@@ -3147,7 +3163,7 @@ def main(argv: list[str] | None = None) -> None:
             elif args.command == "reindex":
                 _emit(cmd_doc_reindex(project_root))
             elif args.command == "lint":
-                _emit(cmd_doc_lint(project_root, args.baseline))
+                _emit(cmd_doc_lint(project_root, args.baseline, args.summary))
         elif args.group == "review":
             if args.command == "anchor-get":
                 _emit(cmd_review_anchor_get(project_root, args.branch))
