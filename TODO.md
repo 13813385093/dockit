@@ -115,3 +115,15 @@ python -m pytest tests/                                 # 5 全量测试
   停留在旧版本的项目会在 `tool status` 看到"落后 8 版 + 8 条变更说明"。
 - **建议方案**：新增 `doc-kit sync <项目> [--agent-dir <目录>]`，一次刷新两侧并打印版本差异摘要；
   GUI 检测到项目 `toolchain.json` 版本与程序版本不一致时给出提示。
+
+### `init` 让新项目初始化即触发约 21 个 R7（模板 frontmatter 占位未替换）
+
+- **现象**：`doc-kit init <新项目>` 后立即 `doc lint`，得约 21 error、**全为 R7**。
+  `init_project.generate_full_file`（`src/app/engine/commands/init_utils.py:63`）只替换 `$now`，
+  **不像 `doc new` 那样替换** `$author` / `$module` / `$feature`；且模板的**可选 frontmatter 块保留了占位符**。
+  实测：7 篇顶层文档各中 `<替代文档>` / `<所属模块>` / `$author`。（回执 §9）
+- **影响**：新项目"**初始化即红**"，门禁首次体验为失败。非某项目特有；已含 `ProjectSpec/` 的项目走"跳过骨架"路径、不触发。
+- **触发条件**：新建项目后首次运行 `doc lint`。
+- **建议方案**：① `init` 像 `doc new` 一样替换 `author=""`（可选块未用时留空或不出现）；或
+  ② 模板不携带可选 frontmatter 块的占位符。
+  （被否：让用户手工清理——已验证会漏。）
