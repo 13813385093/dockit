@@ -9,7 +9,7 @@
 
 > **唯一权威源**：《面向AI时代的新型项目文档体系设计与实施指南》（下称指南）是本体系的唯一权威源（Single Source of Truth）。本目录的能力文件是指南的**落笔展开**（把指南的章节结构、写作边界与格式规范转成写前须知），`.doc-kit/templates/<文件名>`（开发态源码位置：`src/app/templates/`）是指南的**机器骨架**（`doc new` 复制后填充）。三者不一致时**一律以指南为准**，并同步修订能力文件与模板。
 
-2. **加载**：`read_file doc-capabilities/<doc_type>.md`。
+2. **加载**：读取 `doc-capabilities/<doc_type>.md`。
 3. **执行**：
    - 更新已有章节 → `doc update-section <reference>`
    - 新增章节 → `doc add-section <reference> '<标题>' [--level sibling|child]`

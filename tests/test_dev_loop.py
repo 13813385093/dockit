@@ -192,6 +192,18 @@ class TestDevPlanTasks:
         sec2 = next(s for s in again["data"]["sections"] if s["heading"] == "2. 约束整合")
         assert "C-101" in sec2["content"]
 
+    def test_plan_update_empty_content_rejected(self, tmp_project, cli_env):
+        """空 content 会清空 plan 段落，应拒绝且段落不变（与 doc update-section 同口径）"""
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        before = _parse(cli_env.dev_plan_read())
+        sec_before = next(s for s in before["data"]["sections"] if s["heading"] == "2. 约束整合")
+        upd = _parse(cli_env.dev_plan_update_section("plan.md#2. 约束整合", "   "))
+        assert upd["success"] is False
+        after = _parse(cli_env.dev_plan_read())
+        sec_after = next(s for s in after["data"]["sections"] if s["heading"] == "2. 约束整合")
+        assert sec_after["content"] == sec_before["content"]
+
     def test_task_set_refreshes_plan_table(self, tmp_project, cli_env):
         """tasks.json 是唯一数据源，plan.md §3 由 CLI 自动渲染。"""
         _make_project(tmp_project)

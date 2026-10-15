@@ -10,7 +10,7 @@
 
 **git 操作**一律用 `bash` 执行（CLI 不执行 git）：`git branch` / `git checkout` / `git rev-parse` / `git diff`。仅**主代理**执行 git，子代理禁止。
 
-**CLI 容灾 Fallback（紧急直读）**：若 `dev task list` / `dev status` 因 CLI 异常（非 JSON 输出、超时或 Python 报错）**连续失败 2 次**，可降级为**直接只读** `DevSpec/active/<sid>/tasks.json` 与 `dev-spec.json` 解析断点（`read_file`，仅限当前活跃会话目录，且必须遵守"禁止写"原则）。此降级必须在 `dev notes append` 中记录"CLI Fallback 触发"。**写操作仍必须走 CLI**，CLI 写失败则停止并提示用户检查 doc-kit 安装。
+**CLI 容灾 Fallback（紧急直读）**：若 `dev task list` / `dev status` 因 CLI 异常（非 JSON 输出、超时或 Python 报错）**连续失败 2 次**，可降级为**直接只读** `DevSpec/active/<sid>/tasks.json` 与 `dev-spec.json` 解析断点（仅限当前活跃会话目录，且必须遵守"禁止写"原则）。此降级必须在 `dev notes append` 中记录"CLI Fallback 触发"。**写操作仍必须走 CLI**，CLI 写失败则停止并提示用户检查 doc-kit 安装。
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 

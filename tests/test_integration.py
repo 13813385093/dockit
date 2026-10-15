@@ -283,6 +283,16 @@ class TestUpdateSection:
         # 文件未改变
         assert (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8") == original
 
+    def test_update_empty_content_rejected(self, tmp_project, cli_env):
+        """空 content 会整段清空章节，应拒绝且文件不变（防止误删）"""
+        make_md(tmp_project, "ProjectSpec/doc.md",
+                "---\ndoc_type: test\n---\n# Doc\n\n## X\nkeep-me")
+        original = (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8")
+        for blank in ("", "   ", "\n"):
+            result = json.loads(cli_env.update_section("doc.md#X", blank))
+            assert result["success"] is False, f"空正文 {blank!r} 应被拒绝"
+            assert (tmp_project / "ProjectSpec" / "doc.md").read_text(encoding="utf-8") == original
+
     def test_update_writes_frontmatter(self, tmp_project, cli_env):
         """写入后 frontmatter 应完整保留（版本号为三段式 1.0.0）"""
         make_md(tmp_project, "ProjectSpec/doc.md",

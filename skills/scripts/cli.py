@@ -83,7 +83,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.10.3"
+TOOLCHAIN_VERSION = "2026.10.4"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -166,6 +166,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.10.3",
         "date": "2026-10-10",
         "note": "doc lint 接入 spec-code-review(提示)/spec-close(阻断新增 error) 收尾；新增 doc lint --summary 精简输出；doc lint 从 CLI_ONLY 迁入 USAGE"
+    },
+    {
+        "version": "2026.10.4",
+        "date": "2026-10-15",
+        "note": "doc/dev plan update-section 拒绝空 --content（防止误删段落）；技能前言与能力库中 read_file/write_file 改为与 agent 无关的「直接读写/直接读取」措辞"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -635,6 +640,13 @@ def cmd_doc_read(project_root: Path, doc_path: str) -> str:
 
 def cmd_doc_update_section(project_root: Path, reference: str, content: str) -> str:
     """更新文档中指定段落的正文内容，自动写回文件。"""
+    # 空正文会把段落内容整段清空（等同于误删章节）——这是调用方最易犯的错，
+    # 直接拒绝，避免一次失误就静默抹掉知识资产；要删段落请走 doc remove-section。
+    if not content.strip():
+        return _fail(
+            "ERROR [update_section.empty_content] --content 不能为空，已拒绝修改（空正文会清空该章节）。"
+            "修复：传入非空 --content；如需删除段落请改用 doc remove-section。"
+        )
     file_rel = reference.split("#")[0]
     doc_rel = file_rel if file_rel.startswith("ProjectSpec/") else f"ProjectSpec/{file_rel}"
     safe_path = safe_join(project_root, doc_rel)
@@ -2390,6 +2402,12 @@ def cmd_dev_plan_read(project_root: Path) -> str:
 
 def cmd_dev_plan_update_section(project_root: Path, reference: str, content: str) -> str:
     """更新 plan.md 指定段落正文。"""
+    # 与 doc update-section 同口径：空正文会清空段落，直接拒绝而非静默覆盖。
+    if not content.strip():
+        return _fail(
+            "ERROR [dev_plan.empty_content] --content 不能为空，已拒绝修改（空正文会清空该段落）。"
+            "修复：传入非空 --content。"
+        )
     plan_path, err = _require_dev_plan(project_root)
     if err:
         return _fail(err)
