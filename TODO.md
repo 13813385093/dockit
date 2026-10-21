@@ -27,7 +27,7 @@
 
 ```bash
 # 1 改内容 → 2 递增 cli.py 的 TOOLCHAIN_VERSION（YYYY.MM.N）
-python tests/render_skill_preamble.py                   # 3 把新版本注入 7 份 SKILL.md
+python tests/render_skill_preamble.py                   # 3 把新版本注入 8 份 SKILL.md
 python tests/check_toolchain_version.py --update --note "<一句变更说明>"   # 4 更新指纹 + 追加版本历史
 python -m pytest tests/                                 # 5 全量测试
 ```
@@ -44,86 +44,3 @@ python -m pytest tests/                                 # 5 全量测试
 ---
 
 ## 待办
-
-### 升级时不会清理已下线的技能副本（9→7 合并后需手工删）
-
-- **现象**：`copy_skills()`（`src/app/engine/commands/init_utils.py:180`）与
-  `_cmd_install_skills()`（`src/app/main.py:68`）**都只 `glob("spec-*")` + `copy2`，不含任何删除**；
-  同文件里 `LEGACY_TEMPLATE_FILES` / `LEGACY_CAPABILITY_FILES` 两套"已下线文件"清理清单
-  **没有对应的技能版本**。而 `tool status` 只按 `.doc-kit/toolchain.json` 里记录的清单核对，
-  **多出来的陈旧文件它看不见**（只会报 `mismatched` / `missing`）。
-- **影响**：2026-09 把 9 份技能合并为 7 份后：
-  ① `<项目根>/.doc-kit/skills/` 里会残留 `spec-load/`、`spec-abort/`——**任何直接读这个目录的 agent 都会看到两份已作废的技能**；
-  ② 若 agent 侧是**复制**式安装（`install-skills <目录>` 或人工搬运），陈旧副本还会长期存在，并与合并后的技能给出**互相矛盾**的指令
-  （旧 `spec-start` 写"已有活跃议题改走 spec-load 续接"、旧 `spec-close` 写"不要成果请改用 spec-abort"）。
-- **触发条件**：每次发生技能下线、合并或改名时。（下次仍会出现，不是一次性问题。）
-- **现状缓解**：agent 侧改为**指向** `<项目根>/.doc-kit/skills`（目录软链，或 DSH 的 `customSkillDirs`），
-  而不是持有副本——此时"源里删掉即消失"，第 ② 类影响不存在；第 ① 类仍需手工删一次。
-- **建议方案**：加 `LEGACY_SKILL_DIRS = ("spec-load", "spec-abort")`（按版本累积），
-  由 `copy_skills()` 清理 `<项目根>/.doc-kit/skills/` 下的已下线目录；`_cmd_install_skills()` 同样清理，
-  给仍走复制式的场景兜底。
-  （被否：只靠文档要求人工删除——已验证会漏。）
-
-### 技能正文里 CLI 调用的**选项级**正确性不在检具覆盖内
-
-- **现象**：往 `skills/spec-dev-loop/SKILL.md` 正文写入一个不存在的选项
-  （`` `python .doc-kit/cli/cli.py dev task update T1 --status pending --bogus-flag x` ``）后，
-  `pytest tests/` 全绿——唯一失败的是版本指纹守卫，与选项无关。
-- **覆盖边界**：`check_skill_sync` 只校验**命令路径**（正则最多匹配"命令组 + 2 个单词"）；
-  `test_cli_usage_contract` 只校验 **USAGE 表**，而 USAGE 表只覆盖技能**声明**的工具清单，
-  正文里的具体调用不在其中。
-- **影响**：技能正文写错选项无人发现，AI 会照着调用并失败。属「会导致错误」一级。
-- **触发条件**：下次在技能正文里新增或修改 CLI 调用时。
-- **建议方案**：把校验对象从 USAGE 表扩展到"全部 SKILL.md 正文里的 `cli.py` 调用"——
-  抽出每个调用用到的选项，逐个对照真实 argparse 树。
-  （被否：暂无可否方案；成本不高，只是目前没做。）
-
-### `init` 不生成 `.gitignore`（暂缓）
-
-- **现象**：`init` 不写 `.gitignore`；`.doc-kit/` 一旦被 `git add -A` 提交，实测
-  `git checkout <分支>` 会因"本地修改将被检出操作覆盖"直接失败，并污染 `git diff --stat`。
-- **影响**：① 分支切换失败；② `spec-dev-loop` 验收清单第 2 项（只改了声明的文件；排除规则只有
-  `DevSpec/` 与 `SessionSpec/`）会把 `.doc-kit/` 的改动当成"改了多余文件"而**误判不合格**——
-  即验收闸门出现假报警。
-- **现状缓解**：`spec-smart-git` 的忽略检查清单已含工具状态目录。
-- **触发条件**：实际遇到上述任一失败时。
-- **暂缓理由（2026-09-16 决定）**：`.gitignore` 本就该由人掌握，`.doc-kit/` 也不该提交进仓库；
-  让开发人员自己掌握没有坏处。
-- **建议方案**（真要做时）：优先改 `spec-dev-loop` 验收清单第 2 项，补 `':(exclude).doc-kit/'`
-  ——它不依赖用户是否记得忽略，比让 `init` 写 `.gitignore` 更稳。
-  （被否：让 `init` 生成/追加 `.gitignore`——把本该由人掌握的东西自动化。）
-
-### 数据格式版本 + 通用迁移表（暂缓）
-
-- **现象**：工具链有了版本，但**数据格式**（`tasks.json`、`*.spec.json`、`plan.md` 章节名）没有版本；
-  目前只有一处手写兼容：`DEV_LEGACY_TASK_STATUSES` 把 `in-progress/unit-green/fixing` 映射到
-  `implementing/tested/rejected`（读取时映射，写操作落盘迁移）。
-- **影响**：结构再变时会重演"在途会话死锁"——旧数据配新 CLI 无法推进，`task update` 报非法迁移、
-  `task set` 补救又要求新字段。属「会导致错误」一级。
-- **触发条件**：下一次改动上述任一数据结构时。
-- **暂缓理由**：现在写迁移表等于猜；届时变更形状是已知的，建表才有意义。
-- **备注**：2026-09 的 `spec write` 未知字段校验刻意做成"拒绝**新增**未知字段、放行磁盘上已存在的"，
-  正是按这条的教训办事——不让在途会话因为新校验被卡住。
-- **建议方案**：各数据文件带 `schema_version`，CLI 读取时按迁移表升级并在输出中提示已迁移。
-
-### 工具链分发：一条命令同步（暂缓）
-
-- **现象**：同步仍是两步——`doc-kit init <项目根>`（只刷新 `.doc-kit/`，不动 `ProjectSpec/`）
-  + `doc-kit install-skills <agent 技能目录>`；已验证有效，但用户不知道要跑。
-- **影响**：不便（不是错误）：版本落后时只刷新了一侧，技能与 CLI 不配套。
-- **触发条件**：下游项目变多，或同步动作变得频繁。参考量级：2026-09-16 单日发布 8 个版本，
-  停留在旧版本的项目会在 `tool status` 看到"落后 8 版 + 8 条变更说明"。
-- **建议方案**：新增 `doc-kit sync <项目> [--agent-dir <目录>]`，一次刷新两侧并打印版本差异摘要；
-  GUI 检测到项目 `toolchain.json` 版本与程序版本不一致时给出提示。
-
-### `init` 让新项目初始化即触发约 21 个 R7（模板 frontmatter 占位未替换）
-
-- **现象**：`doc-kit init <新项目>` 后立即 `doc lint`，得约 21 error、**全为 R7**。
-  `init_project.generate_full_file`（`src/app/engine/commands/init_utils.py:63`）只替换 `$now`，
-  **不像 `doc new` 那样替换** `$author` / `$module` / `$feature`；且模板的**可选 frontmatter 块保留了占位符**。
-  实测：7 篇顶层文档各中 `<替代文档>` / `<所属模块>` / `$author`。（回执 §9）
-- **影响**：新项目"**初始化即红**"，门禁首次体验为失败。非某项目特有；已含 `ProjectSpec/` 的项目走"跳过骨架"路径、不触发。
-- **触发条件**：新建项目后首次运行 `doc lint`。
-- **建议方案**：① `init` 像 `doc new` 一样替换 `author=""`（可选块未用时留空或不出现）；或
-  ② 模板不携带可选 frontmatter 块的占位符。
-  （被否：让用户手工清理——已验证会漏。）
