@@ -83,7 +83,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.10.4"
+TOOLCHAIN_VERSION = "2026.10.5"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -95,7 +95,7 @@ TOOLCHAIN_VERSION = "2026.10.4"
 新技能配旧 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（如 `implemented_in`），
 命令报"已保存"但关键信息消失。为此：
 
-- `tests/render_skill_preamble.py` 把本常量注入 9 份 SKILL.md 的前言；
+- `tests/render_skill_preamble.py` 把本常量注入 8 份 SKILL.md 的前言；
 - `init` 把本版本与各副本的 sha256 写入 `.doc-kit/toolchain.json`；
 - `tool status` 比对"技能声明的版本 / 项目记录的版本 / 当前 CLI 版本"，
   并校验副本哈希，从而把错配从"静默"变成"显式提示"。
@@ -171,6 +171,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.10.4",
         "date": "2026-10-15",
         "note": "doc/dev plan update-section 拒绝空 --content（防止误删段落）；技能前言与能力库中 read_file/write_file 改为与 agent 无关的「直接读写/直接读取」措辞"
+    },
+    {
+        "version": "2026.10.5",
+        "date": "2026-10-21",
+        "note": "新增 spec-code-smell（快速/深入双模式、源文件分类不绑定 src/、范围摘要）与 smell-capabilities；spec-code-review 收尾提示带显式范围"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -295,7 +300,7 @@ def _active_dev_loop_hint(project_root: Path) -> str:
     以为什么都没在跑（`TODO.md` §A2）。
 
     修在这里而不是修在某份技能里：`spec status` 的职责本就是"报告现在什么在跑"，
-    放进 CLI 则 9 份技能同时受益，也不需要任何技能越界去读别人的状态。只读内存，不写盘。
+    放进 CLI 则 8 份技能同时受益，也不需要任何技能越界去读别人的状态。只读内存，不写盘。
     """
     try:
         session = _detect_active_dev_session(project_root)

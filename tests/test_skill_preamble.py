@@ -5,7 +5,7 @@
 正文实际用到的命令自动派生。本测试固定三件事：
 
   1. 仓库现状 == 重新生成的结果（防止有人手改前言后忘记重生成）；
-  2. 9 份技能的前言共性文字收敛为 **3 个变体**（session / dev / git）；
+  2. 8 份技能的前言共性文字收敛为 **4 个变体**（session / dev / git / smell）；
   3. **声明 = 实用**：preceding 里声明的每条命令都在正文里真正用到，反之亦然。
 """
 from __future__ import annotations
@@ -31,8 +31,8 @@ class TestGeneration:
             f"{name} 的前言与共享片段不一致，请运行 python tests/render_skill_preamble.py"
         )
 
-    def test_variants_are_three(self):
-        """共性文字收敛为 3 组（工具清单各行技能不同，比对时剔除）。"""
+    def test_variants_are_four(self):
+        """共性文字收敛为 4 组（工具清单各行技能不同，比对时剔除）。"""
         groups: dict[str, list[str]] = {}
         for name in R.VARIANTS:
             text = (R.SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
@@ -41,7 +41,7 @@ class TestGeneration:
             seg = re.sub(r"^python \.doc-kit/cli/cli\.py.*$\n?", "", seg, flags=re.M)
             seg = seg.replace("cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录\n", "")
             groups.setdefault(seg.strip(), []).append(name)
-        assert len(groups) == 3, f"前言变体应为 3 组，实际 {len(groups)} 组：{list(groups.values())}"
+        assert len(groups) == 4, f"前言变体应为 4 组，实际 {len(groups)} 组：{list(groups.values())}"
 
     def test_hand_edit_is_detected(self):
         """反向验证：手工改动前言必须被生成器发现。"""
@@ -85,7 +85,7 @@ class TestToolchainVersion:
 
     @pytest.mark.parametrize("name", sorted(R.VARIANTS))
     def test_skills_declare_current_version(self, name):
-        """9 份技能里注入的版本必须等于 cli.py 的 TOOLCHAIN_VERSION。"""
+        """8 份技能里注入的版本必须等于 cli.py 的 TOOLCHAIN_VERSION。"""
         text = (R.SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
         assert f"`{R.toolchain_version()}`" in text
 
@@ -102,7 +102,7 @@ class TestSharedSourceOfTruth:
             assert ">nul" not in path.read_text(encoding="utf-8"), path
 
     def test_output_convention_single_source(self):
-        """输出约定只写在 output-convention.md 里，9 份技能按同一份文字生成。"""
+        """输出约定只写在 output-convention.md 里，8 份技能按同一份文字生成。"""
         convention = (R.SHARED / "output-convention.md").read_text(encoding="utf-8").strip()
         first_line = convention.splitlines()[0]
         for name in R.VARIANTS:
@@ -110,6 +110,6 @@ class TestSharedSourceOfTruth:
             assert first_line in text, f"{name} 缺少共享输出约定"
 
     def test_git_skills_have_three_layer_boundary(self):
-        for name in ("spec-smart-git", "spec-code-review"):
+        for name in ("spec-smart-git", "spec-code-review", "spec-code-smell"):
             text = (R.SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
             assert "三层边界" in text and "源码、diff、工作区文件" in text

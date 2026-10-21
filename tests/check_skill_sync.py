@@ -24,10 +24,10 @@ if str(SCRIPTS_DIR) not in sys.path:
 GROUP_RE = re.compile(r"cli\.py[ \t]+(tool|spec|doc|review|dev)((?:[ \t]+[a-z][a-z-]*){1,2})")
 
 # 技能名的下划线写法（spec_start）是 Python 函数名 / 旧 MCP 工具名的写法，
-# 写进 SKILL.md 正文会让 AI 找不到对应技能。只匹配 9 个真实技能名，避免误伤
+# 写进 SKILL.md 正文会让 AI 找不到对应技能。只匹配 10 个真实/历史技能名，避免误伤
 # spec_write / spec_read 这类 CLI 命令名与代码符号。
 SKILL_NAME_RE = re.compile(
-    r"\bspec_(start|load|pause|close|abort|archive|dev_loop|smart_git|code_review)\b"
+    r"\bspec_(start|load|pause|close|abort|archive|dev_loop|smart_git|code_review|code_smell)\b"
 )
 
 

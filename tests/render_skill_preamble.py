@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SKILL.md 前言生成器 / 校验器（共享前言的单一事实源）。
 
-背景：9 份 SKILL.md 顶部那段"最高优先级"前言（CLI 纪律 / 能力库例外 / 三层边界 /
+背景：8 份 SKILL.md 顶部那段"最高优先级"前言（CLI 纪律 / 能力库例外 / 三层边界 /
 前置条件 / 工具清单 / 输出约定）原本各写一遍，已经漂移出 9 个版本——同一个坏命令
 （`>nul 2>&1`）在两份技能里各留一份，输出约定的措辞有三种，工具清单靠人工对齐。
 
@@ -14,7 +14,7 @@
   3. 生成结果**内联**写回 SKILL.md（技能文件仍自包含，init/install 部署方式不变）。
 
 用法：
-    python tests/render_skill_preamble.py            # 重新生成全部 9 份
+    python tests/render_skill_preamble.py            # 重新生成全部 8 份
     python tests/render_skill_preamble.py --check    # 只校验（CI 用；有漂移返回 1）
 
 正文里的特例可用注释标记：
@@ -43,6 +43,7 @@ VARIANTS = {
     "spec-dev-loop": "dev",
     "spec-smart-git": "git",
     "spec-code-review": "git",
+    "spec-code-smell": "smell",
 }
 
 # 命令 → 规范用法行（单一事实源；新增命令必须在此登记，否则生成器报错）

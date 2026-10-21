@@ -16,9 +16,9 @@ description: 当开发完成但关键变更尚未确认、或提交 PR 前要做
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.4` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.10.5` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.10.4`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.10.5`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -126,6 +126,8 @@ git cat-file -e <锚点>^{commit}
 - 校验**通过** → 继续 Step 1-3。
 
 > 锚点按分支记录（`review anchor-set` 会自动带上当前分支），多分支并行评审互不覆盖；也可用 `--branch <分支名>` 显式指定。
+
+> **记录范围**：本步骤确认的起点记为 `review_from`；Step 4-5 的「补齐代码异味检查」提示需要它。不要等到锚点推进后再回头找旧范围。
 
 ### Step 1-3：获取 git 变更
 
@@ -243,7 +245,7 @@ C. **误报** — 代码与文档一致，AI 判断有误
 ### Step 4-1：更新评审锚点
 
 ```bash
-git rev-parse HEAD
+git rev-parse HEAD   # 记为 review_to（= HEAD），供 Step 4-5 的 smell 范围使用
 python .doc-kit/cli/cli.py review anchor-set <commit_hash>
 ```
 
@@ -348,5 +350,6 @@ python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<�
 ``` |
 | 记入议题追踪 | 用 `spec-start` 开启新议题（注意：创建议题会**先确认本次要讨论的议程**，议题名与议程需用户确认） |
 | 仅留档 | 无需额外动作，报告已落 `ReviewSpec/` |
+| 💡 补齐代码异味检查（可选） | 本轮只做了文档一致性复核。若需同时检查代码形态，可跑 `/spec-code-smell <review_from>..<review_to>`；该技能只读、不写报告、不改锚点。 |
 
 > 改文档是不可逆的知识资产变更：未经用户确认不要写入；文档间归属判断以 `_index.md` §2/§3 为准，能力文件的「行文规则·禁止」只作落笔前的边界提醒。

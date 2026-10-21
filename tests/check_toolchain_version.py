@@ -27,7 +27,7 @@ CLI"的错配重新变成静默问题。
                       skills/guidance、src/app/templates 任意一处
     2. 递增版本    —— skills/scripts/cli.py 的 TOOLCHAIN_VERSION（格式 YYYY.MM.N）
     3. 重生成前言  —— python tests/render_skill_preamble.py
-                      （把新版本注入 9 份 SKILL.md；漏做则 --check 失败）
+                      （把新版本注入 8 份 SKILL.md；漏做则 --check 失败）
     4. 更新指纹    —— python tests/check_toolchain_version.py --update
                       （版本未递增会被拒绝写入）
     5. 全绿再提交  —— python -m pytest tests/

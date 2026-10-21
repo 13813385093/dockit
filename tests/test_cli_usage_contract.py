@@ -6,7 +6,7 @@
 而 USAGE 表本身不等于真实 CLI。本文件补上这一环。
 
 `tests/render_skill_preamble.py` 的 USAGE 是"命令 → 规范用法行"的单一事实源，
-会被派生注入全部 9 份 SKILL.md 的工具清单。它一旦与真实 CLI 漂移，
+会被派生注入全部 8 份 SKILL.md 的工具清单。它一旦与真实 CLI 漂移，
 AI 就会照着错的用法调用。
 
 检查五项：

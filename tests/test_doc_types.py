@@ -373,6 +373,14 @@ class TestInitProject:
         assert not (set(files) & LEGACY_FILENAMES)
         assert all(p.read_text(encoding="utf-8").strip() for p in caps.glob("*.md"))
 
+    def test_doc_kit_smell_capabilities_copied(self, initialized):
+        """init 必须把 smell-capabilities 一并复制（spec-code-smell 的运行前提）。"""
+        caps = initialized / ".doc-kit" / "skills" / "guidance" / "smell-capabilities"
+        files = sorted(p.name for p in caps.glob("*.md"))
+        assert "_index.md" in files
+        assert len(files) == 9  # _index + 8 个能力文件
+        assert all(p.read_text(encoding="utf-8").strip() for p in caps.glob("*.md"))
+
     def test_registry_yaml_written_has_15_types(self, initialized):
         data = yaml.safe_load(
             (initialized / ".doc-kit" / "registry.yaml").read_text(encoding="utf-8")

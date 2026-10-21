@@ -44,7 +44,7 @@ class TestVersionConstant:
         assert re.match(r"^\d{4}\.\d{2}\.\d+$", cli.TOOLCHAIN_VERSION)
 
     def test_skills_declare_same_version(self):
-        """9 份技能注入的版本必须来自 cli.py 的常量（单一事实源）。"""
+        """8 份技能注入的版本必须来自 cli.py 的常量（单一事实源）。"""
         for md in sorted((REPO / "skills").glob("spec-*/SKILL.md")):
             text = md.read_text(encoding="utf-8")
             assert f"`{cli.TOOLCHAIN_VERSION}`" in text, md
@@ -189,6 +189,7 @@ class TestManifest:
         assert ".doc-kit/cli/cli.py" in files
         assert ".doc-kit/skills/spec-dev-loop/SKILL.md" in files
         assert ".doc-kit/skills/guidance/doc-capabilities/_index.md" in files
+        assert ".doc-kit/skills/guidance/smell-capabilities/_index.md" in files
         assert any(k.startswith(".doc-kit/templates/") for k in files)
         # 清单自身与 __pycache__ 不入清单
         assert ".doc-kit/toolchain.json" not in files
