@@ -6,7 +6,7 @@ parsing and path-resolution helpers. Pure logic, no MCP dependency.
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from frontmatter import FrontmatterParser
@@ -14,42 +14,115 @@ from index import IndexEntry
 
 
 def safe_join(root: Path, sub_path: str) -> Path | None:
-    """Safely join a sub path onto root, rejecting path traversal escapes."""
+    """Safely join a sub path onto root, rejecting path traversal escapes.
+
+    按**路径段**判定归属，而不是裸字符串前缀：`<root>-evil/x.md` 与 `<root>`
+    前缀相同，但它不是 root 的子路径，裸 `startswith` 会放行。该函数同时是
+    读与写的边界（`doc read` 的候选兜底、`doc *-section` 的写目标、spec 的
+    目标文档路径校验），放行即等于把写入引到 ProjectSpec/ 之外。
+    """
     full = (root / sub_path).resolve()
     root_resolved = root.resolve()
-    if not str(full).startswith(str(root_resolved)):
+    if full != root_resolved and root_resolved not in full.parents:
         return None
     return full
 
 
-def _find_doc(project_root: Path, doc_path: str) -> Path | None:
-    """Locate a document under ProjectSpec/.
+#: 文档解析命中方式（对外暴露为 ``data.resolved_via``，让调用方判断"这次是不是靠猜"）
+RESOLVED_VIA_EXACT = "exact"
+RESOLVED_VIA_SUFFIX_ADDED = "suffix_added"
+RESOLVED_VIA_PATH_SUFFIX = "path_suffix"
+RESOLVED_VIA_BASENAME = "basename"
 
-    doc_path may carry a "ProjectSpec/" prefix or not; it may be a path
-    fragment (module-Xxx/arch.md) or a bare file name (first match wins).
+
+@dataclass
+class DocResolution:
+    """一次 ``doc read <path>`` 的解析结果。
+
+    三态互斥，由 ``cmd_doc_read`` 翻译成不同错误码：
+
+    - ``path`` 非空 → 命中，``via`` 说明命中方式；
+    - ``candidates`` 非空 → 多候选，**绝不静默取首个**（R1-b）；
+    - 两者皆空 → 无候选（``invalid`` / ``is_dir`` 给出更具体的失败原因）。
+    """
+    path: Path | None = None
+    via: str = ""
+    candidates: list[Path] = field(default_factory=list)
+    invalid: bool = False
+    is_dir: bool = False
+
+
+def _md_files_under(docs_root: Path) -> list[Path]:
+    return [f for f in docs_root.rglob("*.md") if f.is_file()]
+
+
+def resolve_doc(project_root: Path, doc_path: str) -> DocResolution:
+    """把调用方给的路径片段解析成 ProjectSpec/ 下的唯一文档。
+
+    解析顺序（R1-a，前一步命中即返回）：
+
+    1. ``exact``        —— 原样路径精确命中；
+    2. ``suffix_added`` —— 未带 ``.md`` 时补后缀再精确命中（本次修复的核心：
+       以前缺这一步，合法的"省略后缀"写法必然掉进按文件名兜底）；
+    3. ``path_suffix``  —— 含 ``/`` 的片段按**路径段**后缀匹配唯一文件；
+    4. ``basename``     —— 裸文件名，仅当全库同名唯一时兜底。
+
+    任何一步出现多个候选一律返回候选清单，由调用方报 ``doc_read.ambiguous``。
+    **丢弃目录信息去猜**（旧实现的第 3 步）是本次缺陷的根因，已彻底移除：
+    含 ``/`` 的片段在第 3 步之后不会退化到 ``basename``，否则
+    ``module-context/architecture`` 会再次静默解析到别的模块。
     """
     docs_root = project_root / "ProjectSpec"
-    if not docs_root.exists():
-        return None
+    if not docs_root.is_dir():
+        return DocResolution()
 
-    search_path = doc_path
-    if search_path.startswith("ProjectSpec/"):
-        search_path = search_path[len("ProjectSpec/"):]
+    search = (doc_path or "").strip().replace("\\", "/")
+    if search.startswith("ProjectSpec/"):
+        search = search[len("ProjectSpec/"):]
+    search = search.lstrip("/")
+    if search.startswith("./"):
+        search = search[2:]
+    if not search or search.endswith("/"):
+        return DocResolution(invalid=not search, is_dir=bool(search))
 
-    target = safe_join(docs_root, search_path)
-    if target and target.exists() and target.is_file():
-        return target
+    target = safe_join(docs_root, search)
+    if target is None:
+        # 路径逃出 ProjectSpec/：不再走任何兜底（旧实现会靠 basename 捞回来）
+        return DocResolution(invalid=True)
+    if target.is_file():
+        return DocResolution(path=target, via=RESOLVED_VIA_EXACT)
+    if target.is_dir():
+        # 目录不是文档。显式报错，避免后缀匹配把整个目录的子文档匹配成"多候选"
+        return DocResolution(is_dir=True)
 
-    for f in sorted(docs_root.rglob(search_path)):
-        if f.is_file():
-            return f
+    has_suffix = search.endswith(".md")
+    if not has_suffix:
+        with_suffix = safe_join(docs_root, search + ".md")
+        if with_suffix is not None and with_suffix.is_file():
+            return DocResolution(path=with_suffix, via=RESOLVED_VIA_SUFFIX_ADDED)
 
-    name = Path(search_path).name
-    for f in sorted(docs_root.rglob("*.md")):
-        if f.name == name or f.stem == Path(search_path).stem:
-            return f
+    needle = (search[:-3] if has_suffix else search).strip("/")
+    if not needle:
+        return DocResolution()
 
-    return None
+    files = sorted(_md_files_under(docs_root))
+    if "/" in needle:
+        # 路径段对齐的后缀匹配：「/a/b」不会误中「x/a/b-notes」
+        marker = "/" + needle
+        candidates = [
+            f for f in files
+            if ("/" + f.relative_to(docs_root).as_posix()[:-3]).endswith(marker)
+        ]
+        via = RESOLVED_VIA_PATH_SUFFIX
+    else:
+        candidates = [f for f in files if f.name == needle + ".md"]
+        via = RESOLVED_VIA_BASENAME
+
+    if len(candidates) == 1:
+        return DocResolution(path=candidates[0], via=via)
+    if candidates:
+        return DocResolution(candidates=candidates)
+    return DocResolution()
 
 
 def _scan_level2_headings(project_root: Path | None, doc_rel_path: str) -> list[str]:

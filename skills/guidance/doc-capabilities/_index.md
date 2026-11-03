@@ -93,13 +93,17 @@
 | 工具 | 用途 |
 |------|------|
 | `doc structure` | 查看项目全部文档：路径 / 层级 / 章节标题 / depends_on（定位目标、判断新增 vs 更新的依据） |
-| `doc read <path>` | 读取单篇文档的段落级内容，返回各段落 reference（供 update / remove-section 引用） |
+| `doc read <path>` | 读取单篇文档的段落级内容，返回各段落 reference（供 update / remove-section 引用）。路径可省略 `ProjectSpec/` 前缀与 `.md` 后缀；短路径命中多篇时报 `doc_read.ambiguous` 并列出全部候选 |
 | `doc update-section <reference> --content <正文>` | 更新已有段落 |
 | `doc add-section <reference> '<标题>' [--content <正文>] [--level sibling\|child]` | 新增段落 |
 | `doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]` | 新增文档：CLI 按注册表自动定位模板（`.doc-kit/templates/`）与目标目录，目录缺失时自动创建 |
 | `doc remove-section <reference>` | 删除段落及其子段落 |
 
 > 错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，AI 读到后直接按建议行动。文档类型未注册、目标文件已存在等场景由 CLI 返回对应错误码与修复建议（如 `new_doc.unknown_type`、`new_doc.exists`）。
+>
+> `doc read` 的 `data.resolved_via` 说明本次是怎么命中的：`exact`（原样路径）/ `suffix_added`（补了 `.md`）/ `path_suffix`（按目录后缀唯一匹配）/ `basename`（只剩文件名、全库唯一）。看到 `basename` 就意味着调用方丢了目录信息，应改用 `doc structure` 的完整路径；命中多篇则直接报 `doc_read.ambiguous`。
+>
+> **写命令（`update-section` / `add-section` / `remove-section`）要求完整路径**：即使调用方拿着短路径，不会写错文件。
 
 ## 5. 权威分层与引用纪律（单一事实源）
 

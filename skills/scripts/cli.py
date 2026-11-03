@@ -64,8 +64,9 @@ from docmodel import (  # noqa: E402
     DocContent,
     DocMeta,
     DocStructure,
-    _find_doc,
+    RESOLVED_VIA_BASENAME,
     _simplify_depends_on,
+    resolve_doc,
     safe_join,
 )
 from frontmatter import FrontmatterParser, _parse_yaml_block, read_document  # noqa: E402
@@ -83,7 +84,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.10.5"
+TOOLCHAIN_VERSION = "2026.11.1"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -176,6 +177,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.10.5",
         "date": "2026-10-21",
         "note": "新增 spec-code-smell（快速/深入双模式、源文件分类不绑定 src/、范围摘要）与 smell-capabilities；spec-code-review 收尾提示带显式范围"
+    },
+    {
+        "version": "2026.11.1",
+        "date": "2026-11-03",
+        "note": "修复 doc read 路径解析：省略 .md 与 ProjectSpec/ 前缀时不再静默解析到另一篇同名文档；多候选报 doc_read.ambiguous 并列出全部候选，输出新增 resolved_via 说明命中方式"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -599,10 +605,39 @@ def _parse_module_path(module: str) -> tuple[str, str | None]:
 
 
 def cmd_doc_read(project_root: Path, doc_path: str) -> str:
-    """读取指定文档的完整内容，按段落层级拍平成 JSON。"""
-    full_path = _find_doc(project_root, doc_path)
-    if not full_path:
-        return _fail(f"未找到文档: {doc_path}，可用 doc structure 查看所有文档路径")
+    """读取指定文档的完整内容，按段落层级拍平成 JSON。
+
+    路径解析走 ``docmodel.resolve_doc``（精确 → 补 `.md` → 路径段后缀 → 裸名唯一）。
+    解析结果多候选时报 ``doc_read.ambiguous`` 并列出全部候选，**绝不静默取首个**：
+    读错文档会让调用方据另一模块的内容做判断，而 ``success`` 仍是 true。
+    """
+    resolution = resolve_doc(project_root, doc_path)
+    if resolution.invalid:
+        return _fail(
+            f"ERROR [doc_read.invalid_path] 非法路径: {doc_path}（不得跳出 ProjectSpec/）。"
+            "请改用 doc structure 返回的完整路径。"
+        )
+    if resolution.is_dir:
+        return _fail(
+            f"ERROR [doc_read.is_directory] 这是一个目录而非文档: {doc_path}。"
+            "请用 doc structure 查看该目录下的文档路径后重试。"
+        )
+    if resolution.path is None:
+        if resolution.candidates:
+            rels = [p.relative_to(project_root).as_posix() for p in resolution.candidates]
+            listed = "\n".join(f"  - {rel}" for rel in rels)
+            return _fail(
+                f"ERROR [doc_read.ambiguous] 「{doc_path}」匹配到 {len(rels)} 个候选文档，已拒绝猜测：\n{listed}\n"
+                "请把候选中的完整路径（含 .md）原样传给 doc read。",
+                data={"input": doc_path, "candidates": rels},
+                suggestions=[f"候选：{'、'.join(rels)}"],
+            )
+        return _fail(
+            f"ERROR [doc_read.not_found] 未找到文档: {doc_path}，可用 doc structure 查看所有文档路径。"
+            "若路径省略了 .md 后缀，请补上后重试（如 module-x/architecture.md）。",
+            data={"input": doc_path},
+        )
+    full_path = resolution.path
     try:
         raw_text = full_path.read_text(encoding="utf-8")
     except Exception as e:
@@ -631,11 +666,18 @@ def cmd_doc_read(project_root: Path, doc_path: str) -> str:
     content = DocContent.from_body(rel_path, doc_meta, body, raw_frontmatter=meta_dict)
     data = content.to_dict()
     data["depends_on"] = index_depends_on
+    # 让调用方能判断"这次解析是不是靠猜"：exact / suffix_added / path_suffix / basename
+    data["resolved_via"] = resolution.via
 
     suggestions = [
         "如需修改某个段落，请调用 doc update-section <reference> --content ...",
         "如需新增段落，请调用 doc add-section <reference> <heading> [--content ...]",
     ]
+    if resolution.via == RESOLVED_VIA_BASENAME:
+        suggestions.append(
+            f"本次输入 `{doc_path}` 未带目录，按文件名唯一匹配到 {rel_path}；"
+            "建议后续直接用完整路径，避免同名文档增多后触发歧义。"
+        )
     if index_depends_on:
         dep_list = "、".join(index_depends_on)
         suggestions.append(f"该文档依赖: {dep_list}，可调用 doc read 查看依赖文档了解上下文")
@@ -659,7 +701,11 @@ def cmd_doc_update_section(project_root: Path, reference: str, content: str) -> 
         return _fail(f"非法的路径: {file_rel}")
     full_path = safe_path
     if not full_path.exists():
-        return _fail(f"文件不存在: {file_rel}")
+        return _fail(
+            f"ERROR [update_section.not_found] 文件不存在: {file_rel}。"
+            "请先用 doc structure 取完整路径（doc read 允许省略 .md 与目录，"
+            "写命令要求完整路径）。"
+        )
     try:
         raw_text = full_path.read_text(encoding="utf-8")
     except Exception as e:
@@ -697,7 +743,11 @@ def cmd_doc_add_section(project_root: Path, reference: str, heading: str, conten
         return _fail(f"非法的路径: {file_rel}")
     full_path = safe_path
     if not full_path.exists():
-        return _fail(f"文件不存在: {file_rel}")
+        return _fail(
+            f"ERROR [add_section.not_found] 文件不存在: {file_rel}。"
+            "请先用 doc structure 取完整路径（doc read 允许省略 .md 与目录，"
+            "写命令要求完整路径）。"
+        )
     if not heading.strip():
         return _fail("heading 不能为空")
     try:
@@ -3044,7 +3094,11 @@ def build_parser() -> argparse.ArgumentParser:
     doc_sub = doc.add_subparsers(dest="command", required=True)
     doc_sub.add_parser("structure", help="文档结构树")
     doc_read_p = doc_sub.add_parser("read", help="读取文档（按段落拍平）")
-    doc_read_p.add_argument("path", help="文档路径，可带或不带 ProjectSpec/ 前缀")
+    doc_read_p.add_argument(
+        "path",
+        help="文档路径：可带或不带 ProjectSpec/ 前缀，.md 后缀可省略；"
+             "短路径有多个同名候选时报 doc_read.ambiguous 并列出全部候选（不猜）",
+    )
     doc_upd_p = doc_sub.add_parser("update-section", help="更新段落正文")
     doc_upd_p.add_argument("reference", help="段落引用，如 ProjectSpec/arch.md#模块概述")
     doc_upd_p.add_argument("--content", required=True, help="新的正文内容")

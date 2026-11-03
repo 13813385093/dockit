@@ -59,6 +59,21 @@ class TestSafeJoin:
         assert result is not None
         assert str(result).endswith("tests")
 
+    def test_sibling_with_shared_prefix_blocked(self, tmp_path):
+        """`<root>-evil/` 与 `<root>` 字符串前缀相同，但不是子路径，必须拦住。"""
+        from docmodel import safe_join
+        root = tmp_path / "ProjectSpec"
+        root.mkdir()
+        (tmp_path / "ProjectSpec-evil").mkdir()
+        assert safe_join(root, "../ProjectSpec-evil/x.md") is None
+
+    def test_traversal_into_sibling_still_blocked(self, tmp_path):
+        from docmodel import safe_join
+        root = tmp_path / "ProjectSpec"
+        root.mkdir()
+        (tmp_path / "other").mkdir()
+        assert safe_join(root, "../other/x.md") is None
+
 
 # ═══════════════════════════════════════════════════════════════
 #  _simplify_depends_on

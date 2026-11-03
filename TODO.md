@@ -71,7 +71,7 @@
 
 ### 1.6 兼容性
 
-`doc read architecture`（裸文件名）目前能「成功」，改为报错属**行为破坏**。建议在 toolchain 版本号递增（如 `2026.10.6`）中说明，并在 `TOOLCHAIN_HISTORY` 登记；`tool status` 的版本检查会让旧项目显式提示重跑 `init`。
+`doc read architecture`（裸文件名）目前能「成功」，改为报错属**行为破坏**。建议在 toolchain 版本号递增（本次为 `2026.11.1`）中说明，并在 `TOOLCHAIN_HISTORY` 登记；`tool status` 的版本检查会让旧项目显式提示重跑 `init`。
 
 ---
 
