@@ -53,7 +53,11 @@ def test_full_session_lifecycle(tmp_project, cli_env):
         "resolutions": [
             {"topic": "项目目标确认",
              "decision": "明确项目核心目标为辅助个人投资者决策",
-             "detail": detail_150},
+             "detail": detail_150,
+             # R2：决议的文档归宿在写文档**之前**冻结（Step 3 审核通过即落表）
+             "targets": [{"doc": "business-context.md",
+                          "section": "项目动因",
+                          "action": "doc_update_section"}]},
         ],
         "pending_decisions": [],
         "next_steps": [],
@@ -107,7 +111,11 @@ def test_full_session_lifecycle(tmp_project, cli_env):
         "resolutions": [
             {"topic": "项目目标确认",
              "decision": "明确项目核心目标为辅助个人投资者决策",
-             "detail": detail_150},
+             "detail": detail_150,
+             # R2：决议的文档归宿在写文档**之前**冻结（Step 3 审核通过即落表）
+             "targets": [{"doc": "business-context.md",
+                          "section": "项目动因",
+                          "action": "doc_update_section"}]},
         ],
         "pending_decisions": [],
         "next_steps": [],
@@ -120,6 +128,9 @@ def test_full_session_lifecycle(tmp_project, cli_env):
     spec = json.loads(spec_file.read_text(encoding="utf-8"))
     assert spec["status"] == "closed"
     assert spec["closed_reason"] == "验证完成"
+    # 覆盖快照由 CLI 按磁盘重算写入（不是调用方填的）
+    assert spec["coverage"]["counts"]["ok"] == 1
+    assert spec["coverage"]["counts"]["missing"] == 0
 
     # Step 6: spec_archive
     result6 = cli_env.spec_archive()

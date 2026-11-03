@@ -101,6 +101,8 @@
 
 > 错误信息统一为 `ERROR [<错误码>] <原因>。修复：<建议>`，AI 读到后直接按建议行动。文档类型未注册、目标文件已存在等场景由 CLI 返回对应错误码与修复建议（如 `new_doc.unknown_type`、`new_doc.exists`）。
 >
+> `spec coverage [--verify] [--id <sid>]`：把 `resolutions[].targets[]` 摊平成「决议 → 文档 / 章节 / 动作 / 状态」表；`--verify` 核对磁盘（文档、段落是否存在，正文是否为空），有 `missing` / `empty` / `ambiguous` 时退出码 1；`--id` 可回放归档议题。只判「有没有落地」，不判「内容对不对」。
+>
 > `doc read` 的 `data.resolved_via` 说明本次是怎么命中的：`exact`（原样路径）/ `suffix_added`（补了 `.md`）/ `path_suffix`（按目录后缀唯一匹配）/ `basename`（只剩文件名、全库唯一）。看到 `basename` 就意味着调用方丢了目录信息，应改用 `doc structure` 的完整路径；命中多篇则直接报 `doc_read.ambiguous`。
 >
 > **写命令（`update-section` / `add-section` / `remove-section`）要求完整路径**：即使调用方拿着短路径，不会写错文件。

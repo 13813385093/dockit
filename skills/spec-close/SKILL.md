@@ -14,9 +14,9 @@ description: 当用户说「讨论完了」「关闭」「收尾」（保留成�
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.1` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.11.1`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.11.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -30,6 +30,7 @@ python .doc-kit/cli/cli.py tool status
 python .doc-kit/cli/cli.py spec read
 python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --json 则从 stdin 读入
 python .doc-kit/cli/cli.py spec archive
+python .doc-kit/cli/cli.py spec coverage [--verify] [--id <sid>]
 python .doc-kit/cli/cli.py doc structure
 python .doc-kit/cli/cli.py doc read <path>
 python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
@@ -120,25 +121,27 @@ python .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]
 
 ### Step 3：梳理 ProjectSpec 变更清单（用户审核）
 
-对**全部决议**（已有 + 本次新增）确定文档归宿：
+对**全部决议**（已有 + 本次新增）确定文档归宿。**先定层级，再定位置**：层级由能力库决定；该层没有能承载它的文档就新建，不要把细节硬塞进上一层的既有段落。
 
 1. 调 `python .doc-kit/cli/cli.py doc structure` 查看当前 `ProjectSpec/` 的文档与段落结构（结果可缓存在内存复用）
 2. 逐条决议路由：读取 `<项目根>/.doc-kit/skills/guidance/doc-capabilities/_index.md`，按 §2（议题场景）/ §3（决议主题）定位 doc_type，按 §4 判断「新增 vs 更新」
 3. 加载能力：读取 `<项目根>/.doc-kit/skills/guidance/doc-capabilities/<doc_type>.md`，按其「段落结构 / 行文规则」确定目标章节与写法（含约束编号规则）
-4. 调 `python .doc-kit/cli/cli.py doc read <path>` 查看目标文档现状，确认是更新已有段落还是新增段落；文档不存在则计划 `doc new <doc_type> --module <模块名> --feature <功能名> [--author <负责人>]`
-5. 汇总为**变更清单表**：
+4. 调 `python .doc-kit/cli/cli.py doc read <path>` 查看目标文档现状，确认是更新已有段落还是新增段落；**该层没有能承载它的文档时就 `doc new` 新建**
+5. 汇总为**变更清单表**（一行 = 一条决议的一处归宿；一条决议要写多处就占多行）：
 
-| # | 决议 topic | 目标文档 | 章节 | 动作 | 写入摘要 |
-|---|-----------|---------|------|------|---------|
-| 1 | 认证协议选型 | `technical-framework.md` | §主要框架与中间件 | `doc update-section` | … |
-| 2 | 退款功能设计 | `module-pay/features/pay-refund/feature-design.md` | ——（新建） | `doc new` | … |
-| 3 | 内部讨论口径 | —— | —— | 不落文档 | 仅会议纪要，理由：… |
+| # | 决议 topic | 层级 | 目标文档 | 章节 | 动作 | 写入摘要 |
+|---|-----------|------|---------|------|------|---------|
+| 1 | 认证协议选型 | 项目 | `technical-framework.md` | `主要框架与中间件` | `doc_update_section` | … |
+| 2 | 退款功能设计 | 功能 | `module-pay/features/pay-refund/feature-design.md` | ——（新建） | `doc_new` | … |
+| 3 | 内部讨论口径 | —— | —— | —— | `doc_skip` | 仅会议纪要，理由：… |
 
 6. 展示清单给用户审核，允许**改目标文档/章节、拆条、删条、标记"不落文档"**。
+7. **审核通过后立刻落表**：把每行的文档 / 章节 / 动作写进对应决议的 `targets[]`（`doc` 为带 `.md` 的 `ProjectSpec/` 相对路径；`section` 形如 `架构设计#组件划分`；`doc_skip` 必写 `reason`），`spec write` 保存，`status` 仍为 `active`。**必须在 Step 4 之前**：写完再补 targets 只能证明"写过的都记了"，证明不了"该写的都写了"。
 
-**两条硬性纪律**：
+**三条硬性纪律**：
 
 - **每条决议必须有归宿**：或写入某文档，或显式标「不落文档」并写明理由——不允许静默漏写。
+- **找不到承载位置时也要占一行**：写「层级 = X、目标文档 = ——、动作 = `doc_skip`」，摘要里说明理由与建议；
 - **审核通过前不得写入任何一条**（不允许边梳理边写）。
 
 > 约束标记（`[MUST]` / `[SHOULD]` / `[MAY]`）应忠实保留到目标文档中，不可降级或升格。
@@ -152,6 +155,10 @@ python .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]
 3. 逐条记录结果（成功 / 失败 + 错误码 `ERROR [<错误码>] …。修复：<建议>`），**失败项记录后继续执行其余条目**（条目之间相互独立）
 4. 末尾汇总：「成功 N 条 / 失败 M 条；失败清单与建议」，失败项交用户决定重试或人工处理
 5. 写入结束后调 `python .doc-kit/cli/cli.py doc reindex` **全量重建 `.doc-kit/index.json`**：纯 AI 流程没有桌面 App 自动维护索引，若不重建，后续 `doc structure` / `doc read` 读到的目录与依赖结构会与磁盘脱节（新建文档缺失、`depends_on` 为空）。本步幂等，只要 Step 4 有写入就执行一次
+6. 最后调 `python .doc-kit/cli/cli.py spec coverage --verify`，对照 Step 3 冻结的 `targets` 核对磁盘：
+
+   - `success=true`（状态全为 `ok` / `skipped`）→ 进入 Step 5。
+   - `success=false`（存在 `missing` / `empty` / `ambiguous`）→ **阻断关闭**：把 `data.rows` 里非 ok 的项**原样**展示给用户，请其补齐文档或修正清单（改清单则回 Step 3 重走冻结与核对）。
 
 ### Step 5：文档一致性复核（`doc lint` 门禁）
 
@@ -169,8 +176,8 @@ python .doc-kit/cli/cli.py doc lint --summary
 
 ### Step 6：标终态并归档
 
-1. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec，设置 `status: "closed"`、`closed_at`（ISO 8601）、`closed_reason`（**必填**，用户未提供时先询问，不编造）
-2. 调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存关闭状态
+1. 调 `python .doc-kit/cli/cli.py spec read` 取当前 spec，设置 `status: "closed"`、`closed_at`（ISO 8601）、`closed_reason`（**必填**，用户未提供时先询问，不编造）。**不要手写 `coverage`**——CLI 按磁盘重算并覆写，传值被丢弃（快照用于审计「已落盘」声明，不能由声明方自填）
+2. 调 `python .doc-kit/cli/cli.py spec write --json '<spec_json>'` 保存关闭状态。此步校验每条决议的 `targets`：缺失即报 `ERROR [spec.targets_missing]` 并**指名**是哪条、拒绝关闭；通过则写入覆盖快照
 3. 调 `python .doc-kit/cli/cli.py spec archive` 归档（`SessionSpec/active/` → `SessionSpec/archive/`）
 
 ## 成功后

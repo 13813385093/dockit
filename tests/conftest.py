@@ -115,6 +115,8 @@ def cli_env(tmp_project):
         spec_write=lambda spec_json: cli.cmd_spec_write(root, spec_json),
         spec_read=lambda: cli.cmd_spec_read(root),
         spec_archive=lambda: cli.cmd_spec_archive(root),
+        spec_coverage=lambda verify=False, sid=None: cli.cmd_spec_coverage(root, verify, sid),
+        spec_status=lambda: cli.cmd_spec_status(root),
         read_doc=lambda path: cli.cmd_doc_read(root, path),
         update_section=lambda ref, content: cli.cmd_doc_update_section(root, ref, content),
         add_section=lambda ref, heading, content="", level="sibling": cli.cmd_doc_add_section(

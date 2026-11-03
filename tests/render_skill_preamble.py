@@ -54,6 +54,7 @@ USAGE: dict[str, str] = {
     "spec schema": "python .doc-kit/cli/cli.py spec schema",
     "spec write": "python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --json 则从 stdin 读入",
     "spec archive": "python .doc-kit/cli/cli.py spec archive",
+    "spec coverage": "python .doc-kit/cli/cli.py spec coverage [--verify] [--id <sid>]",
     "doc structure": "python .doc-kit/cli/cli.py doc structure",
     "doc read": "python .doc-kit/cli/cli.py doc read <path>",
     "doc update-section": "python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'",

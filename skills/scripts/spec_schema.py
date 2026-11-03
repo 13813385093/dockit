@@ -44,6 +44,49 @@ feature-dev → 功能规格+测试类文档
 
 
 # ═══════════════════════════════════════════════════════════════
+#  决议的文档归宿（targets[]）—— 动作枚举与字段契约
+# ═══════════════════════════════════════════════════════════════
+
+RESOLUTION_TARGET_ACTIONS = ("doc_new", "doc_update_section", "doc_add_section", "doc_skip")
+"""一条决议对某个目标文档的动作，与 CLI 子命令一一对应。
+
+- ``doc_new``            → ``doc new``
+- ``doc_update_section`` → ``doc update-section``
+- ``doc_add_section``    → ``doc add-section``
+- ``doc_skip``           → 本议题不写文档，必须给 ``reason``；它不是逃生舱——关闭时
+  该条以 ``skipped`` 出现在覆盖表里，必须被人看到
+"""
+
+RESOLUTION_TARGET_SCHEMA = {
+    "doc": {
+        "type": str,
+        "required": True,
+        "description": "目标文档，`ProjectSpec/` 相对路径且必须带 `.md`，如 `module-order/architecture.md`",
+    },
+    "section": {
+        "type": str,
+        "required": False,
+        "description": (
+            "目标段落，形如 `架构设计#组件划分`（同 `doc read` 的 section reference）。"
+            "`action=doc_new` 时可为空；用带父级的引用，避免同名标题歧义"
+        ),
+    },
+    "action": {
+        "type": str,
+        "required": True,
+        "allowed": list(RESOLUTION_TARGET_ACTIONS),
+        "description": "doc_new 新建文档 / doc_update_section 改写已有段落 / doc_add_section 新增段落 / doc_skip 不落文档",
+    },
+    "reason": {
+        "type": str,
+        "required": False,
+        "description": "`action=doc_skip` 时必填（≥10 字）：为何不落文档、建议归属层级",
+    },
+}
+"""单个 target 的字段契约 —— schema 渲染与 CLI 业务校验共用这一份定义。"""
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Schema 定义
 # ═══════════════════════════════════════════════════════════════
 
@@ -82,7 +125,24 @@ SPEC_SCHEMA = {
         "item_schema": {
             "topic": {"type": str, "required": True},
             "decision": {"type": str, "required": True},
-            "detail": {"type": str, "required": True, "min_length": 150},
+            "detail": {
+                "type": str,
+                "required": True,
+                "min_length": 150,
+                "description": (
+                    "决议全文。必须自含：引用的清单、约束编号、条文原样写进本字段，"
+                    "禁止「上述第 N 项」「见前一议题」这类指代（归档后指代目标失效）。150 字是下限，不是目标"
+                ),
+            },
+            "targets": {
+                "type": list,
+                "required": False,
+                "description": (
+                    "本决议的文档归宿，可有多处（1:N）。active 时可留空；"
+                    "closed 时每条决议必须有（由 spec write 校验）"
+                ),
+                "item_schema": RESOLUTION_TARGET_SCHEMA,
+            },
         },
     },
     "pending_decisions": {
@@ -121,6 +181,14 @@ SPEC_SCHEMA = {
         "required": False,
         "description": "关闭/作废原因",
     },
+    "coverage": {
+        "type": (dict, type(None)),
+        "required": False,
+        "description": (
+            "关闭时由 CLI **按磁盘重算**写入的落盘覆盖快照（verified_at / ok / missing / empty / "
+            "ambiguous / rows）。调用方传入的值会被忽略：快照用来审计「已落盘」声明，不能由被审计方自填"
+        ),
+    },
 }
 
 
@@ -136,85 +204,95 @@ def _type_name(t: Any) -> str:
     return t.__name__
 
 
-def validate(spec: dict) -> list[str]:
-    """校验 spec 是否符合 SPEC_SCHEMA，返回错误列表（空 = 合法）。"""
-    errors = []
+def _is_object_schema(schema: dict) -> bool:
+    """区分 `item_schema` 的两种形态。
 
-    for field_name, field_schema in SPEC_SCHEMA.items():
-        value = spec.get(field_name)
+    - ``{"type": str}``                → 标量元素列表（如 `next_steps: list[str]`）
+    - ``{"topic": {...}, "doc": {...}}`` → 对象字段定义（如 `resolutions: list[{...}]`）
+    """
+    return bool(schema) and all(isinstance(v, dict) for v in schema.values())
 
-        # 必填检查
+
+def _check_value(path: str, value: Any, schema: dict, errors: list[str]) -> None:
+    """校验单个值：类型 → 最小长度 → 允许值 → （列表时）逐项递归。
+
+    ``path`` 是报错前缀，如 ``resolutions[0].targets[1].action``。
+    """
+    expected_type = schema["type"]
+    if not isinstance(value, expected_type):
+        errors.append(
+            f"{path}: 类型应为 {_type_name(expected_type)}，"
+            f"收到 {type(value).__name__}"
+        )
+        return
+
+    min_len = schema.get("min_length")
+    if min_len is not None and isinstance(value, str) and len(value) < min_len:
+        errors.append(f"{path}: 长度不足，最少 {min_len} 字符，当前 {len(value)} 字符")
+
+    allowed = schema.get("allowed")
+    if allowed is not None and value not in allowed:
+        errors.append(f"{path}: 值 '{value}' 不在允许范围内 {allowed}")
+
+    item_schema = schema.get("item_schema")
+    if isinstance(value, list) and isinstance(item_schema, dict) and _is_object_schema(item_schema):
+        for i, item in enumerate(value):
+            if not isinstance(item, dict):
+                errors.append(f"{path}[{i}]: 类型应为 dict，收到 {type(item).__name__}")
+                continue
+            _check_object(f"{path}[{i}].", item, item_schema, errors)
+
+
+def _check_object(prefix: str, obj: dict, schema: dict, errors: list[str]) -> None:
+    """校验一个对象：逐字段必填 / 类型 / 约束；``prefix`` 为空表示顶层。"""
+    for name, field_schema in schema.items():
+        value = obj.get(name)
         if field_schema.get("required") and value is None:
-            errors.append(f"缺少必填字段: {field_name}")
+            # 顶层沿用历史文案「缺少必填字段: x」，嵌套沿用「x.y: 缺少必填字段」
+            errors.append(
+                f"缺少必填字段: {name}" if not prefix else f"{prefix}{name}: 缺少必填字段"
+            )
             continue
-
         if value is None:
             continue
+        _check_value(f"{prefix}{name}", value, field_schema, errors)
 
-        # 类型检查
-        expected_type = field_schema["type"]
-        if not isinstance(value, expected_type):
-            errors.append(
-                f"{field_name}: 类型应为 {_type_name(expected_type)}，"
-                f"收到 {type(value).__name__}"
-            )
-            continue
 
-        # 最小长度检查（字符串字段）
-        min_len = field_schema.get("min_length")
-        if min_len is not None and isinstance(value, str) and len(value) < min_len:
-            errors.append(
-                f"{field_name}: 长度不足，最少 {min_len} 字符，当前 {len(value)} 字符"
-            )
+def validate(spec: dict) -> list[str]:
+    """校验 spec 是否符合 SPEC_SCHEMA，返回错误列表（空 = 合法）。
 
-        # 允许值检查
-        allowed = field_schema.get("allowed")
-        if allowed is not None and value not in allowed:
-            errors.append(
-                f"{field_name}: 值 '{value}' 不在允许范围内 {allowed}"
-            )
-
-        # 列表项检查
-        if isinstance(value, list) and "item_schema" in field_schema:
-            item_schema = field_schema["item_schema"]
-            for i, item in enumerate(value):
-                if not isinstance(item, dict) and item_schema.get("type") == str and isinstance(item, str):
-                    continue  # 简单字符串列表，不需要进一步校验
-                if isinstance(item, dict):
-                    for item_field, item_field_schema in item_schema.items():
-                        item_value = item.get(item_field)
-                        if item_field_schema.get("required") and item_value is None:
-                            errors.append(
-                                f"{field_name}[{i}].{item_field}: 缺少必填字段"
-                            )
-                            continue
-                        if item_value is not None:
-                            if not isinstance(item_value, item_field_schema["type"]):
-                                errors.append(
-                                    f"{field_name}[{i}].{item_field}: "
-                                    f"类型应为 {_type_name(item_field_schema['type'])}，"
-                                    f"收到 {type(item_value).__name__}"
-                                )
-                            # 列表项字段的最小长度检查
-                            item_min_len = item_field_schema.get("min_length")
-                            if item_min_len is not None and isinstance(item_value, str) and len(item_value) < item_min_len:
-                                errors.append(
-                                    f"{field_name}[{i}].{item_field}: "
-                                    f"长度不足，最少 {item_min_len} 字符，当前 {len(item_value)} 字符"
-                                )
-                            item_allowed = item_field_schema.get("allowed")
-                            if item_allowed is not None and item_value not in item_allowed:
-                                errors.append(
-                                    f"{field_name}[{i}].{item_field}: "
-                                    f"值 '{item_value}' 不在允许范围内 {item_allowed}"
-                                )
-
+    支持两层嵌套（``resolutions[].targets[].*``）。为什么必须递归：schema 从「对象列表」
+    演进为「对象列表里的对象列表」后，不递归就等于对最内层放行——非法枚举
+    （``action: "bogus"``）与错拼字段都会被 success 回执吞掉，而这正是 2026.09.8 加
+    ``unknown_keys`` 要防的失败模式。只做到两层，够用即可，不做通用递归框架。
+    """
+    errors: list[str] = []
+    _check_object("", spec, SPEC_SCHEMA, errors)
     return errors
 
 
 # ═══════════════════════════════════════════════════════════════
 #  Schema 元数据（给 LLM 读取，替代 spec-template.json）
 # ═══════════════════════════════════════════════════════════════
+
+
+def _unknown_in_items(items: list, item_schema: dict, path: str, out: list[str]) -> None:
+    """递归找出对象列表条目内的未知字段（支持一层嵌套，如 `resolutions[].targets[]`）。"""
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            if key not in item_schema:
+                out.append(f"{path}[{index}].{key}")
+                continue
+            child_schema = item_schema[key]
+            sub_items = child_schema.get("item_schema")
+            if (
+                isinstance(value, list)
+                and isinstance(sub_items, dict)
+                and _is_object_schema(sub_items)
+            ):
+                _unknown_in_items(value, sub_items, f"{path}[{index}].{key}", out)
 
 
 def unknown_keys(spec: dict) -> list[str]:
@@ -225,24 +303,45 @@ def unknown_keys(spec: dict) -> list[str]:
     拼错的键，CLI 会回 success 并**原样写盘**——那个字段永远不会被读到，而用户以为记下了。
     `dev task set` 对此是拒绝的（见 cli.py 的 TASK_ALLOWED_KEYS 校验），本函数让两者对齐。
 
-    列表字段按 `item_schema` 递归检查条目内的键；标量元素列表（如 `next_steps`）无键可查。
+    列表字段按 `item_schema` 递归检查条目内的键（两层：``resolutions[].targets[]``）；
+    标量元素列表（如 `next_steps`）无键可查。
     """
     unknown = [key for key in spec if key not in SPEC_SCHEMA]
     for field_name, field_schema in SPEC_SCHEMA.items():
         item_schema = field_schema.get("item_schema")
         # 标量元素的 item_schema 形如 {"type": str, "required": True}——值不是字段定义
-        if not isinstance(item_schema, dict) or not all(isinstance(v, dict) for v in item_schema.values()):
+        if not isinstance(item_schema, dict) or not _is_object_schema(item_schema):
             continue
         value = spec.get(field_name)
         if not isinstance(value, list):
             continue
-        for index, item in enumerate(value):
-            if not isinstance(item, dict):
-                continue
-            for key in item:
-                if key not in item_schema:
-                    unknown.append(f"{field_name}[{index}].{key}")
+        _unknown_in_items(value, item_schema, field_name, unknown)
     return unknown
+
+
+def _render_field(schema: dict) -> dict:
+    """把一个字段定义渲染为 LLM 可读的元数据（递归，支持两层嵌套）。"""
+    entry = {
+        "type": _type_name(schema["type"]),
+        "required": schema.get("required", False),
+        "description": schema.get("description", ""),
+    }
+    allowed = schema.get("allowed")
+    if allowed is not None:
+        entry["allowed_values"] = list(allowed)
+    min_len = schema.get("min_length")
+    if min_len is not None:
+        entry["min_length"] = min_len
+    item_schema = schema.get("item_schema")
+    if isinstance(item_schema, dict):
+        if _is_object_schema(item_schema):
+            # 嵌套对象列表：resolutions[].targets[] 的内层字段也在这里展开，
+            # 否则 agent 只能从描述里猜字段名（猜错会被 unknown_keys 拒绝）
+            entry["items"] = {name: _render_field(fs) for name, fs in item_schema.items()}
+        else:
+            # 简单列表，如 next_steps: list[str]
+            entry["item_type"] = _type_name(item_schema["type"])
+    return entry
 
 
 def get_schema_metadata() -> dict:
@@ -253,44 +352,11 @@ def get_schema_metadata() -> dict:
     """
     result = {}
     for name, schema in SPEC_SCHEMA.items():
-        entry = {
-            "type": _type_name(schema["type"]),
-            "required": schema.get("required", False),
-            "description": schema.get("description", ""),
-        }
-        allowed = schema.get("allowed")
-        if allowed is not None:
-            entry["allowed_values"] = list(allowed)
-        min_len = schema.get("min_length")
-        if min_len is not None:
-            entry["min_length"] = min_len
+        entry = _render_field(schema)
         # 标记只读字段
         if name in ("session_spec_id", "project", "created_at"):
             entry["readonly"] = True
             entry["auto_filled"] = True
-
-        item_schema = schema.get("item_schema")
-        if item_schema is not None and isinstance(item_schema, dict):
-            if "type" in item_schema:
-                # 简单列表，如 next_steps: list[str]
-                entry["item_type"] = _type_name(item_schema["type"])
-            else:
-                # 嵌套对象列表，如 resolutions: list[{topic, decision, detail}]
-                entry["items"] = {}
-                for fname, fschema in item_schema.items():
-                    fentry = {
-                        "type": _type_name(fschema["type"]),
-                        "required": fschema.get("required", False),
-                        "description": fschema.get("description", ""),
-                    }
-                    f_min_len = fschema.get("min_length")
-                    if f_min_len is not None:
-                        fentry["min_length"] = f_min_len
-                    f_allowed = fschema.get("allowed")
-                    if f_allowed is not None:
-                        fentry["allowed_values"] = list(f_allowed)
-                    entry["items"][fname] = fentry
-
         result[name] = entry
 
     return {

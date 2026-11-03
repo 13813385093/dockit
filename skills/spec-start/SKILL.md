@@ -14,9 +14,9 @@ description: 议题侧唯一入口：当用户新开对话要接着上次继续�
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`（由 doc-kit 工具 `init` 生成）。若该文件不存在，输出「该项目尚未初始化：请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」并终止流程。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.1` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.11.1`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.11.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
 
@@ -127,6 +127,8 @@ python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --js
 
 创建议题前，必须先把「本次讨论要确定哪些议题」确认下来：
 
+> **细分原则（一个议题只回答一个问题）**：命题覆盖多个可独立成议的决策时，先拆成子议题再确认议程；拆不完的写进 `next_steps` 并注明「另开议题」。议题越宽，单条决议塞的事实越多，落盘越易整段漏掉。
+
 1. 从用户描述中拆出**候选议题**，逐条给出：
    - `topic`：简洁、可辨识，**一经确认不再改名**——它是后续所有阶段（pause 推进 / close 结清）的匹配 key
    - `note`：这条议题要澄清什么、背景是什么、以什么为验收口径
@@ -149,6 +151,8 @@ python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --js
 
 > **议程为空不要创建议题**：纯记录性、没有待决议项的对话不需要开会话，直接说明即可。
 > 若用户首轮已给出明确结论，可同时写入 `resolutions`（`detail` ≥150 字，见 Step 5）。
+>
+> **决议必须自含**：引用的清单、约束编号、条文都要**原样写进** `detail`；禁用「上述第 N 项」「见前一议题」这类指代——归档后指代目标即失效，后续无法据此补回。
 
 ### Step 4：生成 session_spec_id
 

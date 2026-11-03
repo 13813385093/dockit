@@ -72,6 +72,7 @@ from docmodel import (  # noqa: E402
 from frontmatter import FrontmatterParser, _parse_yaml_block, read_document  # noqa: E402
 from index import IndexEntry, IndexManager  # noqa: E402
 from spec_schema import (  # noqa: E402
+    RESOLUTION_TARGET_ACTIONS,
     SCENARIO_DOC_TYPES,
     SPEC_SCHEMA,
     get_schema_metadata,
@@ -84,7 +85,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.11.1"
+TOOLCHAIN_VERSION = "2026.11.2"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -182,6 +183,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.11.1",
         "date": "2026-11-03",
         "note": "修复 doc read 路径解析：省略 .md 与 ProjectSpec/ 前缀时不再静默解析到另一篇同名文档；多候选报 doc_read.ambiguous 并列出全部候选，输出新增 resolved_via 说明命中方式"
+    },
+    {
+        "version": "2026.11.2",
+        "date": "2026-11-03",
+        "note": "R2 决议落盘归属三层防护"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -325,6 +331,26 @@ def cmd_spec_status(project_root: Path) -> str:
     return _spec_status_text(project_root) + _active_dev_loop_hint(project_root)
 
 
+def _spec_targets_hint(spec: dict) -> str:
+    """活跃议题的落盘归属缺口提示（R2 的可见性入口）。
+
+    为什么放在 `spec status` 而不是给 `doc lint` 加规则：讨论期最常见的失败不是
+    "写错"，而是"没注意到还有决议没有归宿"。`spec status` 是每次进入议题都会看到的
+    那一行，加一句计数即可；让 doc lint 去读 SessionSpec 则会把它从纯文档门禁变成
+    跨存储门禁（CI 里可能根本没有 SessionSpec/）。
+    """
+    resolutions = [r for r in spec.get("resolutions", []) if isinstance(r, dict)]
+    if not resolutions:
+        return ""
+    missing = [
+        r for r in resolutions
+        if not (isinstance(r.get("targets"), list) and r["targets"])
+    ]
+    if not missing:
+        return ""
+    return f"（{len(missing)}/{len(resolutions)} 条决议尚无文档归宿，关闭前需补 targets）"
+
+
 def _spec_status_text(project_root: Path) -> str:
     """议题侧的状态描述（原有实现）。"""
     active_dir = project_root / "SessionSpec" / "active"
@@ -352,7 +378,7 @@ def _spec_status_text(project_root: Path) -> str:
 
     status = spec.get("status", "active")
     if status == "active":
-        return f"当前有活跃议题：**{sid}**。请调用 spec read 读取完整内容。"
+        return f"当前有活跃议题：**{sid}**。请调用 spec read 读取完整内容。" + _spec_targets_hint(spec)
     if status == "closed":
         return f"当前有已关闭但未归档的议题：**{sid}**。请调用 spec archive 归档。"
     if status == "abandoned":
@@ -380,6 +406,345 @@ def cmd_spec_read(project_root: Path) -> str:
     if spec is None:
         return "错误: 文件不存在"
     return json.dumps(spec, indent=2, ensure_ascii=False)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  决议落盘覆盖（R2）：targets 校验 + 磁盘核对
+# ═══════════════════════════════════════════════════════════════
+#
+# 由来：2026-11-02 的 log-capture 议题关闭时，24 条决议里有 6 处从未写入
+# ProjectSpec，spec 却报「24 条决议写入 ProjectSpec」并通过关闭；缺的 6 处全部
+# 属于「该由一份 feature_design 承载」的内容——当时 module-behavior-log/ 下连
+# features/ 目录都不存在。所以本节的职责不是"更严的门禁"，而是把每条决议的文档
+# 归宿变成**可核对的记录**：先冻结（spec write 落 targets），再核对磁盘。
+#
+# 能力边界（写进需求，也写进代码）：只能防「漏记」（该写的没写），不能防「错记」
+# （写进去了但内容是别的）。故这里只判「文档在不在 / 段落在不在 / 正文空不空」，
+# 不判语义是否与决议一致。
+
+_COVERAGE_OK = "ok"
+_COVERAGE_MISSING = "missing"
+_COVERAGE_EMPTY = "empty"
+_COVERAGE_AMBIGUOUS = "ambiguous"
+_COVERAGE_SKIPPED = "skipped"
+_COVERAGE_UNTARGETED = "untargeted"
+_COVERAGE_UNVERIFIED = "unverified"
+#: 会让 `spec coverage --verify` 退出码为 1 的状态（`skipped` / `untargeted` 不算）
+_COVERAGE_BAD = (_COVERAGE_MISSING, _COVERAGE_EMPTY, _COVERAGE_AMBIGUOUS)
+
+
+def _target_doc_path(project_root: Path, doc: Any) -> Path | None:
+    """把 ``targets[].doc`` 解析成 ProjectSpec/ 下的绝对路径（越界返回 None）。"""
+    if not isinstance(doc, str) or not doc.strip():
+        return None
+    rel = doc.strip().replace("\\", "/")
+    if rel.startswith("ProjectSpec/"):
+        rel = rel[len("ProjectSpec/"):]
+    return safe_join(project_root / "ProjectSpec", rel)
+
+
+def _validate_resolution_targets(project_root: Path, data: dict) -> list[str]:
+    """关闭前校验每条决议的 ``targets[]``（R2-b）。返回问题清单（空 = 通过）。
+
+    只校验「记录是否完整」，不判内容对错：``doc`` 必须是 ProjectSpec/ 下带 ``.md``
+    的相对路径（走 ``safe_join``），``section`` 必须是带父级的段落引用，
+    ``doc_skip`` 必须写明理由。内容对不对属于语义层，本命令不承诺。
+    """
+    problems: list[str] = []
+    for i, res in enumerate(data.get("resolutions", [])):
+        if not isinstance(res, dict):
+            problems.append(f"resolutions[{i}] 不是对象")
+            continue
+        topic = str(res.get("topic", "?"))
+        targets = res.get("targets")
+        if not isinstance(targets, list) or not targets:
+            problems.append(
+                f"resolutions[{i}]「{topic}」缺少 targets——它要写进哪篇文档的哪个段落？"
+                "确实无需落文档的，用 action=doc_skip 并写明 reason"
+            )
+            continue
+        for j, target in enumerate(targets):
+            where = f"resolutions[{i}]「{topic}」targets[{j}]"
+            if not isinstance(target, dict):
+                problems.append(f"{where} 不是对象")
+                continue
+            doc = target.get("doc")
+            if not isinstance(doc, str) or not doc.strip():
+                problems.append(f"{where} 缺少 doc")
+            elif not doc.strip().endswith(".md"):
+                problems.append(f"{where} 的 doc 必须带 .md：{doc}")
+            elif _target_doc_path(project_root, doc) is None:
+                problems.append(f"{where} 的 doc 越界（必须是 ProjectSpec/ 下的相对路径）：{doc}")
+            action = target.get("action")
+            if action not in RESOLUTION_TARGET_ACTIONS:
+                problems.append(
+                    f"{where} 的 action 非法：{action!r}（允许 {list(RESOLUTION_TARGET_ACTIONS)}）"
+                )
+                continue
+            if action == "doc_skip":
+                if len(str(target.get("reason") or "").strip()) < 10:
+                    problems.append(f"{where} action=doc_skip 必须写明 reason（≥10 字）")
+            elif action != "doc_new" and not str(target.get("section") or "").strip():
+                problems.append(
+                    f"{where} action={action} 必须给出 section（形如 `架构设计#组件划分`）"
+                )
+    return problems
+
+
+def _normalize_section_ref(section: Any) -> str:
+    """把 ``targets[].section`` 归一成「父#子」标题路径。
+
+    三种写法都接受：`组件划分`、`架构设计#组件划分`、
+    `ProjectSpec/x/architecture.md#架构设计#组件划分`。
+    """
+    s = str(section or "").strip().replace("\\", "/")
+    if "#" in s:
+        head, _, tail = s.partition("#")
+        if head.strip().endswith(".md"):
+            s = tail
+    return s.strip("#").strip()
+
+
+def _heading_path(reference: str) -> str:
+    """`doc read` 的 section reference 形如 `ProjectSpec/x.md#A#B` → 返回 `A#B`。"""
+    return reference.split("#", 1)[1] if "#" in reference else ""
+
+
+def _match_sections(sections: list, section: Any) -> list[int]:
+    """按标题路径匹配段落，返回命中下标（可能 0 / 1 / 多个）。"""
+    ref = _normalize_section_ref(section)
+    if not ref:
+        return []
+    if "#" in ref:
+        return [i for i, s in enumerate(sections) if _heading_path(s.reference) == ref]
+    return [i for i, s in enumerate(sections) if s.heading == ref]
+
+
+def _section_is_empty(sections: list, index: int, patterns: list[str]) -> bool:
+    """段落是否「空」。
+
+    父章节只拥有自身正文（见 ``docmodel._parse_sections``：一级章节的正文天然为空），
+    所以「自身为空但后代段落有正文」**不算空**——否则多级文档里的一级章节会被大面积
+    误报为 empty，把门禁变成噪音。
+    """
+    level = sections[index].level
+    for descendant in sections[index + 1:]:
+        if descendant.level <= level:
+            break
+        if descendant.content.strip():
+            return False
+    content = sections[index].content.strip()
+    if not content:
+        return True
+    stripped = content
+    for token in patterns:
+        stripped = stripped.replace(token, "")
+    stripped = _PLACEHOLDER_VAR_RE.sub("", stripped)
+    return not stripped.strip()
+
+
+def _check_target(project_root: Path, target: dict, patterns: list[str]) -> dict:
+    """核对单个 target 的落地状态，返回 ``{"status", "note"}``。"""
+    action = target.get("action")
+    if action == "doc_skip":
+        return {"status": _COVERAGE_SKIPPED, "note": str(target.get("reason") or "")[:80]}
+    doc_path = _target_doc_path(project_root, target.get("doc"))
+    if doc_path is None:
+        return {"status": _COVERAGE_MISSING, "note": "doc 不是 ProjectSpec/ 下的合法路径"}
+    if not doc_path.is_file():
+        return {"status": _COVERAGE_MISSING, "note": "文档不存在"}
+    if action == "doc_new":
+        return {"status": _COVERAGE_OK, "note": "文档已存在"}
+    try:
+        raw_text = doc_path.read_text(encoding="utf-8")
+    except OSError as e:
+        return {"status": _COVERAGE_MISSING, "note": f"读取失败: {e}"}
+    try:
+        meta, body = FrontmatterParser.parse(raw_text)
+    except Exception:
+        meta, body = {}, raw_text
+    rel = str(doc_path.relative_to(project_root).as_posix())
+    doc_meta = DocMeta(
+        doc_type=str(meta.get("doc_type", "") or ""),
+        module=str(meta.get("module", "") or ""),
+        level=str(meta.get("level", "") or ""),
+        version=str(meta.get("version", "") or ""),
+        status=str(meta.get("status", "active") or "active"),
+    )
+    sections = DocContent.from_body(rel, doc_meta, body).sections
+    hits = _match_sections(sections, target.get("section"))
+    if not hits:
+        return {"status": _COVERAGE_MISSING, "note": "段落不存在（标题可能被改名或删除）"}
+    if len(hits) > 1:
+        return {"status": _COVERAGE_AMBIGUOUS, "note": f"同名段落 {len(hits)} 处，无法确定目标"}
+    if _section_is_empty(sections, hits[0], patterns):
+        return {"status": _COVERAGE_EMPTY, "note": "段落正文为空或仅剩模板占位"}
+    return {"status": _COVERAGE_OK, "note": ""}
+
+
+def _coverage_rows(project_root: Path, spec: dict, verify: bool) -> list[dict]:
+    """把 ``resolutions[].targets[]`` 摊平成覆盖表的行。"""
+    patterns = _placeholder_patterns(project_root) if verify else []
+    rows: list[dict] = []
+    for index, res in enumerate(spec.get("resolutions", [])):
+        if not isinstance(res, dict):
+            continue
+        topic = str(res.get("topic", "?"))
+        targets = res.get("targets")
+        if not isinstance(targets, list) or not targets:
+            rows.append({
+                "index": index, "topic": topic, "doc": "", "section": "", "action": "",
+                "status": _COVERAGE_UNTARGETED, "note": "未记录文档归宿",
+            })
+            continue
+        for target in targets:
+            if not isinstance(target, dict):
+                rows.append({
+                    "index": index, "topic": topic, "doc": "", "section": "", "action": "",
+                    "status": _COVERAGE_MISSING, "note": "target 不是对象",
+                })
+                continue
+            row = {
+                "index": index,
+                "topic": topic,
+                "doc": str(target.get("doc") or ""),
+                "section": str(target.get("section") or ""),
+                "action": str(target.get("action") or ""),
+            }
+            if not verify:
+                rows.append({**row, "status": _COVERAGE_UNVERIFIED, "note": "未核对磁盘（加 --verify）"})
+                continue
+            rows.append({**row, **_check_target(project_root, target, patterns)})
+    return rows
+
+
+def _coverage_counts(rows: list[dict]) -> dict:
+    counts = {
+        _COVERAGE_OK: 0, _COVERAGE_MISSING: 0, _COVERAGE_EMPTY: 0,
+        _COVERAGE_AMBIGUOUS: 0, _COVERAGE_SKIPPED: 0, _COVERAGE_UNTARGETED: 0,
+        _COVERAGE_UNVERIFIED: 0,
+    }
+    for row in rows:
+        counts[row["status"]] = counts.get(row["status"], 0) + 1
+    return counts
+
+
+def _coverage_snapshot(project_root: Path, spec: dict) -> dict:
+    """关闭时写进 spec 的覆盖快照 —— **由 CLI 按磁盘重算**，不看调用方传了什么。
+
+    为什么不让调用方填：这份快照的用途正是审计「已落盘」这句声明。让声明方自己写
+    快照，等于让被审计者填审计报告。
+    """
+    rows = _coverage_rows(project_root, spec, verify=True)
+    return {
+        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "counts": _coverage_counts(rows),
+        "rows": [
+            {key: row[key] for key in ("topic", "doc", "section", "action", "status")}
+            for row in rows
+        ],
+    }
+
+
+def _render_coverage_table(rows: list[dict]) -> str:
+    lines = ["| # | 决议 topic | 目标文档 | 章节 | 动作 | 状态 |", "|---|---|---|---|---|---|"]
+    for n, row in enumerate(rows, 1):
+        topic = row["topic"]
+        if len(topic) > 24:
+            topic = topic[:24] + "…"
+        lines.append(
+            f"| {n} | {topic} | {row['doc'] or '—'} | {row['section'] or '—'} "
+            f"| {row['action'] or '—'} | {row['status']} |"
+        )
+    return "\n".join(lines)
+
+
+def cmd_spec_coverage(
+    project_root: Path,
+    verify: bool = False,
+    session_spec_id: str | None = None,
+) -> str:
+    """输出「决议 → 文档章节」覆盖表；``--verify`` 额外核对磁盘。
+
+    退出码：``--verify`` 下存在 missing / empty / ambiguous → 1；**旧 spec 没有
+    targets 时只给 warning（退出码 0）**——否则 CI 无法区分「没有记录归宿」与
+    「记录了但没落地」，把兼容性缺口当成失败。
+    """
+    if session_spec_id:
+        spec_path = _spec_path(project_root, session_spec_id)
+        if not spec_path.exists():
+            spec_path = _archive_path(project_root, session_spec_id)
+        if not spec_path.exists():
+            return _fail(
+                f"错误: 未找到议题 {session_spec_id}（SessionSpec/active/ 与 archive/ 均无）"
+            )
+    else:
+        try:
+            sid = _detect_active_session(project_root)
+        except ValueError as e:
+            return _fail(f"错误: {e}")
+        if sid is None:
+            return _fail(
+                "当前没有活跃议题。已归档议题可用 `spec coverage --id <sid>` 回放核对"
+            )
+        session_spec_id = sid
+        spec_path = _spec_path(project_root, sid)
+
+    source = str(spec_path.relative_to(project_root).as_posix())
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        return _fail(f"错误: 无法解析 {source}: {e}")
+
+    resolutions = [r for r in spec.get("resolutions", []) if isinstance(r, dict)]
+    has_targets = any(
+        isinstance(r.get("targets"), list) and r["targets"] for r in resolutions
+    )
+    rows = _coverage_rows(project_root, spec, verify=verify)
+    counts = _coverage_counts(rows)
+
+    parts = [
+        f"来源：`{source}`；共 {len(resolutions)} 条决议 / {len(rows)} 个目标",
+        "",
+        _render_coverage_table(rows) if rows else "（本议题没有决议）",
+        "",
+        "合计：" + ("、".join(f"{k} {v}" for k, v in counts.items() if v) or "无"),
+    ]
+    if not has_targets:
+        parts += [
+            "",
+            "⚠️ 本议题的决议尚未记录 targets（旧版 spec）。这只说明「没有记录归宿」，"
+            "不等于「没有落盘」——补齐 targets 后才能核对。",
+        ]
+    message = f"## 决议落盘覆盖（{session_spec_id}）\n\n" + "\n".join(parts)
+    data = {
+        "session_spec_id": session_spec_id,
+        "verify": verify,
+        "counts": counts,
+        "rows": rows,
+    }
+
+    bad = [row for row in rows if row["status"] in _COVERAGE_BAD]
+    if verify and bad:
+        listed = "\n".join(
+            f"  - 「{row['topic']}」→ {row['doc'] or '?'}：{row['note']}" for row in bad[:20]
+        )
+        more = f"\n  …另有 {len(bad) - 20} 处未列出" if len(bad) > 20 else ""
+        return _fail(
+            message
+            + f"\n\n❌ 有 {len(bad)} 处未落地（missing / empty / ambiguous）：\n{listed}{more}",
+            data=data,
+            suggestions=[f"未落地 {len(bad)} 处：补齐文档或段落后再关闭议题"],
+        )
+    if verify and not has_targets:
+        message += "\n\n（未记录 targets，跳过磁盘核对：这是兼容旧 spec 的 warning，退出码为 0）"
+    elif not verify:
+        message += "\n\n提示：加 `--verify` 才会核对磁盘（文档 / 段落是否存在、正文是否为空）。"
+    return _ok(
+        message=message,
+        data=data,
+        suggestions=["关闭议题前先让 `spec coverage --verify` 全绿，再 `spec write` 置 closed。"],
+    )
 
 
 def cmd_spec_write(project_root: Path, spec_json: str) -> str:
@@ -436,6 +801,13 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
             return _fail(f"检测活跃会话失败: {e}")
         if spec_path.exists():
             return _fail(f"session_spec_id '{sid}' 已存在，请使用其他名称。")
+        # 归档 spec 只读：不加这道护栏时，用归档 id 写入会 success 并在 active/ 里
+        # 静默生成一份重复副本（archive 保留原件），两份同名 spec 从此彼此矛盾。
+        if _archive_path(project_root, sid).exists():
+            return _fail(
+                f"ERROR [spec.archived_id] 议题 '{sid}' 已归档（SessionSpec/archive/），不能再写入。"
+                " 归档 spec 只读：回放核对用 `spec coverage --id <sid>`；要再议同一主题请开启新议题。"
+            )
 
         data.setdefault("project", project_root.name)
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -485,6 +857,33 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
                 enhanced.append(f"  - {e}")
         return _fail("Schema 校验失败:\n" + "\n".join(enhanced))
 
+    # ── 落盘归属校验（R2-b）：只在声明 closed 时执行 ──
+    # 为什么不是每次写都卡：讨论中期归宿未定是正常的（归属表到 Step 3 才梳理）。
+    # 但「status=closed」等于声明「每条决议都有去处」，此刻必须有记录可核对。
+    if data.get("status") == "closed":
+        target_problems = _validate_resolution_targets(project_root, data)
+        if target_problems:
+            listed = "\n".join(f"  - {problem}" for problem in target_problems[:20])
+            more = (
+                f"\n  …另有 {len(target_problems) - 20} 处未列出"
+                if len(target_problems) > 20 else ""
+            )
+            return _fail(
+                f"ERROR [spec.targets_missing] 关闭被拒绝：{len(target_problems)} 处决议未确定文档归宿。\n"
+                f"{listed}{more}\n"
+                "修复：为每条决议补 targets[]（doc 为 ProjectSpec/ 相对路径且带 .md；"
+                "section 形如 `架构设计#组件划分`）；确实无需落文档的用 action=doc_skip 并写明 reason。",
+                data={
+                    "session_spec_id": sid,
+                    "problems": target_problems[:20],
+                    "problem_count": len(target_problems),
+                },
+            )
+
+    # 关闭时由 CLI 按磁盘重算覆盖快照并覆写：调用方传的值一律丢弃（见 _coverage_snapshot）。
+    if data.get("status") == "closed":
+        data["coverage"] = _coverage_snapshot(project_root, data)
+
     _write_spec_file(project_root, data)
 
     summary = render_summary(data)
@@ -522,6 +921,16 @@ def cmd_spec_write(project_root: Path, spec_json: str) -> str:
             )
 
     if data.get("status") == "closed":
+        counts = (data.get("coverage") or {}).get("counts", {})
+        summary_line = "、".join(f"{k} {v}" for k, v in counts.items() if v)
+        result += f"\n\n📄 落盘覆盖快照已按磁盘重算：{summary_line or '无'}。"
+        bad = sum(counts.get(key, 0) for key in _COVERAGE_BAD)
+        if bad:
+            result += (
+                f"\n\n⚠️ **注意**：覆盖核对发现 {bad} 处未落地（missing / empty / ambiguous）。"
+                "快照已随议题保存，归档后仍可审计「当初声明落地的，是否真的落地」——"
+                "请在归档前补齐，或明确接受该缺口。"
+            )
         result += "\n\n**下一步建议**：调用 spec archive 归档已关闭的议题。"
     elif data.get("status") == "abandoned":
         result += "\n\n**下一步建议**：调用 spec archive 归档已作废的议题。"
@@ -3085,6 +3494,17 @@ def build_parser() -> argparse.ArgumentParser:
     spec_sub.add_parser("status", help="检查议题状态")
     spec_sub.add_parser("read", help="读取活跃议题")
     spec_sub.add_parser("archive", help="归档已关闭/已作废议题")
+    spec_coverage_p = spec_sub.add_parser(
+        "coverage", help="决议 → 文档章节覆盖表（--verify 核对磁盘）"
+    )
+    spec_coverage_p.add_argument(
+        "--verify", action="store_true",
+        help="核对磁盘：文档 / 段落是否存在、正文是否为空；有未落地项时退出码 1",
+    )
+    spec_coverage_p.add_argument(
+        "--id", dest="session_spec_id", default=None,
+        help="议题 ID（默认当前活跃议题；已归档的也可回放核对）",
+    )
     spec_sub.add_parser("schema", help="输出 SpecStruct 字段定义")
     spec_write_p = spec_sub.add_parser("write", help="写入完整议题数据（全量替换）")
     spec_write_p.add_argument("--json", help="完整 spec JSON；未提供时从 stdin 读取")
@@ -3221,6 +3641,8 @@ def main(argv: list[str] | None = None) -> None:
                 _emit(cmd_spec_schema(project_root))
             elif args.command == "archive":
                 _emit(cmd_spec_archive(project_root))
+            elif args.command == "coverage":
+                _emit(cmd_spec_coverage(project_root, args.verify, args.session_spec_id))
             elif args.command == "write":
                 spec_json = args.json if args.json is not None else _read_stdin()
                 _emit(cmd_spec_write(project_root, spec_json))

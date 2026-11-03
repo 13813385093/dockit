@@ -164,6 +164,69 @@ class TestGetSchemaMetadata:
         assert "closed" in transitions["active"]
         assert "abandoned" in transitions["active"]
 
+    def test_targets_item_fields_are_visible(self):
+        """`targets[]` 的内层字段必须出现在 `spec schema` 里。
+
+        否则 agent 只能从描述猜 `doc` / `section` / `action`，猜错会被
+        `unknown_keys` 拒绝——这正是加 `spec schema` 要避免的"静默丢失"。
+        """
+        meta = get_schema_metadata()
+        targets = meta["fields"]["resolutions"]["items"]["targets"]
+        assert targets["type"] == "list"
+        assert set(targets["items"]) == {"doc", "section", "action", "reason"}
+        assert targets["items"]["action"]["allowed_values"] == [
+            "doc_new", "doc_update_section", "doc_add_section", "doc_skip",
+        ]
+        assert targets["items"]["doc"]["required"] is True
+        assert targets["items"]["section"]["required"] is False
+
+
+# ═══════════════════════════════════════════════════════════════
+#  二级嵌套校验（resolutions[].targets[]）
+# ═══════════════════════════════════════════════════════════════
+
+class TestNestedTargets:
+    """targets[] 是「对象列表里的对象列表」，不递归就等于对最内层放行。"""
+
+    def _spec_with(self, targets):
+        return _make_spec(resolutions=[
+            {"topic": "t", "decision": "d", "detail": "x" * 150, "targets": targets},
+        ])
+
+    def test_valid_targets_pass(self):
+        spec = self._spec_with([{
+            "doc": "module-x/architecture.md",
+            "section": "架构设计#组件划分",
+            "action": "doc_update_section",
+        }])
+        assert validate(spec) == []
+
+    def test_bad_action_is_rejected(self):
+        spec = self._spec_with([{"doc": "a.md", "action": "bogus_action"}])
+        errors = validate(spec)
+        assert any("resolutions[0].targets[0].action" in e and "不在允许范围内" in e
+                   for e in errors)
+
+    def test_missing_doc_is_rejected(self):
+        spec = self._spec_with([{"action": "doc_new"}])
+        errors = validate(spec)
+        assert any("resolutions[0].targets[0].doc" in e and "缺少必填字段" in e for e in errors)
+
+    def test_non_dict_target_is_rejected(self):
+        spec = self._spec_with(["not-a-dict"])
+        errors = validate(spec)
+        assert any("resolutions[0].targets[0]" in e and "dict" in e for e in errors)
+
+    def test_typo_field_in_target_is_unknown(self):
+        from spec_schema import unknown_keys
+
+        spec = self._spec_with([{"doc": "a.md", "action": "doc_new", "typo": 1}])
+        assert unknown_keys(spec) == ["resolutions[0].targets[0].typo"]
+
+    def test_old_spec_without_targets_still_valid(self):
+        """旧 spec 无 targets 必须能原样往返（required=False）。"""
+        assert validate(_make_spec()) == []
+
 
 # ═══════════════════════════════════════════════════════════════
 #  render_summary
