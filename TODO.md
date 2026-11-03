@@ -242,6 +242,6 @@ spec coverage [--verify] [--id <sid>]
 
 验证（本机）：
 
-- 全量测试 `443 passed, 1 failed`；唯一失败是既有问题（根目录缺 `面向AI时代的新型项目文档体系设计与实施指南.md`，`git ls-files` 该文件从未入库），与本次改动无关。
+- 全量测试 `444 passed`；`check_doc_consistency` 原先因指南文件改名（`wiki.md`）而报错，已同步修正 `GUIDE` 常量。
 - 归档回放：`spec coverage --id 20261102-log-capture-design --verify` 对 memctx 的 24 条旧决议给出 `untargeted 24` + warning，**退出码 0**，不崩溃（验收 2.11-1）。
 - 行为破坏已登记：`status=closed` 缺 `targets` 现在被拒（`spec.targets_missing`），`tests/test_e2e_session.py` 的关闭用例已相应补上 `targets` 并断言快照。

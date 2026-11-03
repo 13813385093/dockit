@@ -27,7 +27,8 @@ REPO = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = REPO / "src" / "app" / "templates"
 CAPS_DIR = REPO / "skills" / "guidance" / "doc-capabilities"
 INDEX_MD = CAPS_DIR / "_index.md"
-GUIDE = REPO / "面向AI时代的新型项目文档体系设计与实施指南.md"
+GUIDE = REPO / "wiki.md"
+"""《面向AI时代的新型项目文档体系设计与实施指南》—— 改名后以 `wiki.md` 为准（英文版 `wiki.en.md` 不参与小节编号检查）。"""
 
 # 已下线的复合类型（本次重构把 18 种类型收敛为 15 种正规类型）
 LEGACY_DOC_TYPES = {"charter", "module_design", "feature_package"}
