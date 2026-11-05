@@ -8,6 +8,7 @@
 """
 
 import json
+import subprocess
 
 from conftest import make_md
 
@@ -546,3 +547,285 @@ class TestProjectSpecReadOnly:
         assert _snapshot_project_spec(tmp_project) == snapshot, (
             "ProjectSpec/ 被 dev 命令修改了！spec-dev-loop 全程必须只读。"
         )
+
+
+# ═══════════════════════════════════════════════════════════════
+#  任务卡局部更新（dev task patch）与多函数签名（signatures）
+# ═══════════════════════════════════════════════════════════════
+
+class TestDevTaskPatch:
+    """patch 只覆盖给出的字段：状态、尝试次数、备注与其它任务卡不得被重置。"""
+
+    def _ready(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        cli_env.dev_task_annotate("T1", "已有备注：设计偏差")
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+
+    def test_patch_preserves_status_attempts_notes_and_other_tasks(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        before = {t["task_id"]: t for t in _parse(cli_env.dev_task_list())["data"]["tasks"]}
+        result = _parse(cli_env.dev_task_patch(
+            "T1", json.dumps({"signature": "cancelExpiredOrders(ctx context.Context, limit int) error"})))
+        assert result["success"] is True, result
+        tasks = {t["task_id"]: t for t in _parse(cli_env.dev_task_list())["data"]["tasks"]}
+        assert tasks["T1"]["signature"] == "cancelExpiredOrders(ctx context.Context, limit int) error"
+        assert tasks["T1"]["status"] == "implementing"
+        assert tasks["T1"]["attempts"] == before["T1"]["attempts"]
+        assert "已有备注" in tasks["T1"]["notes"]
+        assert tasks["T2"] == before["T2"]
+
+    def test_patch_implemented_in_is_replaced_whole(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        result = _parse(cli_env.dev_task_patch(
+            "T1", json.dumps({"implemented_in": {"path": "src/order/new_service.go"}})))
+        assert result["success"] is True, result
+        t1 = _parse(cli_env.dev_task_list())["data"]["tasks"][0]
+        assert t1["implemented_in"] == {"path": "src/order/new_service.go"}  # lang 未被隐式保留
+
+    def test_patch_refreshes_plan_table(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        assert _parse(cli_env.dev_task_patch(
+            "T1", json.dumps({"constraint_ids": ["C-999"]})))["success"] is True
+        plan = _parse(cli_env.dev_plan_read())
+        sec3 = next(s for s in plan["data"]["sections"] if s["heading"] == "3. 骨架与任务清单")
+        assert "C-999" in sec3["content"]
+
+    def test_patch_unknown_field_lists_allowed_fields(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        result = _parse(cli_env.dev_task_patch("T1", json.dumps({"typo_field": 1})))
+        assert result["success"] is False
+        assert "typo_field" in result["message"]
+        assert "允许的字段" in result["message"] and "signature" in result["message"]
+
+    def test_patch_rejects_status_and_identity_fields(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        for bad in ("status", "task_id", "module", "feature", "attempts", "notes", "deviation"):
+            result = _parse(cli_env.dev_task_patch("T1", json.dumps({bad: "x"})))
+            assert result["success"] is False, bad
+            assert "不允许修改字段" in result["message"], bad
+
+    def test_patch_requires_json_object(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        assert _parse(cli_env.dev_task_patch("T1", "[]"))["success"] is False
+        assert _parse(cli_env.dev_task_patch("T1", "not-json"))["success"] is False
+        assert _parse(cli_env.dev_task_patch("T9", json.dumps({"title": "x"})))["success"] is False
+
+    def test_patch_signatures(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        sigs = {
+            "cancelExpiredOrders": "cancelExpiredOrders(ctx context.Context) error",
+            "findExpiredOrders": "findExpiredOrders(ctx context.Context) []Order",
+            "cancelOrder": "cancelOrder(ctx context.Context, o Order) error",
+            "releaseStock": "releaseStock(o Order) error",
+        }
+        assert _parse(cli_env.dev_task_patch(
+            "T1", json.dumps({"signatures": sigs})))["success"] is True
+        t1 = _parse(cli_env.dev_task_list())["data"]["tasks"][0]
+        assert t1["signatures"] == sigs
+
+
+class TestTaskSignatures:
+    MULTI = json.dumps([{
+        "task_id": "T1",
+        "title": "迁移入口（内聚调用链）",
+        "module": "order",
+        "feature": "order-timeout-cancel",
+        "implemented_in": {"path": "src/store/migrations.ts", "lang": "ts"},
+        "functions": ["applyMigrations", "buildIndexDDL", "enableTriggers"],
+        "entry_function": "applyMigrations",
+        "signature": "applyMigrations(opts: MigrateOptions): Promise<void>",
+        "signatures": {
+            "applyMigrations": "applyMigrations(opts: MigrateOptions): Promise<void>",
+            "buildIndexDDL": "buildIndexDDL(): string",
+            "enableTriggers": "enableTriggers(): void",
+        },
+        "merge_reason": "同一文件内的内聚调用链",
+    }], ensure_ascii=False)
+
+    def test_set_accepts_multi_function_signatures(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        assert _parse(cli_env.dev_task_set(self.MULTI))["success"] is True
+        task = _parse(cli_env.dev_task_list())["data"]["tasks"][0]
+        assert task["signatures"]["buildIndexDDL"] == "buildIndexDDL(): string"
+
+    def test_signature_keys_must_belong_to_functions(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        bad = json.dumps([{
+            "task_id": "T1", "title": "x",
+            "implemented_in": {"path": "a.ts"},
+            "functions": ["a"],
+            "signatures": {"b": "b(): void"},
+        }])
+        result = _parse(cli_env.dev_task_set(bad))
+        assert result["success"] is False
+        assert "functions" in result["message"]
+
+    def test_signatures_must_be_object_of_nonempty_strings(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        not_object = json.dumps([{
+            "task_id": "T1", "title": "x", "implemented_in": {"path": "a.ts"},
+            "functions": ["a"], "signatures": ["a"]}])
+        assert _parse(cli_env.dev_task_set(not_object))["success"] is False
+        empty_value = json.dumps([{
+            "task_id": "T1", "title": "x", "implemented_in": {"path": "a.ts"},
+            "functions": ["a"], "signatures": {"a": "  "}}])
+        assert _parse(cli_env.dev_task_set(empty_value))["success"] is False
+
+    def test_helper_task_without_symbol_or_functions(self, tmp_project, cli_env):
+        """表外产物 helper（DDL/迁移）允许 functions/symbol 为空，仍走同一状态机。"""
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        helper = json.dumps([{
+            "task_id": "T0",
+            "title": "[helper] 创建 store 索引与触发器",
+            "module": "order",
+            "feature": "order-timeout-cancel",
+            "implemented_in": {"path": "src/store/migrations.sql", "lang": "sql"},
+            "capability_notes": ["HELPER: 兑现 C-106~C-114"],
+            "constraint_ids": ["C-106", "C-107"],
+            "calls": [],
+            "symbol": "",
+            "functions": [],
+        }], ensure_ascii=False)
+        assert _parse(cli_env.dev_task_set(helper))["success"] is True
+        task = _parse(cli_env.dev_task_list())["data"]["tasks"][0]
+        assert task["task_id"] == "T0"
+        assert task["functions"] == [] and task["symbol"] == ""
+        # align 不受影响：仍按"任务全 done"判断（此处未完成 → 正常拒绝，而不是 schema 错误）
+        res = _parse(cli_env.dev_align("order-timeout-cancel", "order", "aligned"))
+        assert res["success"] is False and "tasks_not_done" in res["suggestions"][0]
+
+
+# ═══════════════════════════════════════════════════════════════
+#  分支写操作前置断言（只读 .git/HEAD）
+# ═══════════════════════════════════════════════════════════════
+
+def _git(project, *args):
+    p = subprocess.run(["git", *args], cwd=str(project), capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
+
+
+def _init_git(project):
+    _git(project, "init", "-q", ".")
+    _git(project, "config", "user.email", "t@example.com")
+    _git(project, "config", "user.name", "t")
+    _git(project, "add", "-A")
+    _git(project, "commit", "-q", "-m", "init")
+
+
+class TestDevBranchGuard:
+    def _ready(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _init_git(tmp_project)
+        sid = _create_feature_session(cli_env)
+        default = _git(tmp_project, "rev-parse", "--abbrev-ref", "HEAD")
+        return sid, default
+
+    def _on_expected(self, tmp_project, sid):
+        _git(tmp_project, "checkout", "-q", "-b", f"dev-loop/{sid}")
+
+    def _on_default(self, tmp_project, default):
+        _git(tmp_project, "checkout", "-q", default)
+
+    def test_no_git_branch_matches_is_null(self, tmp_project, cli_env):
+        _make_project(tmp_project)
+        _create_feature_session(cli_env)
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["branch_matches"] is None
+        # 非 git 项目：写命令行为与之前一致
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+
+    def test_matching_branch_allows_forward_transition(self, tmp_project, cli_env):
+        sid, default = self._ready(tmp_project, cli_env)
+        self._on_expected(tmp_project, sid)
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["branch_matches"] is True
+        assert "**当前分支**" in st["message"]
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+
+    def test_mismatch_blocks_forward_but_allows_failure_records(self, tmp_project, cli_env):
+        sid, default = self._ready(tmp_project, cli_env)
+        self._on_expected(tmp_project, sid)
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+        assert _parse(cli_env.dev_task_update("T2", "implementing"))["success"] is True
+        self._on_default(tmp_project, default)
+
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["branch_matches"] is False
+        assert "dev_branch.mismatch" in st["suggestions"][0]
+        # 读命令始终放行
+        assert _parse(cli_env.dev_task_list())["success"] is True
+        assert _parse(cli_env.dev_plan_read())["success"] is True
+        # 前进状态被阻断
+        blocked = _parse(cli_env.dev_task_update("T1", "submitted"))
+        assert blocked["success"] is False
+        assert "dev_branch.mismatch" in blocked["suggestions"][0]
+        assert _parse(cli_env.dev_task_patch("T1", json.dumps({"title": "x"})))["success"] is False
+        # 记录失败 / 设计缺口放行
+        assert _parse(cli_env.dev_task_update("T1", "rejected", note="分支外的失败记录"))["success"] is True
+        assert _parse(cli_env.dev_task_update("T2", "blocked", note="设计缺口"))["success"] is True
+        # 备注类写操作也放行
+        assert _parse(cli_env.dev_task_annotate("T1", "备注"))["success"] is True
+
+    def test_detached_head_blocks_writes(self, tmp_project, cli_env):
+        sid, default = self._ready(tmp_project, cli_env)
+        self._on_expected(tmp_project, sid)
+        _git(tmp_project, "checkout", "-q", "--detach", "HEAD")
+        st = _parse(cli_env.dev_status())
+        assert st["data"]["branch_matches"] is False
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is False
+
+    def test_branch_set_updates_spec_and_plan(self, tmp_project, cli_env):
+        sid, default = self._ready(tmp_project, cli_env)
+        self._on_default(tmp_project, default)
+        result = _parse(cli_env.dev_branch_set(default))
+        assert result["success"] is True, result
+        session_dir = tmp_project / "DevSpec" / "active" / sid
+        dev_spec = json.loads((session_dir / "dev-spec.json").read_text(encoding="utf-8"))
+        assert dev_spec["branch"] == default
+        plan = _parse(cli_env.dev_plan_read())
+        sec6 = next(s for s in plan["data"]["sections"] if s["heading"] == "6. 分支信息")
+        assert default in sec6["content"]
+        # 记录后断言通过
+        assert _parse(cli_env.dev_status())["data"]["branch_matches"] is True
+        assert _parse(cli_env.dev_task_update("T1", "implementing"))["success"] is True
+
+    def test_branch_set_rejects_empty(self, tmp_project, cli_env):
+        self._ready(tmp_project, cli_env)
+        assert _parse(cli_env.dev_branch_set("   "))["success"] is False
+
+    def test_align_allows_explicit_mismatch_with_reason(self, tmp_project, cli_env):
+        sid, default = self._ready(tmp_project, cli_env)
+        self._on_expected(tmp_project, sid)
+        for tid in ("T1", "T2"):
+            for status in TASK_CHAIN:
+                assert _parse(cli_env.dev_task_update(tid, status))["success"] is True
+        self._on_default(tmp_project, default)
+        failed = _parse(cli_env.dev_align("order-timeout-cancel", "order", "aligned"))
+        assert failed["success"] is False
+        assert "dev_branch.mismatch" in failed["suggestions"][0]
+        no_reason = _parse(cli_env.dev_align(
+            "order-timeout-cancel", "order", "aligned", allow_branch_mismatch=True))
+        assert no_reason["success"] is False
+        assert "missing_reason" in no_reason["suggestions"][0]
+        ok = _parse(cli_env.dev_align(
+            "order-timeout-cancel", "order", "aligned",
+            allow_branch_mismatch=True, reason="分支已合并，收尾"))
+        assert ok["success"] is True, ok
+        # integrate 同矩阵
+        assert _parse(cli_env.dev_integrate("order", "integrated"))["success"] is False
+        assert _parse(cli_env.dev_integrate(
+            "order", "integrated", allow_branch_mismatch=True, reason="分支已合并，收尾"))["success"] is True
+
+    def test_lifecycle_commands_allowed_on_mismatch(self, tmp_project, cli_env):
+        """abort / close 是恢复通道，分支不匹配时也允许。"""
+        sid, default = self._ready(tmp_project, cli_env)
+        self._on_expected(tmp_project, sid)
+        self._on_default(tmp_project, default)
+        assert _parse(cli_env.dev_close("收尾"))["success"] is True
+        assert _parse(cli_env.dev_archive())["success"] is True

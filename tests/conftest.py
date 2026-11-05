@@ -133,10 +133,14 @@ def cli_env(tmp_project):
             root, ref, heading, content, level),
         dev_task_list=lambda: cli.cmd_dev_task_list(root),
         dev_task_set=lambda tasks_json: cli.cmd_dev_task_set(root, tasks_json),
+        dev_task_patch=lambda tid, patch_json: cli.cmd_dev_task_patch(root, tid, patch_json),
         dev_task_update=lambda tid, status, note="": cli.cmd_dev_task_update(root, tid, status, note),
         dev_task_annotate=lambda tid, note: cli.cmd_dev_task_annotate(root, tid, note),
-        dev_align=lambda feature, module, status, note="": cli.cmd_dev_align(root, feature, module, status, note),
-        dev_integrate=lambda module, status, note="": cli.cmd_dev_integrate(root, module, status, note),
+        dev_branch_set=lambda branch: cli.cmd_dev_branch_set(root, branch),
+        dev_align=lambda feature, module, status, note="", allow_branch_mismatch=False, reason="": cli.cmd_dev_align(
+            root, feature, module, status, note, allow_branch_mismatch, reason),
+        dev_integrate=lambda module, status, note="", allow_branch_mismatch=False, reason="": cli.cmd_dev_integrate(
+            root, module, status, note, allow_branch_mismatch, reason),
         dev_notes_append=lambda content, section=None: cli.cmd_dev_notes_append(root, content, section),
         dev_report_write=lambda kind, name, content: cli.cmd_dev_report_write(root, kind, name, content),
         dev_close=lambda reason: cli.cmd_dev_close(root, reason),

@@ -153,3 +153,133 @@ class TestSkillCliConsistency:
         # 必备的骨架字段
         for key in ("implemented_in", "cls", "symbol", "calls", "capability_notes"):
             assert key in card, f"任务卡示例缺少骨架字段 {key}"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  2026.11.3 反馈修复：表外产物 / Red-Green / 静态诊断 / 任务粒度 / 分支断言
+# ═══════════════════════════════════════════════════════════════
+
+class TestOutOfTableArtifacts:
+    """DEV-2：表外产物（DDL/迁移、共享类型、隐含写入）必须有正式位置。"""
+
+    def test_phase2_lists_out_of_table_artifacts(self, text):
+        assert "表外产物" in text
+        assert "helper" in text
+        assert "入口签名冻结不适用" in text  # 与附录 D 的关系
+        assert "表外产物：" in text  # 骨架确认模板新增行
+
+    def test_helper_card_convention(self, text):
+        for phrase in ("[helper]", "HELPER:", "允许为空", "不豁免"):
+            assert phrase in text, f"表外产物 helper 约定缺：{phrase}"
+
+
+class TestRedGreenLoop:
+    """DEV-4：每任务 Red-Green 闭环，红灯不达标不得置 tested。"""
+
+    def test_phase3_has_red_step(self, text):
+        assert "测试先行" in text and "Red" in text
+        assert "_red.log" in text
+        assert "有效红灯" in text
+        assert "编译失败、导入失败、语法错误不算有效红灯" in text
+        assert "VERIFY:" in text  # 无 gwt_refs 的任务必须有可执行验证方式
+
+    def test_phase4_is_green_acceptance(self, text):
+        assert "Green" in text and "_green.log" in text
+        assert "红绿测试名" in text or "测试名/用例 ID 必须一致" in text
+        assert "不得置 `tested`" in text or "不得置 tested" in text
+
+    def test_phase4_command_has_pipefail(self, text):
+        start = text.index("## Phase 4")
+        assert "set -o pipefail" in text[start:], "Phase 4 测试命令必须在 pipefail 下运行"
+
+    def test_brief_forbids_test_assertions(self, text):
+        assert "不得包含测试断言" in text
+        assert "不得包含测试代码或断言" in text
+
+    def test_baseline_change_reopens_red(self, text):
+        assert "基线变更后重开红灯" in text
+
+
+class TestStaticDiagnostics:
+    """DEV-5：静态诊断前置，只拦本次新增，未配置则跳过。"""
+
+    def test_appendix_b_has_static_diagnostics(self, text):
+        assert "静态诊断" in text
+        assert "lint" in text and "typecheck" in text
+        assert "历史问题不得阻断" in text
+        assert "skipped: not configured" in text
+        assert "--new-from-rev" in text  # 增量参数示例
+        assert "_static.log" in text
+
+
+class TestTaskGranularity:
+    """DEV-6：默认按单文件内聚调用链切分，附录 E 只管流程开销。"""
+
+    def test_cohesive_chain_and_split_criteria(self, text):
+        assert "内聚调用链" in text
+        for phrase in ("被多个入口调用", "独立 `gwt_refs`", "高风险", "超过 3 个方法", "独立验收"):
+            assert phrase in text, f"拆分判据缺：{phrase}"
+
+    def test_appendix_e_is_process_size_not_granularity(self, text):
+        assert "与任务粒度无关" in text
+
+    def test_appendices_support_multi_function_cards(self, text):
+        assert "伴生函数清单" in text
+        assert "全部函数签名" in text
+        assert '"signatures"' in text
+
+
+class TestDevTaskPatchText:
+    """DEV-3：轻 = patch，重 = set。"""
+
+    def test_light_and_heavy_paths(self, text):
+        assert "dev task patch" in text
+        assert "轻 = `dev task patch" in text
+        assert "重 = `dev task set`" in text
+
+
+class TestBranchAssertionText:
+    """DEV-7：只读 .git/HEAD、读命令始终允许、例外矩阵、dev branch set。"""
+
+    def test_read_only_head_and_read_commands(self, text):
+        normalized = text.replace("`", "")
+        assert "只读 .git/HEAD" in normalized
+        assert "读命令始终允许" in text
+        assert "--allow-branch-mismatch" in text
+        assert "dev branch set" in text
+        assert "dev_branch.mismatch" in text
+
+    def test_phase0_uses_structured_branch_fields(self, text):
+        assert "data.branch" in text and "data.branch_matches" in text
+
+
+class TestStateMachineTable:
+    """DEV-1：技能里的状态转移表必须与 CLI 的 DEV_TASK_TRANSITIONS 一致。"""
+
+    def _block(self, text):
+        m = re.search(r"### 任务状态机.*?```text\n(.*?)```", text, re.S)
+        assert m, "技能中缺少任务状态机表"
+        return m.group(1)
+
+    def test_all_statuses_present(self, text):
+        import sys
+
+        if str(SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS))
+        import cli
+
+        block = self._block(text)
+        for status in cli.DEV_TASK_STATUSES:
+            assert status in block, f"状态表缺状态：{status}"
+
+    def test_all_transitions_present(self, text):
+        import sys
+
+        if str(SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS))
+        import cli
+
+        block = self._block(text)
+        for src, dests in cli.DEV_TASK_TRANSITIONS.items():
+            for dst in dests:
+                assert f"{src} → {dst}" in block, f"状态表缺迁移：{src} → {dst}"

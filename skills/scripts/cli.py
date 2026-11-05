@@ -5,39 +5,41 @@ Stdlib-only command line interface for skills. Each subcommand mirrors the
 behaviour of the former MCP tools with identical validation logic.
 
 用法:
-    python .doc-kit/cli/cli.py [--root <项目目录>] tool status
-    python .doc-kit/cli/cli.py [--root <项目目录>] spec status
-    python .doc-kit/cli/cli.py [--root <项目目录>] spec read
-    python .doc-kit/cli/cli.py [--root <项目目录>] spec write --json '<spec_json>'   # 或从 stdin 读入
-    python .doc-kit/cli/cli.py [--root <项目目录>] spec archive
-    python .doc-kit/cli/cli.py [--root <项目目录>] spec schema
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc structure
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc read <path>
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc update-section <reference> --content '<text>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc reindex
-    python .doc-kit/cli/cli.py [--root <项目目录>] doc lint [--baseline <file>] [--summary]
-    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get [--branch <分支名>]
-    python .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
-    python .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev status
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev plan create --scope <module|feature> --target <范围> [--module <模块>] [--title <标题>] [--session <id>]
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev plan read
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev plan update-section <reference> --content '<正文>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev plan add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev task list
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev task set --json '<tasks 数组>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev task update <task_id> --status <状态> [--note '<备注>']
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev task annotate <task_id> --note '<备注>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev align --feature <功能名> --module <模块名> --status <aligned|done> [--note]
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev integrate --module <模块名> --status <integrated|documented|done> [--note]
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev notes append --content '<md>' [--section <章节名>]
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev report-write --kind <feature|module> --name <目标> --content '<md>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev close --reason '<原因>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev abort --reason '<原因>'
-    python .doc-kit/cli/cli.py [--root <项目目录>] dev archive
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] tool status
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] spec status
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] spec read
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] spec write --json '<spec_json>'   # 或从 stdin 读入
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] spec archive
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] spec schema
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc structure
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc read <path>
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc update-section <reference> --content '<text>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc add-section <reference> '<heading>' [--content '<text>'] [--level sibling|child]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc remove-section <reference>
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc reindex
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] doc lint [--baseline <file>] [--summary]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] review anchor-get [--branch <分支名>]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] review report-write [--content '<md>'] [--file <path>]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev status
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev plan create --scope <module|feature> --target <范围> [--module <模块>] [--title <标题>] [--session <id>]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev plan read
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev plan update-section <reference> --content '<正文>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev plan add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev task list
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev task set --json '<tasks 数组>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev task update <task_id> --status <状态> [--note '<备注>']
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev task annotate <task_id> --note '<备注>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev task patch <task_id> --json '<字段子集>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev branch set <branch>
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev align --feature <功能名> --module <模块名> --status <aligned|done> [--note] [--allow-branch-mismatch --reason '<原因>']
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev integrate --module <模块名> --status <integrated|documented|done> [--note] [--allow-branch-mismatch --reason '<原因>']
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev notes append --content '<md>' [--section <章节名>]
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev report-write --kind <feature|module> --name <目标> --content '<md>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev close --reason '<原因>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev abort --reason '<原因>'
+    python3 .doc-kit/cli/cli.py [--root <项目目录>] dev archive
 
 项目目录解析优先级: --root > DOC_KIT_PROJECT_ROOT 环境变量 > 从 cwd 向上查找
 （含 .doc-kit/ 或 SessionSpec/ 的最近祖先目录）。
@@ -85,7 +87,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-TOOLCHAIN_VERSION = "2026.11.2"
+TOOLCHAIN_VERSION = "2026.11.3"
 """工具链版本 —— 技能文本与项目内 `.doc-kit/` 副本的配套标识。
 
 改动 `skills/scripts/*.py`、`skills/spec-*/SKILL.md`、`skills/guidance/**`、
@@ -188,6 +190,11 @@ TOOLCHAIN_HISTORY = [
         "version": "2026.11.2",
         "date": "2026-11-03",
         "note": "R2 决议落盘归属三层防护"
+    },
+    {
+        "version": "2026.11.3",
+        "date": "2026-11-05",
+        "note": "技能反馈修复 11 项：dev task patch 局部更新基线与 signatures 多函数卡；dev branch set + 只读 .git/HEAD 分支断言矩阵；表外产物三类归属；每任务 Red-Green 闭环；静态诊断前置；任务卡按单文件内聚调用链切分（附录 A/B/E）；smell 工作区模式与按文件分批；review 默认 merge-base 起点；全仓统一 python3"
     }
 ]
 """工具链版本历史（旧 → 新，体积很小，随 CLI 一起分发）。
@@ -2026,7 +2033,10 @@ def cmd_review_anchor_get(project_root: Path, branch: str = "") -> str:
                 "branches": branches,
                 "review_history": [],
             },
-            suggestions=["尚无评审记录，将从头开始评审所有提交（或由用户指定起始 commit）。"],
+            suggestions=[
+                "尚无评审记录：优先用 `git merge-base <默认分支> HEAD` 作为起点（默认分支按 "
+                "origin/HEAD → main → master → develop 探测），用户也可改选指定 commit 或首个 commit。",
+            ],
         )
     return _ok(
         data={
@@ -2439,6 +2449,11 @@ ProjectSpec 在开发循环内只读，此处仅整合不修改。 -->
 <!-- 代码考古产物（Phase 1 Step 3.5）：从目标模块存量代码提取的命名约定、错误处理模式、
 日志格式、现有工具类/中间件。本节的每条都是实现阶段的强制风格约束，子代理简报必带。 -->
 
+## 2.6 验证命令
+
+<!-- Phase 1 Step 3.5 采集的项目既有验证命令（build / lint / typecheck / test / 增量参数）。
+只允许使用项目已有工具，禁止自动安装；未配置项写“未配置”，后续记 skipped: not configured。 -->
+
 ## 3. 骨架与任务清单
 
 <!-- 由 CLI 从 tasks.json 自动渲染（dev task set / dev task update 后自动刷新）。
@@ -2588,6 +2603,61 @@ def _load_dev_tasks(session_dir: Path) -> list[dict]:
     return tasks
 
 
+def _dev_branch_match(project_root: Path, session_dir: Path) -> tuple[str, str, bool | None]:
+    """返回 (期望分支, 当前分支, 是否匹配)。
+
+    - 无 `.git`（非 git 项目）或会话未记录分支 → `matches = None`（跳过断言）；
+    - 有 `.git` 且记录了分支 → `matches = (expected == current)`；
+    - detached HEAD / HEAD 读不到时 `_current_git_branch` 返回空串，视为**不匹配**
+      （写操作应被阻断，读操作仍放行）。
+
+    只读 `.git/HEAD`（复用 `_current_git_branch`），绝不执行 git 子进程。
+    """
+    dev_spec = _load_dev_spec(session_dir)
+    expected = str(dev_spec.get("branch") or "").strip()
+    current = _current_git_branch(project_root)
+    if not (project_root / ".git").exists() or not expected:
+        return expected, current, None
+    return expected, current, expected == current
+
+
+def _branch_display(branch: str) -> str:
+    return branch or "(detached HEAD / 无法读取)"
+
+
+def _dev_branch_mismatch_text(expected: str, current: str) -> str:
+    return (
+        f"ERROR [dev_branch.mismatch] 当前分支 '{_branch_display(current)}'，"
+        f"期望 '{expected}'。修复：git checkout '{expected}'，或 dev branch set '<实际分支>'。"
+    )
+
+
+def _dev_branch_gate(
+    project_root: Path,
+    session_dir: Path,
+    *,
+    allow_mismatch: bool = False,
+    reason: str = "",
+) -> str | None:
+    """写操作的分支前置断言：返回错误文本（调用方 _fail）或 None（放行）。
+
+    `matches is None`（非 git / 未记录分支）一律放行；分支不匹配默认阻断，
+    只有 `allow_mismatch=True` 且提供非空 `reason` 时显式放行（用于分支已合并/
+    删除后的收尾）。
+    """
+    expected, current, matches = _dev_branch_match(project_root, session_dir)
+    if matches is None or matches:
+        return None
+    if allow_mismatch:
+        if not reason.strip():
+            return (
+                "ERROR [dev_branch.missing_reason] --allow-branch-mismatch 必须同时提供 "
+                "--reason '<原因>'（记录为何在不匹配的分支上继续）。"
+            )
+        return None
+    return _dev_branch_mismatch_text(expected, current)
+
+
 def _dev_scope_path(project_root: Path, scope: str, target: str, module: str | None) -> Path | None:
     """定位开发范围对应的 ProjectSpec 目录（仅校验存在性，绝不写入）。"""
     docs_root = project_root / "ProjectSpec"
@@ -2634,6 +2704,7 @@ def cmd_dev_status(project_root: Path) -> str:
     _normalize_legacy_task_statuses(tasks)
     sid = dev_spec.get("session_id", session_dir.name)
     branch = dev_spec.get("branch", "") or ""
+    expected_branch, current_branch, branch_matches = _dev_branch_match(project_root, session_dir)
     total = len(tasks)
     done = sum(1 for t in tasks if t.get("status") == "done")
     phase = _dev_phase(tasks)
@@ -2651,6 +2722,10 @@ def cmd_dev_status(project_root: Path) -> str:
         lines.append(f"**状态分布**: {counters}")
     if branch:
         lines.append(f"**开发分支**: {branch}")
+    if branch_matches is False:
+        lines.append(f"**当前分支**: {_branch_display(current_branch)}（与期望不一致，写操作被阻断）")
+    elif branch_matches is True:
+        lines.append(f"**当前分支**: {current_branch}")
     if tasks:
         lines.append("")
         lines.append("| 任务 | 方法 | 文件 | 状态 |")
@@ -2676,9 +2751,12 @@ def cmd_dev_status(project_root: Path) -> str:
             lines.append(f"- {mname}: {info.get('status')}")
 
     suggestions = []
+    if branch_matches is False:
+        suggestions.append(_dev_branch_mismatch_text(expected_branch, current_branch))
     if branch:
         suggestions.append(
-            f"分支检查：git branch --show-current 应为 {branch}；不一致则 git checkout {branch}（或按 plan.md §6 记录的分支名）。"
+            f"分支检查：git branch --show-current 应为 {branch}；不一致则 git checkout {branch}"
+            "（或 dev branch set <实际分支> 记录真实分支名）。"
         )
     if legacy_count:
         suggestions.append(
@@ -2702,6 +2780,8 @@ def cmd_dev_status(project_root: Path) -> str:
             "title": dev_spec.get("title"),
             "status": dev_spec.get("status"),
             "branch": branch,
+            "current_branch": current_branch,
+            "branch_matches": branch_matches,
             "phase": phase,
             "legacy_status_migrated": legacy_count,
             "status_counts": counts,
@@ -2991,7 +3071,7 @@ def _refresh_plan_tasks(project_root: Path, session_dir: Path, tasks: list[dict]
 
 TASK_ALLOWED_KEYS = (
     "task_id", "title", "module", "feature", "functions", "entry_function",
-    "signature", "gwt_refs", "constraint_ids", "status", "deviation", "notes",
+    "signature", "signatures", "gwt_refs", "constraint_ids", "status", "deviation", "notes",
     # 骨架化（Phase 2）确定的结构信息：类/方法归属、实现落点、调用关系、能力注释
     "cls", "symbol", "implemented_in", "calls", "capability_notes", "merge_reason",
     # 委托实现（Phase 3）的派发参数
@@ -3063,6 +3143,24 @@ def _clean_task(raw: dict, index: int) -> tuple[dict | None, str | None]:
     for k in _TASK_STR_FIELDS:
         if k in item and item[k] is not None and not isinstance(item[k], str):
             item[k] = str(item[k])
+    # 多函数卡：signatures 是「函数名 -> 签名」映射，键必须属于 functions
+    sig_map = item.get("signatures")
+    if sig_map is not None:
+        if not isinstance(sig_map, dict):
+            return None, f"task '{tid}' 字段 signatures 必须是对象（函数名 -> 签名）"
+        funcs = set(item.get("functions") or [])
+        bad_keys = [str(k) for k in sig_map if str(k) not in funcs]
+        if bad_keys:
+            return None, (
+                f"task '{tid}' 的 signatures 含不在 functions 中的键 {bad_keys}。"
+                "修复：signatures 的键必须是 functions 列出的函数名（入口签名同时写入 signature）。"
+            )
+        cleaned_sigs: dict[str, str] = {}
+        for k, v in sig_map.items():
+            if not isinstance(v, str) or not v.strip():
+                return None, f"task '{tid}' 的 signatures['{k}'] 必须是非空字符串"
+            cleaned_sigs[str(k)] = v.strip()
+        item["signatures"] = cleaned_sigs
     # 派发参数：数值 + 默认值
     for k, default in (("timeout_seconds", 300), ("max_attempts", 2), ("attempts", 0)):
         v = item.get(k, default)
@@ -3141,6 +3239,61 @@ def cmd_dev_task_set(project_root: Path, tasks_json: str) -> str:
     )
 
 
+def cmd_dev_task_patch(project_root: Path, task_id: str, patch_json: str) -> str:
+    """局部更新任务基线（只覆盖 patch 中出现的字段，其余原样保留）。"""
+    session_dir, err = _require_active_dev_session(project_root)
+    if err:
+        return _fail(f"ERROR [dev.no_session] {err}")
+    try:
+        patch = json.loads(patch_json)
+    except json.JSONDecodeError as e:
+        return _fail(f"不是合法 JSON: {e}")
+    if not isinstance(patch, dict):
+        return _fail("dev task patch 需要 JSON 对象")
+    forbidden = {"task_id", "status", "module", "feature", "attempts", "notes", "deviation"}
+    allowed = [k for k in TASK_ALLOWED_KEYS if k not in forbidden]
+    hit = sorted(forbidden & set(patch))
+    if hit:
+        return _fail(
+            f"patch 不允许修改字段 {hit}；状态用 dev task update，备注用 dev task annotate。"
+            f"允许的字段: {allowed}。"
+        )
+    unknown = sorted(set(patch) - set(TASK_ALLOWED_KEYS))
+    if unknown:
+        return _fail(
+            f"task '{task_id}' 含未知字段 {unknown}。允许的字段: {allowed}。"
+            "（未知字段不再被静默忽略——如需新增字段请先扩展 CLI schema）"
+        )
+    gate = _dev_branch_gate(project_root, session_dir)
+    if gate:
+        return _fail(gate)
+    tasks = _load_dev_tasks(session_dir)
+    index = next((i for i, t in enumerate(tasks) if t.get("task_id") == task_id), None)
+    if index is None:
+        return _fail(f"ERROR [dev_task.not_found] 任务 {task_id} 不存在。修复：dev task list 查看任务 ID。")
+    merged = {**tasks[index], **patch}
+    cleaned, c_err = _clean_task(merged, index)
+    if c_err:
+        return _fail(c_err)
+    assert cleaned is not None
+    tasks[index] = cleaned
+    try:
+        (session_dir / "tasks.json").write_text(
+            json.dumps({"version": 1, "tasks": tasks}, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        _refresh_plan_tasks(project_root, session_dir, tasks)
+    except OSError as e:
+        return _fail(f"ERROR [dev_task.write_failed] 写 tasks.json 失败: {e}。")
+    return _ok(
+        message=f"## ✅ 任务 {task_id} 基线已局部更新（{len(patch)} 个字段）",
+        data={"task_id": task_id, "updated_fields": sorted(patch), "status": cleaned.get("status")},
+        suggestions=[
+            "未出现在 patch 中的字段保持原值（status/attempts/notes 不会被重置）。"
+            "implemented_in 为对象时整体替换——要保留 lang 请一并传入。"
+        ],
+    )
+
+
 def cmd_dev_task_update(project_root: Path, task_id: str, status: str, note: str = "") -> str:
     """任务状态迁移（按状态机校验），可附带备注。"""
     session_dir, err = _require_active_dev_session(project_root)
@@ -3148,6 +3301,12 @@ def cmd_dev_task_update(project_root: Path, task_id: str, status: str, note: str
         return _fail(f"ERROR [dev.no_session] {err}")
     if status not in DEV_TASK_STATUSES:
         return _fail(f"ERROR [dev_task.invalid_status] status '{status}' 不合法。允许: {DEV_TASK_STATUSES}。")
+    # 分支写操作前置断言：推进实现/验收状态必须与记录分支一致；
+    # rejected/blocked 放行（记录失败、设计缺口，不能把人锁死在错误分支上）。
+    if status in ("implementing", "submitted", "accepted", "tested", "done"):
+        gate = _dev_branch_gate(project_root, session_dir)
+        if gate:
+            return _fail(gate)
     tasks = _load_dev_tasks(session_dir)
     target = next((t for t in tasks if t.get("task_id") == task_id), None)
     if target is None:
@@ -3200,11 +3359,86 @@ def cmd_dev_task_annotate(project_root: Path, task_id: str, note: str) -> str:
     return _ok(message=f"## ✅ 任务 {task_id} 备注已追加", data={"task_id": task_id})
 
 
-def cmd_dev_align(project_root: Path, feature: str, module: str, status: str, note: str = "") -> str:
+def cmd_dev_branch_set(project_root: Path, branch: str) -> str:
+    """记录开发分支的实际名称（更新 dev-spec.json 与 plan.md §6）。
+
+    用于 Phase 2 Step 5 实际分支名与建议值不一致时修正记录，避免之后所有写命令
+    因为"CLI 拿旧分支名比对"而被误判为不匹配。分支不匹配时**允许**执行本命令。
+    """
+    session_dir, err = _require_active_dev_session(project_root)
+    if err:
+        return _fail(f"ERROR [dev.no_session] {err}")
+    branch = branch.strip()
+    if not branch:
+        return _fail("ERROR [dev_branch.empty] branch 不能为空。修复：dev branch set '<实际分支名>'。")
+    dev_spec = _load_dev_spec(session_dir)
+    old_branch = str(dev_spec.get("branch") or "")
+    dev_spec["branch"] = branch
+    try:
+        _save_dev_spec(session_dir, dev_spec)
+    except OSError as e:
+        return _fail(f"ERROR [dev_branch.write_failed] 写 dev-spec.json 失败: {e}。")
+    plan_updated = _write_plan_branch(project_root, session_dir, branch)
+    expected, current, matches = _dev_branch_match(project_root, session_dir)
+    return _ok(
+        message=(
+            f"## ✅ 开发分支已记录：{branch}"
+            + ("（plan.md §6 已同步）" if plan_updated else "（plan.md 缺失，未同步 §6）")
+        ),
+        data={"branch": branch, "previous_branch": old_branch,
+              "current_branch": current, "branch_matches": matches},
+        suggestions=[
+            f"之后 dev status 会以 {branch} 作为期望分支校验写操作。"
+            "若当前 HEAD 仍不一致，请 git checkout <目标分支> 后再继续。",
+        ],
+    )
+
+
+def _write_plan_branch(project_root: Path, session_dir: Path, branch: str) -> bool:
+    """把分支名写进 plan.md §6（存在则替换，缺失则追加）。返回是否写成功。"""
+    plan_path = session_dir / "plan.md"
+    if not plan_path.exists():
+        return False
+    text = plan_path.read_text(encoding="utf-8")
+    try:
+        meta_dict, body = FrontmatterParser.parse(text)
+    except Exception:
+        meta_dict, body = {}, text
+    doc_meta = DocMeta("", "", "", "", "active")
+    rel = str(plan_path.relative_to(project_root).as_posix())
+    doc = DocContent.from_body(rel, doc_meta, body, raw_frontmatter=meta_dict)
+    content = (
+        f"开发分支：`{branch}`（由 dev branch set 记录；断点续跑时先核对 "
+        "`git branch --show-current`，不一致则 git checkout 切换）。"
+    )
+    heading = "6. 分支信息"
+    section = doc.get_section(f"{rel}#{heading}")
+    if section is None:
+        doc.insert_section(rel, heading, content)
+    else:
+        section.content = content
+    plan_path.write_text(doc.to_markdown(), encoding="utf-8")
+    return True
+
+
+def cmd_dev_align(
+    project_root: Path,
+    feature: str,
+    module: str,
+    status: str,
+    note: str = "",
+    allow_branch_mismatch: bool = False,
+    reason: str = "",
+) -> str:
     """功能对齐：要求该功能全部任务 done 后记录 aligned / done。"""
     session_dir, err = _require_active_dev_session(project_root)
     if err:
         return _fail(f"ERROR [dev.no_session] {err}")
+    gate = _dev_branch_gate(
+        project_root, session_dir, allow_mismatch=allow_branch_mismatch, reason=reason
+    )
+    if gate:
+        return _fail(gate)
     if status not in ("aligned", "done"):
         return _fail(f"ERROR [dev_align.invalid_status] status 仅支持 aligned / done，收到 '{status}'。")
     if not module or not module.strip():
@@ -3240,11 +3474,23 @@ def cmd_dev_align(project_root: Path, feature: str, module: str, status: str, no
     )
 
 
-def cmd_dev_integrate(project_root: Path, module: str, status: str, note: str = "") -> str:
+def cmd_dev_integrate(
+    project_root: Path,
+    module: str,
+    status: str,
+    note: str = "",
+    allow_branch_mismatch: bool = False,
+    reason: str = "",
+) -> str:
     """模块集成：要求该模块全部功能已对齐后，按 integrated → documented → done 推进。"""
     session_dir, err = _require_active_dev_session(project_root)
     if err:
         return _fail(f"ERROR [dev.no_session] {err}")
+    gate = _dev_branch_gate(
+        project_root, session_dir, allow_mismatch=allow_branch_mismatch, reason=reason
+    )
+    if gate:
+        return _fail(gate)
     if status not in ("integrated", "documented", "done"):
         return _fail(f"ERROR [dev_integrate.invalid_status] status 仅支持 integrated / documented / done，收到 '{status}'。")
     if not module or not module.strip():
@@ -3579,6 +3825,9 @@ def build_parser() -> argparse.ArgumentParser:
     task_sub.add_parser("list", help="列出全部任务")
     task_set_p = task_sub.add_parser("set", help="全量写入任务清单（full-replace）")
     task_set_p.add_argument("--json", required=True, help="完整 tasks 数组 JSON；或 {\"tasks\": [...]}")
+    task_patch_p = task_sub.add_parser("patch", help="局部更新任务基线（只覆盖给出的字段）")
+    task_patch_p.add_argument("task_id", help="任务 ID")
+    task_patch_p.add_argument("--json", required=True, help="要覆盖的字段子集 JSON 对象")
     task_upd_p = task_sub.add_parser("update", help="任务状态迁移")
     task_upd_p.add_argument("task_id", help="任务 ID")
     task_upd_p.add_argument("--status", required=True, help="目标状态：" + "/".join(DEV_TASK_STATUSES))
@@ -3592,11 +3841,22 @@ def build_parser() -> argparse.ArgumentParser:
     align_p.add_argument("--module", required=True, help="所属模块名")
     align_p.add_argument("--status", required=True, choices=["aligned", "done"], help="对齐状态")
     align_p.add_argument("--note", default="", help="备注")
+    align_p.add_argument("--allow-branch-mismatch", action="store_true",
+                         help="分支不匹配时显式放行（收尾用；需同时给 --reason）")
+    align_p.add_argument("--reason", default="", help="放行分支不匹配的原因")
 
     integrate_p = dev_sub.add_parser("integrate", help="模块集成（要求该模块全部功能已对齐）")
     integrate_p.add_argument("--module", required=True, help="模块名")
     integrate_p.add_argument("--status", required=True, choices=["integrated", "documented", "done"], help="集成状态")
     integrate_p.add_argument("--note", default="", help="备注")
+    integrate_p.add_argument("--allow-branch-mismatch", action="store_true",
+                             help="分支不匹配时显式放行（收尾用；需同时给 --reason）")
+    integrate_p.add_argument("--reason", default="", help="放行分支不匹配的原因")
+
+    branch_p = dev_sub.add_parser("branch", help="开发分支记录")
+    branch_sub = branch_p.add_subparsers(dest="subcommand", required=True)
+    branch_set_p = branch_sub.add_parser("set", help="记录实际开发分支名（同步 dev-spec.json 与 plan.md §6）")
+    branch_set_p.add_argument("branch", help="实际分支名（如 dev-loop/2026-11-05-order）")
 
     notes_p = dev_sub.add_parser("notes", help="CodeNotes 操作")
     notes_sub = notes_p.add_subparsers(dest="subcommand", required=True)
@@ -3696,14 +3956,21 @@ def main(argv: list[str] | None = None) -> None:
                     _emit(cmd_dev_task_list(project_root))
                 elif args.subcommand == "set":
                     _emit(cmd_dev_task_set(project_root, args.json))
+                elif args.subcommand == "patch":
+                    _emit(cmd_dev_task_patch(project_root, args.task_id, args.json))
                 elif args.subcommand == "update":
                     _emit(cmd_dev_task_update(project_root, args.task_id, args.status, args.note))
                 elif args.subcommand == "annotate":
                     _emit(cmd_dev_task_annotate(project_root, args.task_id, args.note))
+            elif args.command == "branch":
+                if args.subcommand == "set":
+                    _emit(cmd_dev_branch_set(project_root, args.branch))
             elif args.command == "align":
-                _emit(cmd_dev_align(project_root, args.feature, args.module, args.status, args.note))
+                _emit(cmd_dev_align(project_root, args.feature, args.module, args.status, args.note,
+                                    args.allow_branch_mismatch, args.reason))
             elif args.command == "integrate":
-                _emit(cmd_dev_integrate(project_root, args.module, args.status, args.note))
+                _emit(cmd_dev_integrate(project_root, args.module, args.status, args.note,
+                                        args.allow_branch_mismatch, args.reason))
             elif args.command == "notes":
                 if args.subcommand == "append":
                     _emit(cmd_dev_notes_append(project_root, _unescape_text(args.content), args.section))

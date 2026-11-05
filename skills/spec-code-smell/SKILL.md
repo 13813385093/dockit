@@ -17,11 +17,13 @@ description: 当开发完成、提交 PR 前想检查代码形态（重复、参
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.3` 生成。先运行 `python3 .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.11.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.11.3`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
+
+> 若 `python3` 不在 PATH（部分 Windows 环境只有 `python` 或 `py -3`），把命令中的 `python3` 替换为可用解释器；`command not found` 不代表工具链损坏。
 
 为什么必须有这一步：`init` 是把工具链**快照复制**进项目，之后两边各自演化；而新版技能配旧版 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（命令仍报"已保存"），导致关键信息凭空消失。
 
@@ -29,9 +31,9 @@ description: 当开发完成、提交 PR 前想检查代码形态（重复、参
 
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
-python .doc-kit/cli/cli.py tool status
-python .doc-kit/cli/cli.py doc structure
-python .doc-kit/cli/cli.py doc read <path>
+python3 .doc-kit/cli/cli.py tool status
+python3 .doc-kit/cli/cli.py doc structure
+python3 .doc-kit/cli/cli.py doc read <path>
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
@@ -92,7 +94,7 @@ test -f .doc-kit/cli/cli.py && echo DOC_KIT_OK
 
 任一不满足，按前言的前置条件文案终止，不进入后续步骤。
 
-然后运行 `python .doc-kit/cli/cli.py tool status`；版本/副本不一致时按前言暂停，不带着错配继续。
+然后运行 `python3 .doc-kit/cli/cli.py tool status`；版本/副本不一致时按前言暂停，不带着错配继续。
 
 ---
 
@@ -104,6 +106,7 @@ test -f .doc-kit/cli/cli.py && echo DOC_KIT_OK
 
 - `/spec-code-smell <from>..<to>`
 - `/spec-code-smell <from>...<to>`
+- **工作区模式（含未提交改动）**：`/spec-code-smell <from>..WORKTREE` 或 `/spec-code-smell <from> --worktree`——评审"从 `<from>` 到当前工作区"的改动，包括已跟踪修改与未跟踪文件
 - 自然语言：“从 v1.0 到 HEAD”“看最近 3 个提交”
 
 **不读、不写 `review` 锚点**。范围是显式参数；用户没给起点时先问，不默认猜。
@@ -111,15 +114,21 @@ test -f .doc-kit/cli/cli.py && echo DOC_KIT_OK
 ### 1-2 校验
 
 ```bash
+# 纯提交模式
 git cat-file -e <from>^{commit}
 git cat-file -e <to>^{commit}
 git rev-parse --is-shallow-repository
 git diff --quiet <from>..<to>; echo $?   # 1 = 有变更，0 = 空
+
+# 工作区模式：跳过 <to> 的 cat-file，仍校验 <from>，并检查工作区是否有改动
+git cat-file -e <from>^{commit}
+git status --porcelain                    # 无输出 = 工作区无改动
 ```
 
 - ref 无效 → 说明原因，请用户给新范围；不要继续用无效 ref。
 - 浅克隆且范围不可达 → 请用户指定可用范围，或征得同意后 `git fetch --deepen`。
 - 空 diff → 输出“该范围无变更”，询问换范围或结束；不要产出空报告。
+- **工作区模式且无改动** → 输出“工作区无改动”，询问换范围或结束。
 
 ---
 
@@ -129,11 +138,25 @@ git diff --quiet <from>..<to>; echo $?   # 1 = 有变更，0 = 空
 
 完整规则见 `<项目根>/.doc-kit/skills/guidance/smell-capabilities/_index.md` §源文件发现；执行时必须先读它。
 
-### 2-1 枚举变更文件
+### 2-1 枚举变更文件（两路合并）
+
+**纯提交模式**：
 
 ```bash
 git diff --name-only --diff-filter=ACMR <from>..<to>
 ```
+
+**工作区模式（两路合并）**：
+
+- 已跟踪改动：`git diff --name-only <from>`
+- 未跟踪文件：`git status --porcelain` 中 `??` 开头的路径
+
+> `git diff <from>` **不包含未跟踪文件**，所以必须额外枚举 `git status --porcelain` 的 `??` 项。**不要用 `git add -N`**——它会改 index，违反本技能的只读边界。
+
+**读取 diff**：
+
+- 已跟踪：`git diff <from> -- <path>`
+- 未跟踪：直接读文件内容（或用 `git diff --no-index /dev/null <path>`），按源码行数计入 1,200 行上限。
 
 ### 2-2 分类
 
@@ -147,6 +170,8 @@ git diff --name-only --diff-filter=ACMR <from>..<to>
 
 ```text
 扫描范围（按文件分类，不绑定 src/）：
+  范围口径：含未提交改动（已跟踪修改 X 个，未跟踪文件 Y 个）
+    （纯提交模式则标注：范围口径：仅提交范围）
   将扫描 N 个源文件：
     <目录>   <数量>
   排除：
@@ -159,13 +184,19 @@ git diff --name-only --diff-filter=ACMR <from>..<to>
   如不符合预期，请直接指定路径或说“包含 tests / 排除 X”。
 ```
 
+> **范围口径不得混用而不声明**：工作区模式必须写“含未提交改动（已跟踪修改 X 个，未跟踪文件 Y 个）”；纯提交模式必须写“仅提交范围”。
+
 用户说“只扫 X”“包含 tests”“排除 Y”时，以用户指令为准。
 
-### 2-4 上限
+### 2-4 上限与分批
 
-- 默认上限：1,200 行或 80KB 的**源码 diff**；
-- 超过时：按顶层目录拆分，或先扫用户指定的子集；不要静默截断；
-- 测试/文档不计入源码上限，但要在摘要里说明。
+- 默认上限：1,200 行或 80KB 的**源码 diff**；**工作区模式同样受 1,200 行上限约束**；
+- 超过时：按顶层目录拆分，或先扫用户指定的子集；**不要静默截断**；
+- 若变更文件**同属一个顶层目录**：按文件分批，每批 ≤1,200 行；
+- 范围摘要标注“批 A / 批 B”及各自文件清单；
+- **单文件本身超过 1,200 行**时，按 hunk 分批并标注行段，不得静默截断；
+- 测试/文档不计入源码上限，但要在摘要里说明；
+- 输出模板的“扫描：”行要说明批次与总覆盖（如“批 A 3 文件 / 批 B 2 文件，共 5 文件”），便于用户核对没有漏批。
 
 ---
 
@@ -210,7 +241,8 @@ git diff --name-only --diff-filter=ACMR <from>..<to>
 ## 代码异味扫描 — {from}..{to}
 
 模式：快速 / 深入
-扫描：{N} 个源文件，{M} 行源码变更；排除：tests/docs/vendor/build...
+范围口径：含未提交改动（已跟踪修改 X 个，未跟踪文件 Y 个）   ← 纯提交模式写“仅提交范围”
+扫描：{N} 个源文件，{M} 行源码变更（批 A 3 文件 / 批 B 2 文件，共 5 文件）；排除：tests/docs/vendor/build...
 候选：{K} 条（按置信度 × 影响排序，最多 10 条）
 
 | # | 异味 | 位置 | 置信度 | 影响 | 证据 | 为什么可能是误报 | 建议方向 |
@@ -262,9 +294,11 @@ git diff --name-only --diff-filter=ACMR <from>..<to>
 | 范围缺失 | 先问起点，不默认猜 |
 | ref 无效 | 说明原因，请用户给新范围 |
 | 空 diff | 说明“该范围无变更”，询问换范围或结束 |
+| 工作区模式且无改动 | 输出“工作区无改动”，询问换范围或结束 |
+| 未跟踪文件无法读取 | 列入“未识别”，不静默丢弃 |
 | 分类后无源码 | 打印摘要，问是否包含 tests/未识别扩展名 |
 | 未知扩展名 | 列入“未识别”，问用户是否纳入 |
-| diff 超上限 | 按目录拆分或让用户指定子集，不静默截断 |
+| diff 超上限 | 按目录/文件分批（每批 ≤1,200 行）或让用户指定子集，不静默截断 |
 | 能力文件缺失 | 提示 `doc-kit init` 同步，不猜规则 |
 | 已知设计缺口 | 标注“已知”，不作为新发现 |
 

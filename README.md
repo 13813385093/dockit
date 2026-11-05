@@ -107,7 +107,7 @@ doc-kit install-skills <agent 的 skills 目录>
 ### 3.1 检查是否需要升级
 
 ```bash
-python .doc-kit/cli/cli.py tool status
+python3 .doc-kit/cli/cli.py tool status
 ```
 
 输出会告诉你当前 CLI 版本 vs 项目记录版本、落后几个版本、期间改了什么，以及副本是否被改动或缺失。
@@ -122,7 +122,7 @@ rm -rf <项目根>/.doc-kit
 doc-kit init <项目根>
 
 # 3. 从 ProjectSpec/ 重建文档索引（init 只为本次新建的文档建索引，已有文档需 reindex）
-python <项目根>/.doc-kit/cli/cli.py doc reindex
+python3 <项目根>/.doc-kit/cli/cli.py doc reindex
 
 # 4. 刷新 agent 侧的 skills
 doc-kit install-skills <agent 的 skills 目录>

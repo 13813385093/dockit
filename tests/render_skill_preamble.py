@@ -48,38 +48,40 @@ VARIANTS = {
 
 # 命令 → 规范用法行（单一事实源；新增命令必须在此登记，否则生成器报错）
 USAGE: dict[str, str] = {
-    "tool status": "python .doc-kit/cli/cli.py tool status",
-    "spec status": "python .doc-kit/cli/cli.py spec status",
-    "spec read": "python .doc-kit/cli/cli.py spec read",
-    "spec schema": "python .doc-kit/cli/cli.py spec schema",
-    "spec write": "python .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --json 则从 stdin 读入",
-    "spec archive": "python .doc-kit/cli/cli.py spec archive",
-    "spec coverage": "python .doc-kit/cli/cli.py spec coverage [--verify] [--id <sid>]",
-    "doc structure": "python .doc-kit/cli/cli.py doc structure",
-    "doc read": "python .doc-kit/cli/cli.py doc read <path>",
-    "doc update-section": "python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'",
-    "doc add-section": "python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]",
-    "doc new": "python .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]",
-    "doc reindex": "python .doc-kit/cli/cli.py doc reindex",
-    "doc lint": "python .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]",
-    "review anchor-get": "python .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]",
-    "review anchor-set": "python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]",
-    "review report-write": "python .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin",
-    "dev status": "python .doc-kit/cli/cli.py dev status",
-    "dev plan create": "python .doc-kit/cli/cli.py dev plan create --scope feature --target <功能名> --module <模块名> [--title <标题>]",
-    "dev plan read": "python .doc-kit/cli/cli.py dev plan read",
-    "dev plan update-section": "python .doc-kit/cli/cli.py dev plan update-section <reference> --content '<正文>'",
-    "dev task list": "python .doc-kit/cli/cli.py dev task list",
-    "dev task set": "python .doc-kit/cli/cli.py dev task set --json '<tasks 数组>'",
-    "dev task update": "python .doc-kit/cli/cli.py dev task update <task_id> --status <状态> [--note '<备注>']",
-    "dev task annotate": "python .doc-kit/cli/cli.py dev task annotate <task_id> --note '<备注>'",
-    "dev align": "python .doc-kit/cli/cli.py dev align --feature <功能名> --module <模块名> --status <aligned|done> [--note '<备注>']",
-    "dev integrate": "python .doc-kit/cli/cli.py dev integrate --module <模块名> --status <integrated|documented|done> [--note '<备注>']",
-    "dev notes append": "python .doc-kit/cli/cli.py dev notes append --content '<md>' [--section <章节名>]",
-    "dev report-write": "python .doc-kit/cli/cli.py dev report-write --kind <feature|module> --name <目标> --content '<md>'",
-    "dev close": "python .doc-kit/cli/cli.py dev close --reason '<原因>'",
-    "dev abort": "python .doc-kit/cli/cli.py dev abort --reason '<原因>'",
-    "dev archive": "python .doc-kit/cli/cli.py dev archive",
+    "tool status": "python3 .doc-kit/cli/cli.py tool status",
+    "spec status": "python3 .doc-kit/cli/cli.py spec status",
+    "spec read": "python3 .doc-kit/cli/cli.py spec read",
+    "spec schema": "python3 .doc-kit/cli/cli.py spec schema",
+    "spec write": "python3 .doc-kit/cli/cli.py spec write [--json '<完整 spec JSON>']   # 省 --json 则从 stdin 读入",
+    "spec archive": "python3 .doc-kit/cli/cli.py spec archive",
+    "spec coverage": "python3 .doc-kit/cli/cli.py spec coverage [--verify] [--id <sid>]",
+    "doc structure": "python3 .doc-kit/cli/cli.py doc structure",
+    "doc read": "python3 .doc-kit/cli/cli.py doc read <path>",
+    "doc update-section": "python3 .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'",
+    "doc add-section": "python3 .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]",
+    "doc new": "python3 .doc-kit/cli/cli.py doc new <doc_type> [--module <模块名>] [--feature <功能名>] [--author <负责人>]",
+    "doc reindex": "python3 .doc-kit/cli/cli.py doc reindex",
+    "doc lint": "python3 .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]",
+    "review anchor-get": "python3 .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]",
+    "review anchor-set": "python3 .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]",
+    "review report-write": "python3 .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin",
+    "dev status": "python3 .doc-kit/cli/cli.py dev status",
+    "dev plan create": "python3 .doc-kit/cli/cli.py dev plan create --scope feature --target <功能名> --module <模块名> [--title <标题>]",
+    "dev plan read": "python3 .doc-kit/cli/cli.py dev plan read",
+    "dev plan update-section": "python3 .doc-kit/cli/cli.py dev plan update-section <reference> --content '<正文>'",
+    "dev task list": "python3 .doc-kit/cli/cli.py dev task list",
+    "dev task set": "python3 .doc-kit/cli/cli.py dev task set --json '<tasks 数组>'",
+    "dev task patch": "python3 .doc-kit/cli/cli.py dev task patch <task_id> --json '<字段子集>'",
+    "dev task update": "python3 .doc-kit/cli/cli.py dev task update <task_id> --status <状态> [--note '<备注>']",
+    "dev task annotate": "python3 .doc-kit/cli/cli.py dev task annotate <task_id> --note '<备注>'",
+    "dev branch set": "python3 .doc-kit/cli/cli.py dev branch set <branch>",
+    "dev align": "python3 .doc-kit/cli/cli.py dev align --feature <功能名> --module <模块名> --status <aligned|done> [--note '<备注>'] [--allow-branch-mismatch --reason '<原因>']",
+    "dev integrate": "python3 .doc-kit/cli/cli.py dev integrate --module <模块名> --status <integrated|documented|done> [--note '<备注>'] [--allow-branch-mismatch --reason '<原因>']",
+    "dev notes append": "python3 .doc-kit/cli/cli.py dev notes append --content '<md>' [--section <章节名>]",
+    "dev report-write": "python3 .doc-kit/cli/cli.py dev report-write --kind <feature|module> --name <目标> --content '<md>'",
+    "dev close": "python3 .doc-kit/cli/cli.py dev close --reason '<原因>'",
+    "dev abort": "python3 .doc-kit/cli/cli.py dev abort --reason '<原因>'",
+    "dev archive": "python3 .doc-kit/cli/cli.py dev archive",
 }
 
 # 工具清单的呈现顺序（按 CLI 分组与常用度）
@@ -97,7 +99,7 @@ def toolchain_version() -> str:
         raise ValueError("cli.py 中找不到 TOOLCHAIN_VERSION")
     return m.group(1)
 
-# 全写形式：python .doc-kit/cli/cli.py dev task update ...
+# 全写形式：python3 .doc-kit/cli/cli.py dev task update ...
 COMMAND_RE = re.compile(r"cli\.py[ \t]+((?:tool|spec|doc|review|dev)(?:[ \t]+[a-z][a-z-]*){1,2})")
 # 简写形式：正文里的 `dev task update` / `doc read`（判定"该技能会用到哪些命令"时同样计入，
 # 纯引用（如"`doc remove-section` 不在本技能职责内"）用 preamble-tools-exclude 标记排除）
