@@ -17,11 +17,13 @@ description: 当开发完成准备提交、或有多个不相干的改动需要�
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.3` 生成。先运行 `python3 .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.11.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.11.3`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
+
+> 若 `python3` 不在 PATH（部分 Windows 环境只有 `python` 或 `py -3`），把命令中的 `python3` 替换为可用解释器；`command not found` 不代表工具链损坏。
 
 为什么必须有这一步：`init` 是把工具链**快照复制**进项目，之后两边各自演化；而新版技能配旧版 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（命令仍报"已保存"），导致关键信息凭空消失。
 
@@ -29,10 +31,10 @@ description: 当开发完成准备提交、或有多个不相干的改动需要�
 
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
-python .doc-kit/cli/cli.py tool status
-python .doc-kit/cli/cli.py spec read
-python .doc-kit/cli/cli.py doc structure
-python .doc-kit/cli/cli.py doc read <path>
+python3 .doc-kit/cli/cli.py tool status
+python3 .doc-kit/cli/cli.py spec read
+python3 .doc-kit/cli/cli.py doc structure
+python3 .doc-kit/cli/cli.py doc read <path>
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
@@ -151,9 +153,9 @@ git status --porcelain        # 全部状态与未跟踪文件
 
 ### Step 1-3：读取上下文并分类
 
-先运行 `python .doc-kit/cli/cli.py doc structure` 获取项目文档结构，映射变更文件可能关联的设计文档。
+先运行 `python3 .doc-kit/cli/cli.py doc structure` 获取项目文档结构，映射变更文件可能关联的设计文档。
 
-对每个变更文件读取其完整 diff（`git diff --staged -- <file>` 或 `git diff -- <file>`），**按需**运行 `python .doc-kit/cli/cli.py doc read <path>` 读取关联设计文档，综合判断标签。
+对每个变更文件读取其完整 diff（`git diff --staged -- <file>` 或 `git diff -- <file>`），**按需**运行 `python3 .doc-kit/cli/cli.py doc read <path>` 读取关联设计文档，综合判断标签。
 
 **标签体系**（精简版 Conventional Commits）：
 
@@ -293,7 +295,7 @@ git commit -m "feat: xxx
 - <具体改动2>
 ```
 
-**利用议题上下文**：可运行 `python .doc-kit/cli/cli.py spec read` 读取活跃议题（无活跃议题时静默跳过），把议题背景融入 message body。
+**利用议题上下文**：可运行 `python3 .doc-kit/cli/cli.py spec read` 读取活跃议题（无活跃议题时静默跳过），把议题背景融入 message body。
 
 每个提交完成后输出：
 

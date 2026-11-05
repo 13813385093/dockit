@@ -134,3 +134,33 @@ def test_review_handoff_carries_explicit_range():
     assert "review_from" in text
     assert "review_to" in text
     assert "/spec-code-smell <review_from>..<review_to>" in text
+
+
+# ── 2026.11.3 反馈修复：工作区模式（含未提交改动）与按文件分批 ──
+
+def test_worktree_mode_covers_tracked_and_untracked():
+    """SMELL-3：工作区模式必须同时纳入已跟踪改动与未跟踪文件。"""
+    text = SKILL.read_text(encoding="utf-8")
+    assert "工作区模式" in text
+    assert "git status --porcelain" in text
+    assert "未跟踪" in text
+    assert "不包含未跟踪" in text
+    assert "含未提交改动" in text
+    assert "WORKTREE" in text
+    assert "--worktree" in text
+    # 不得用 git add -N（会改 index，违反只读边界）
+    assert "不要用 `git add -N`" in text
+    assert "范围口径" in text and "仅提交范围" in text
+    assert "工作区无改动" in text
+    assert "未跟踪文件无法读取" in text
+    assert "未识别" in text
+
+
+def test_large_changes_split_by_file_batches():
+    """SMELL-2：同顶层目录超上限时按文件分批，单文件按 hunk 分批。"""
+    text = SKILL.read_text(encoding="utf-8")
+    assert "按文件分批" in text
+    assert "批 A" in text and "批 B" in text
+    assert "单文件" in text and "hunk" in text
+    assert "漏批" in text
+    assert "1,200" in text

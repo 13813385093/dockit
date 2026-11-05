@@ -16,11 +16,13 @@ description: 当开发完成但关键变更尚未确认、或提交 PR 前要做
 
 **前置条件（不满足直接退出，无兜底）**：项目必须已由 doc-kit 初始化，CLI 已安装于 `<项目根>/.doc-kit/cli/cli.py`；且当前目录必须是 git 仓库。任一不满足即输出终止文案——未初始化时给出「请人工执行 `doc-kit init <项目根>`，再执行 `doc-kit install-skills <agent 技能目录>`」——不再执行后续步骤。**初始化由人工完成，不要尝试任何自举安装。**
 
-**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.2` 生成。先运行 `python .doc-kit/cli/cli.py tool status`：
+**工具链版本自检（进入流程先做）**：本技能随工具链版本 `2026.11.3` 生成。先运行 `python3 .doc-kit/cli/cli.py tool status`：
 
-- `data.toolchain_version` **等于** `2026.11.2`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
+- `data.toolchain_version` **等于** `2026.11.3`，且 `data.stale` 为 `false`、`data.consistent` 为 `true` → 继续本次流程；
 - 否则（版本不等 / `stale` / 副本被改动或缺失 / 无 toolchain.json）→ **暂停本次流程**，把 `suggestions` 原文转述给用户，请其运行 `doc-kit init <项目根>` 与 `doc-kit install-skills <agent 技能目录>` 同步（只刷新 `.doc-kit/`，不改动 `ProjectSpec/`），同步完成后再重新开始；
 - **若 `tool status` 命令本身不存在、参数不认识，或 CLI 直接抛 Python 错误**（如 `invalid choice: 'tool'`、`unrecognized arguments`、`ModuleNotFoundError`）→ 说明项目内的 CLI 比本技能旧、或副本被删改（此时它自己已无法自检）：同样**暂停本次流程**，告知用户「项目 `.doc-kit/` 与当前技能版本不配套」，并请其重跑上述两条同步命令。
+
+> 若 `python3` 不在 PATH（部分 Windows 环境只有 `python` 或 `py -3`），把命令中的 `python3` 替换为可用解释器；`command not found` 不代表工具链损坏。
 
 为什么必须有这一步：`init` 是把工具链**快照复制**进项目，之后两边各自演化；而新版技能配旧版 CLI 时，旧 CLI 会**静默丢弃**它不认识的字段（命令仍报"已保存"），导致关键信息凭空消失。
 
@@ -28,15 +30,15 @@ description: 当开发完成但关键变更尚未确认、或提交 PR 前要做
 
 ```bash
 cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录
-python .doc-kit/cli/cli.py tool status
-python .doc-kit/cli/cli.py doc structure
-python .doc-kit/cli/cli.py doc read <path>
-python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
-python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
-python .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]
-python .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]
-python .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
-python .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin
+python3 .doc-kit/cli/cli.py tool status
+python3 .doc-kit/cli/cli.py doc structure
+python3 .doc-kit/cli/cli.py doc read <path>
+python3 .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
+python3 .doc-kit/cli/cli.py doc add-section <reference> '<标题>' [--content '<正文>'] [--level sibling|child]
+python3 .doc-kit/cli/cli.py doc lint [--baseline <file>] [--summary]
+python3 .doc-kit/cli/cli.py review anchor-get [--branch <分支名>]
+python3 .doc-kit/cli/cli.py review anchor-set <commit_hash> [--session <sid>] [--branch <分支名>]
+python3 .doc-kit/cli/cli.py review report-write [--content '<report_markdown>']   # 或 --file <path> / stdin
 ```
 
 > 输出约定：JSON 结果含 `success` / `message` / `data` / `suggestions` 四个字段；退出码 0 = 成功、1 = 业务拒绝或运行时错误、**2 = 参数错误**（未知选项 / 缺必填参数，按提示修正后重试）。
@@ -105,7 +107,7 @@ git --version >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1
 
 ### Step 1-2：获取并校验评审锚点
 
-调 `python .doc-kit/cli/cli.py review anchor-get`（默认读取**当前分支**的锚点）。
+调 `python3 .doc-kit/cli/cli.py review anchor-get`（默认读取**当前分支**的锚点）。
 
 返回的 `data` 含 `branch` / `source` / `last_reviewed_commit`，按以下分支处理：
 
@@ -113,8 +115,24 @@ git --version >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1
 |------|------|------|
 | `source: branch` 且 hash 非空 | 当前分支有专属锚点 | 进入**锚点校验**（下一步） |
 | `source: global` | 当前分支无专属锚点，回退到最近一次评审锚点 | 提示"该锚点可能来自其它分支"，请用户确认比对范围后仍须校验 |
-| `source: none` | 首次评审 | 询问起点：指定某个 commit，或从首个 commit 开始 |
+| `source: none` | 首次评审 | **优先推荐"与默认分支的 merge-base"作为起点**（见下方取法）；用户仍可改选指定 commit 或首个 commit |
 | 用户描述中指定了范围 | 如「从 v1.0 tag 开始评审」 | 优先采用用户指定的起点 |
+
+**`source: none` 的起点取法（merge-base 优先）**：
+
+```bash
+# 默认分支探测：origin/HEAD → main → master → develop
+base=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+for cand in main master develop; do
+  [ -n "$base" ] && break
+  git rev-parse --verify --quiet "$cand" >/dev/null && base=$cand
+done
+git merge-base "$base" HEAD
+```
+
+- 当前分支**就是默认分支**时，merge-base 等于 HEAD，会得到空范围：此时**回退为"询问起点"**，不要用空范围继续；
+- 目标分支没有共同祖先（无关历史）时，说明原因并请用户指定起点；
+- 默认分支探测失败（无 origin/HEAD 且 main/master/develop 都不存在）→ 询问用户指定起点，不要猜。
 
 **锚点校验（必做）**：
 
@@ -154,7 +172,7 @@ git diff <锚点>..HEAD -- . ':(exclude)*.md' ':(exclude)docs/' ':(exclude)CHANG
 
 ### Step 1-4：读取相关设计文档
 
-调 `python .doc-kit/cli/cli.py doc structure` 获取所有文档路径与 section 标题，按变更文件路径语义与用户关注点匹配相关文档（如 `auth.py` → `architecture.md` §认证流程、`non-functional-constraints.md` §安全约束；用户提到「接口变更」→ `inter-module-contracts.md`），再 `python .doc-kit/cli/cli.py doc read <path>` 读取完整内容。
+调 `python3 .doc-kit/cli/cli.py doc structure` 获取所有文档路径与 section 标题，按变更文件路径语义与用户关注点匹配相关文档（如 `auth.py` → `architecture.md` §认证流程、`non-functional-constraints.md` §安全约束；用户提到「接口变更」→ `inter-module-contracts.md`），再 `python3 .doc-kit/cli/cli.py doc read <path>` 读取完整内容。
 
 > 匹配规则是启发式的——按文件名、section 标题、用户描述三者之间的语义关联，不做精确映射。
 
@@ -246,7 +264,7 @@ C. **误报** — 代码与文档一致，AI 判断有误
 
 ```bash
 git rev-parse HEAD   # 记为 review_to（= HEAD），供 Step 4-5 的 smell 范围使用
-python .doc-kit/cli/cli.py review anchor-set <commit_hash>
+python3 .doc-kit/cli/cli.py review anchor-set <commit_hash>
 ```
 
 锚点**按当前分支记录**（多分支并行评审互不覆盖）；如评审的是其它分支，可加 `--branch <分支名>`。
@@ -320,7 +338,7 @@ AI 标注的 N 个潜在偏差区域：
 ### Step 4-3：写入评审报告
 
 ```bash
-python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'
+python3 .doc-kit/cli/cli.py review report-write --content '<report_markdown>'
 ```
 
 文件自动命名为 `code-review-{YYYYMMDD-HHMMSS}.md`，写入 `ReviewSpec/`。若 CLI 返回 `warnings`（缺建议段落），照提示补齐更佳。
@@ -328,7 +346,7 @@ python .doc-kit/cli/cli.py review report-write --content '<report_markdown>'
 ### Step 4-4：文档一致性检查（提示，非阻断）
 
 ```bash
-python .doc-kit/cli/cli.py doc lint --summary
+python3 .doc-kit/cli/cli.py doc lint --summary
 ```
 
 本次评审可能只改代码、不写 `ProjectSpec/`（报告写入 `ReviewSpec/`）。此步**仅提示**：若 `success=false`（存在未被 baseline 吸收的 error），把 `message` 与 `data.errors`（≤20 条）摘要作为「后续动作」的参考一并展示给用户，**不阻断评审、不改评审结论**。需要时可在「后续动作」里按能力库路由修正文档（见 Step 4-5）。
@@ -343,10 +361,10 @@ python .doc-kit/cli/cli.py doc lint --summary
 
 | 后续动作 | 怎么做 |
 |---------|--------|
-| 更新设计文档 | **必须走能力库路由**：读 `_index.md` §2/§3 定位 doc_type → 读对应 `<doc_type>.md` 的能力文件（段落结构 / 行文规则）→ `python .doc-kit/cli/cli.py doc read <path>` 看目标文档现状 → **把「改哪篇文档、哪个章节、写什么」整理成清单交用户确认** → 确认后执行：
+| 更新设计文档 | **必须走能力库路由**：读 `_index.md` §2/§3 定位 doc_type → 读对应 `<doc_type>.md` 的能力文件（段落结构 / 行文规则）→ `python3 .doc-kit/cli/cli.py doc read <path>` 看目标文档现状 → **把「改哪篇文档、哪个章节、写什么」整理成清单交用户确认** → 确认后执行：
 ```bash
-python .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
-python .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
+python3 .doc-kit/cli/cli.py doc update-section <reference> --content '<正文>'
+python3 .doc-kit/cli/cli.py doc add-section <reference> '<标题>' --content '<正文>' [--level sibling|child]
 ``` |
 | 记入议题追踪 | 用 `spec-start` 开启新议题（注意：创建议题会**先确认本次要讨论的议程**，议题名与议程需用户确认） |
 | 仅留档 | 无需额外动作，报告已落 `ReviewSpec/` |

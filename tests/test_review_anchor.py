@@ -100,6 +100,9 @@ class TestPerBranchAnchors:
         got = _parse(cli.cmd_review_anchor_get(git_project))
         assert got["data"]["source"] == "none"
         assert got["data"]["last_reviewed_commit"] is None
+        # 无锚点时推荐 merge-base（默认分支探测），而不是"从头评审所有提交"
+        assert any("merge-base" in s for s in got["suggestions"])
+        assert any("默认分支" in s for s in got["suggestions"])
 
     def test_legacy_state_without_branches_still_works(self, git_project):
         """兼容旧 state（只有 last_reviewed_commit 三个字段）。"""
@@ -120,3 +123,13 @@ class TestPerBranchAnchors:
 
     def test_anchor_set_rejects_empty(self, git_project):
         assert _parse(cli.cmd_review_anchor_set(git_project, "  "))["success"] is False
+
+
+def test_skill_recommends_merge_base_as_default_start():
+    """REVIEW-2：无锚点时技能正文推荐 merge-base 作为默认起点。"""
+    text = (REPO / "skills" / "spec-code-review" / "SKILL.md").read_text(encoding="utf-8")
+    assert "merge-base" in text
+    assert "默认分支" in text
+    assert "origin/HEAD" in text
+    # 空范围回退：当前分支就是默认分支时不得用空范围继续
+    assert "空范围" in text

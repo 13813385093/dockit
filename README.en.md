@@ -107,7 +107,7 @@ The toolchain uses a "snapshot copy" model: `init` copies the CLI / skills / tem
 ### 3.1 Check whether an upgrade is needed
 
 ```bash
-python .doc-kit/cli/cli.py tool status
+python3 .doc-kit/cli/cli.py tool status
 ```
 
 The output tells you the current CLI version vs. the recorded project version, how many versions behind you are, what changed in between, and whether any copies were modified or are missing.
@@ -123,7 +123,7 @@ doc-kit init <project-root>
 
 # 3. rebuild the document index from ProjectSpec/
 #    (init only indexes newly created docs; existing docs need a reindex)
-python <project-root>/.doc-kit/cli/cli.py doc reindex
+python3 <project-root>/.doc-kit/cli/cli.py doc reindex
 
 # 4. refresh the agent-side skills
 doc-kit install-skills <agent-skills-dir>

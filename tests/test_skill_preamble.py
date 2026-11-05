@@ -38,7 +38,7 @@ class TestGeneration:
             text = (R.SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
             seg = text[: re.search(r"^# spec-", text, re.M).start()]
             seg = seg[seg.index(R.PREAMBLE_START):]
-            seg = re.sub(r"^python \.doc-kit/cli/cli\.py.*$\n?", "", seg, flags=re.M)
+            seg = re.sub(r"^python3 \.doc-kit/cli/cli\.py.*$\n?", "", seg, flags=re.M)
             seg = seg.replace("cd <项目根>   # 项目根 = 含 .doc-kit/ 或 SessionSpec/ 的目录\n", "")
             groups.setdefault(seg.strip(), []).append(name)
         assert len(groups) == 4, f"前言变体应为 4 组，实际 {len(groups)} 组：{list(groups.values())}"
@@ -76,7 +76,7 @@ class TestToolsDerivation:
         """正文出现未登记命令时生成器必须报错（而不是静默漏掉）。"""
         text = (R.SKILLS_DIR / "spec-smart-git" / "SKILL.md").read_text(encoding="utf-8")
         with pytest.raises(ValueError):
-            R.derive_tools("", text + "\npython .doc-kit/cli/cli.py doc not-a-real-command\n")
+            R.derive_tools("", text + "\npython3 .doc-kit/cli/cli.py doc not-a-real-command\n")
 
 
 class TestToolchainVersion:
@@ -113,3 +113,26 @@ class TestSharedSourceOfTruth:
         for name in ("spec-smart-git", "spec-code-review", "spec-code-smell"):
             text = (R.SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
             assert "三层边界" in text and "源码、diff、工作区文件" in text
+
+
+class TestInterpreterConvention:
+    """REVIEW-1：全仓统一 `python3`，不得再出现裸 `python .doc-kit/cli/cli.py`。"""
+
+    def test_no_bare_python_invocations(self):
+        offenders: list[str] = []
+        candidates = list((REPO / "skills").rglob("*.md")) + list((REPO / "skills").rglob("*.py"))
+        candidates += [REPO / "README.md", REPO / "README.en.md"]
+        for path in candidates:
+            if "__pycache__" in path.parts:
+                continue
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if "python .doc-kit/cli/cli.py" in line:
+                    offenders.append(f"{path.relative_to(REPO)}:{lineno}")
+        assert offenders == [], (
+            "以下位置仍用裸 `python` 调用 CLI（应统一为 `python3`）：\n  " + "\n  ".join(offenders)
+        )
+
+    def test_preambles_explain_interpreter_fallback(self):
+        for name in ("preamble-session", "preamble-dev", "preamble-git", "preamble-smell"):
+            text = (REPO / "skills" / "_shared" / f"{name}.md").read_text(encoding="utf-8")
+            assert "py -3" in text and "python3` 不在 PATH" in text, name
