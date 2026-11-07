@@ -1,0 +1,29 @@
+name: sync from gitee
+
+# 每天 UTC 18:00（北京时间次日 02:00）自动同步一次；也可在 Actions 页面手动触发
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-from-gitee
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync master -> main and tag
+        env:
+          GITEE_URL: https://gitee.com/learnhow/dockit.git
+          GITHUB_URL: origin
+        run: bash .github/scripts/sync-from-gitee.sh
