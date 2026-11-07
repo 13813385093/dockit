@@ -18,12 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Sync master -> main and tag
         env:
-          GITEE_URL: https://gitee.com/learnhow/dockit.git
+          # Gitee 已不允许匿名 git 读取，需要只读私人令牌
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO_SLUG: learnhow/dockit
           GITHUB_URL: origin
         run: bash .github/scripts/sync-from-gitee.sh

@@ -6,7 +6,15 @@
 #
 set -euo pipefail
 
-GITEE_URL="${GITEE_URL:-https://gitee.com/learnhow/dockit.git}"
+# Gitee 已不允许匿名读取 git 协议，必须带私人令牌（只读即可）
+GITEE_REPO_SLUG="${GITEE_REPO_SLUG:-learnhow/dockit}"
+if [ -n "${GITEE_URL:-}" ]; then
+  :
+elif [ -n "${GITEE_TOKEN:-}" ]; then
+  GITEE_URL="https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO_SLUG}.git"
+else
+  GITEE_URL="https://gitee.com/${GITEE_REPO_SLUG}.git"
+fi
 GITHUB_URL="${GITHUB_URL:-origin}"
 
 log() { printf '[sync] %s\n' "$*"; }
@@ -16,7 +24,16 @@ git config user.name  'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
 git remote add gitee "$GITEE_URL" 2>/dev/null || git remote set-url gitee "$GITEE_URL"
-git fetch --quiet --tags gitee master
+if ! out="$(git fetch --quiet --tags gitee master 2>&1)"; then
+  printf '%s\n' "$out" | mask
+  case "$out" in
+    *"could not read Username"*|*"Authentication failed"*|*"鉴权失败"*)
+      log "拉取 Gitee 需要认证：请在仓库 Secret 中配置 GITEE_TOKEN（Gitee 私人令牌，projects 只读权限）"
+      ;;
+    *) log "拉取 Gitee 失败" ;;
+  esac
+  exit 1
+fi
 
 NEW="$(git rev-parse FETCH_HEAD)"
 log "Gitee master = $NEW"
