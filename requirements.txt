@@ -1,0 +1,6 @@
+# doc_kit — PySide6 图形界面版
+PySide6 >= 6.5.0
+qt-material >= 2.17
+PyYAML >= 6.0
+Markdown >= 3.5
+pytest >= 8.0
