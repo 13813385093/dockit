@@ -1,0 +1,30 @@
+version: '1.0'
+name: sync-master-to-github
+displayName: master 同步到 GitHub（自动打标签）
+
+# 只有 master 收到提交/合并时才触发；develop 等分支不触发
+triggers:
+  push:
+    branches:
+      precise:
+        - master
+
+variables:
+  GITHUB_REPO: '13813385093/dockit'
+  GITHUB_USER: '13813385093'
+  # GITHUB_TOKEN 不要写在这里，需在 Gitee Go 流水线变量中单独配置
+
+stages:
+  - stage:
+      name: sync
+      displayName: 同步到 GitHub
+      strategy: naturally
+      trigger: auto
+      steps:
+        # 借用 GCC 构建镜像（Ubuntu 20.04，自带 git），仅作为执行 git 命令的载体
+        - step: build@gcc
+          name: mirror
+          displayName: 推送 main 并打标签
+          gccVersion: 4.8.5
+          commands:
+            - bash .workflow/scripts/sync-master-to-github.sh
